@@ -154,7 +154,8 @@ bash examples/comparison/qwen3_vl_4b/cgpo.sh                                    
 N_GPUS_PER_NODE=4 bash examples/reproduction/papo/qwen2_5_vl_7b_grpo.sh trainer.total_epochs=1   # any override
 ```
 
-Checkpoints go to `checkpoints/<project>/<experiment>/global_step_*`; logs go to the console and
+Checkpoints go to `checkpoints/<project>/<experiment>/global_step_*` (the scripts keep the latest
+save and the one with the best validation reward, `trainer.save_limit=1`); logs go to the console and
 to `experiment_log.jsonl` in the same folder (`LOGGER='["console","wandb"]'` or `swanlab` for
 online tracking).
 
@@ -168,6 +169,20 @@ bash scripts/eval.sh Qwen/Qwen2.5-VL-7B-Instruct --suite papo         # base mod
 The wrapper merges FSDP checkpoints into Hugging Face format, runs every benchmark of the suite
 with vLLM on all visible GPUs and writes a summary table. See [eval/README.md](eval/README.md).
 
+**5. Free disk space** (after training has finished):
+
+```bash
+python3 scripts/finalize_run.py checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_papo   # --keep best|both, --dry-run
+```
+
+A saved step holds the optimizer states and is 3 to 4 times the size of the model (34 GB for a 4B
+model). This keeps the last step as Hugging Face weights in `global_step_N/actor` and deletes the
+optimizer states and the other steps; the run can no longer be resumed. `--keep best` keeps the step
+with the highest validation reward instead and `--keep both` keeps both. The default is the last
+step because the validation set is often also an evaluated benchmark, and because it compares
+every method after the same number of steps. A single `.../global_step_N` is finalized alone, without
+touching the other steps. `scripts/eval.sh` accepts finalized runs.
+
 ## 📁 Repository layout
 
 ```
@@ -179,7 +194,7 @@ with vLLM on all visible GPUs and writes a summary table. See [eval/README.md](e
 │   ├── reward_function/         # reward functions
 │   └── format_prompt/, system_prompt/, chat_template/
 ├── eval/                    # one-click evaluation (registry, loaders, scorers, prepare/)
-├── scripts/                 # install_env.sh, prepare_data.sh, prepare_eval_data.sh, eval.sh, launcher.sh
+├── scripts/                 # install_env.sh, prepare_data.sh, prepare_eval_data.sh, eval.sh, finalize_run.py, launcher.sh
 ├── verl/                    # training framework (EasyR1 fork) with all method implementations
 ├── docs/                    # algorithm parameters, adding a method, BibTeX, figures (assets/)
 ├── data/                    # downloaded data (git-ignored)

@@ -6,7 +6,8 @@
 # <model_or_ckpt>: a Hugging Face id (Qwen/Qwen2.5-VL-3B-Instruct), a merged HF directory,
 # .../global_step_N/actor, .../global_step_N, or a run checkpoint root (the latest step is
 # evaluated; --all-steps evaluates every step). FSDP shards are merged into
-# <actor>/huggingface with scripts/model_merger.py (shards are kept).
+# <actor>/huggingface with scripts/model_merger.py (shards are kept); runs finalized by
+# scripts/finalize_run.py hold the merged weights in <actor> itself.
 # Results: eval/results/<run_name>/<step>/ (summary.csv, metrics/, predictions/) and one row
 # per run in eval/results/summary.csv. All visible GPUs are used (set CUDA_VISIBLE_DEVICES
 # or pass --gpus 0,1). Any other option goes to eval/run_all_benchmarks.py, e.g.

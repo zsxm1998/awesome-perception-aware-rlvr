@@ -293,7 +293,7 @@ resumes (finished inference and scoring are skipped).
 |---|---|---|
 | `Qwen/Qwen2.5-VL-3B-Instruct` (HF id) | the model | `eval/results/Qwen2.5-VL-3B-Instruct/` |
 | merged HF directory | the directory | `eval/results/<dir name>/` |
-| `.../<run>/global_step_N/actor` | the merged `actor/huggingface` | `eval/results/<run>/global_step_N/` |
+| `.../<run>/global_step_N/actor` | the merged `actor/huggingface`, or `actor/` itself after `scripts/finalize_run.py` | `eval/results/<run>/global_step_N/` |
 | `.../<run>/global_step_N` | its `actor/` | same |
 | `.../<run>` (contains `global_step_*`) | the latest step (`--all-steps`: every step) | one directory per step |
 

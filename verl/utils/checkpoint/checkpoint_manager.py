@@ -128,6 +128,12 @@ def find_latest_ckpt(
     with open(tracker_file, "rb") as f:
         checkpointer_tracker_info = json.load(f)
 
+    if checkpointer_tracker_info.get("finalized"):
+        raise RuntimeError(
+            f"{path} was finalized by scripts/finalize_run.py: its optimizer states are deleted, so training "
+            "cannot resume from it. Train under another experiment name, or delete the directory first."
+        )
+
     ckpt_path = os.path.join(path, directory_format.format(checkpointer_tracker_info["last_global_step"]))
     if not os.path.exists(ckpt_path):
         print(f"Checkpoint does not exist: {ckpt_path}")

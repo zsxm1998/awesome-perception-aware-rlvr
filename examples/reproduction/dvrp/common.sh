@@ -53,6 +53,7 @@ launch_dvrp_matrix() {
         "trainer.total_epochs=3"
         "trainer.val_freq=5"
         "trainer.save_freq=5"
+        "trainer.save_limit=1"
         "trainer.val_generations_to_log=3"
         "trainer.val_before_train=true"
         "trainer.find_last_checkpoint=true"

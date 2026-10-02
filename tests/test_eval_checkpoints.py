@@ -87,6 +87,17 @@ def test_actor_step_and_run_root_resolution(tmp_path):
     assert renamed[0].label == "papo_3b/global_step_200"
 
 
+def test_finalized_run_resolution(tmp_path):
+    """scripts/finalize_run.py leaves the merged weights directly in actor/ and deletes the other steps."""
+    run = tmp_path / "checkpoints" / "comparison" / "grpo"
+    actor = _hf_dir(run / "global_step_60" / "actor")
+    (run / "checkpoint_tracker.json").write_text("{}", encoding="utf-8")
+
+    for value in (run, run / "global_step_60", actor):
+        (target,) = resolve_eval_targets(str(value))
+        assert (target.model, target.label, target.needs_merge) == (str(actor), "grpo/global_step_60", False)
+
+
 def test_split_args_separates_wrapper_options():
     model, own, passthrough = oneclick.split_args(
         ["ckpt", "--suite", "papo", "--all-steps", "--run-name=x", "--limit", "8", "--results-root", "/r"]

@@ -77,7 +77,7 @@ launch_deepeyes() {
         "trainer.val_freq=-1"
         "trainer.val_before_train=false"
         "trainer.save_freq=10"
-        "trainer.save_limit=2"
+        "trainer.save_limit=1"
         "trainer.find_last_checkpoint=true"
     )
     launch_training "$@"

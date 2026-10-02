@@ -54,6 +54,7 @@ launch_full_vocab_sensitivity_geo3k() {
         "trainer.total_epochs=4"
         "trainer.val_freq=20"
         "trainer.save_freq=20"
+        "trainer.save_limit=1"
         "trainer.val_generations_to_log=5"
         "trainer.val_before_train=true"
         "trainer.find_last_checkpoint=true"

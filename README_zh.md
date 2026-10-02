@@ -142,8 +142,9 @@ bash examples/comparison/qwen3_vl_4b/cgpo.sh                                    
 N_GPUS_PER_NODE=4 bash examples/reproduction/papo/qwen2_5_vl_7b_grpo.sh trainer.total_epochs=1   # 任意覆盖参数
 ```
 
-checkpoint 保存在 `checkpoints/<project>/<experiment>/global_step_*`；日志输出到终端，同时写入同一
-目录下的 `experiment_log.jsonl`（在线记录可设置 `LOGGER='["console","wandb"]'` 或 `swanlab`）。
+checkpoint 保存在 `checkpoints/<project>/<experiment>/global_step_*`（脚本只保留最新一次保存和验证奖励
+最高的一次，`trainer.save_limit=1`）；日志输出到终端，同时写入同一目录下的 `experiment_log.jsonl`
+（在线记录可设置 `LOGGER='["console","wandb"]'` 或 `swanlab`）。
 
 **4. 评测**：
 
@@ -154,6 +155,18 @@ bash scripts/eval.sh Qwen/Qwen2.5-VL-7B-Instruct --suite papo         # 基座�
 
 评测脚本会自动把 FSDP checkpoint 合并成 Hugging Face 格式，在所有可见 GPU 上用 vLLM 跑完套件中的
 每个基准，并输出汇总表。详见 [eval/README.md](eval/README.md)。
+
+**5. 释放磁盘空间**（训练结束后）：
+
+```bash
+python3 scripts/finalize_run.py checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_papo   # --keep best|both，--dry-run
+```
+
+每个保存的 step 都带优化器状态，大小是模型本身的 3 到 4 倍（4B 模型为 34 GB）。该脚本把最后一步保留为
+`global_step_N/actor` 中的 Hugging Face 权重，删除优化器状态和其余 step，此后该实验无法再续训。
+`--keep best` 改为保留验证奖励最高的一步，`--keep both` 两者都保留。默认保留最后一步，因为验证集往往
+同时也是评测基准，而且这样所有方法都在相同训练步数下比较。传入单个 `.../global_step_N` 时只处理这一步，
+不动其他 step。`scripts/eval.sh` 可以直接评测收尾后的实验。
 
 ## 📁 仓库结构
 
@@ -166,7 +179,7 @@ bash scripts/eval.sh Qwen/Qwen2.5-VL-7B-Instruct --suite papo         # 基座�
 │   ├── reward_function/         # 奖励函数
 │   └── format_prompt/、system_prompt/、chat_template/
 ├── eval/                    # 一键评测（注册表、loader、scorer、prepare/）
-├── scripts/                 # install_env.sh、prepare_data.sh、prepare_eval_data.sh、eval.sh、launcher.sh
+├── scripts/                 # install_env.sh、prepare_data.sh、prepare_eval_data.sh、eval.sh、finalize_run.py、launcher.sh
 ├── verl/                    # 训练框架（EasyR1 分支），包含所有方法的实现
 ├── docs/                    # 算法参数说明、新增方法教程、BibTeX、插图（assets/）
 ├── data/                    # 下载的数据（不纳入 git）

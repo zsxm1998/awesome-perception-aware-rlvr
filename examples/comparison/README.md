@@ -63,6 +63,7 @@ for m in grpo papo vppo tor dvrp pgpo pepo cfpo vepo grit cgpo; do
 done
 bash scripts/prepare_eval_data.sh comparison
 bash scripts/eval.sh checkpoints/Comparison-Qwen3-VL-4B/papo --suite comparison
+python3 scripts/finalize_run.py checkpoints/Comparison-Qwen3-VL-4B/*   # after training: keep the last steps only
 ```
 
 Checkpoints go to `checkpoints/Comparison-Qwen3-VL-4B/<method>`. Any `key=value` appended to a
@@ -79,7 +80,8 @@ Suite `comparison`. Reasoning benchmarks use the PAPO-Eval protocol (rule-based 
 `\boxed{}`, avg@8 at T=1.0, top-p 1.0; DynaMath and MathVision from VPPO-Eval); POPE is greedy
 macro-F1 over the random / popular / adversarial splits; HallusionBench is greedy question accuracy.
 Avg is the unweighted mean of the 13 columns. MMK12 test is also the validation set monitored during
-training (as in PAPO and VPPO).
+training (as in PAPO and VPPO), so every method is evaluated at its last step, never at the step with
+the best validation reward.
 
 | Method | Geo3K | MathVista | We-Math | MMK12 | MathVerse | MathVerse-V | LogicVista | Counting | MMMU-Pro | DynaMath | MathVision | POPE | HallusionBench | Avg |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |

@@ -75,3 +75,82 @@ def test_save_generation_config_uses_existing_generation_config(tmp_path):
 
     generation_config = GenerationConfig.from_pretrained(tmp_path)
     assert generation_config.max_new_tokens == 7
+
+
+class _FakeActorWorkerGroup:
+    def __init__(self):
+        self.fail = False
+
+    def save_checkpoint(self, path, save_model_only=False):
+        os.makedirs(path, exist_ok=True)
+        if self.fail:
+            raise RuntimeError("node lost while saving")
+        with open(os.path.join(path, "model_world_size_1_rank_0.pt"), "wb") as f:
+            f.write(b"x")
+
+
+def _trainer(path, save_limit):
+    from types import SimpleNamespace
+
+    from verl.trainer.ray_trainer import RayPPOTrainer
+
+    trainer = object.__new__(RayPPOTrainer)
+    trainer.config = SimpleNamespace(
+        trainer=SimpleNamespace(save_checkpoint_path=str(path), save_limit=save_limit, save_model_only=False)
+    )
+    trainer.val_reward_score = None
+    trainer.best_val_reward_score = -1.0
+    trainer.best_global_step = None
+    trainer.use_critic = False
+    trainer.train_dataloader = SimpleNamespace(state_dict=lambda: {})
+    trainer.actor_rollout_ref_wg = _FakeActorWorkerGroup()
+    return trainer
+
+
+@pytest.mark.parametrize("save_limit", [1, 2])
+def test_failed_save_keeps_the_checkpoint_to_resume_from(tmp_path, save_limit):
+    """Old checkpoints are removed after the new one is saved, also when the best step is older."""
+    trainer = _trainer(tmp_path, save_limit=save_limit)
+    for step, score in ((5, 0.5), (10, 0.4), (15, 0.3)):
+        trainer.global_step, trainer.val_reward_score = step, score
+        trainer._save_checkpoint()
+    assert sorted(os.listdir(tmp_path)) == [CHECKPOINT_TRACKER, "global_step_15", "global_step_5"]
+
+    trainer.global_step, trainer.val_reward_score = 20, 0.2
+    trainer.actor_rollout_ref_wg.fail = True
+    with pytest.raises(RuntimeError):
+        trainer._save_checkpoint()
+
+    path, tracker = find_latest_ckpt(str(tmp_path))
+    assert path == os.path.join(str(tmp_path), "global_step_15")
+    assert tracker["best_global_step"] == 5
+
+
+def test_save_limit_one_keeps_the_latest_and_the_best(tmp_path):
+    trainer = _trainer(tmp_path, save_limit=1)
+    for step, score in ((5, 0.3), (10, 0.5), (15, 0.4), (20, 0.6)):
+        trainer.global_step, trainer.val_reward_score = step, score
+        trainer._save_checkpoint()
+        expected = {10: ["global_step_10"], 15: ["global_step_10", "global_step_15"]}.get(
+            step, [f"global_step_{step}"]
+        )
+        assert sorted(os.listdir(tmp_path)) == [CHECKPOINT_TRACKER, *expected]
+
+
+def test_no_best_step_without_validation(tmp_path):
+    trainer = _trainer(tmp_path, save_limit=2)
+    for step in (10, 20, 30):
+        trainer.global_step = step
+        trainer._save_checkpoint()
+
+    _, tracker = find_latest_ckpt(str(tmp_path))
+    assert tracker["best_global_step"] is None and tracker["last_global_step"] == 30
+    assert sorted(os.listdir(tmp_path)) == [CHECKPOINT_TRACKER, "global_step_20", "global_step_30"]
+
+
+def test_finalized_runs_are_not_resumed(tmp_path):
+    os.makedirs(tmp_path / "global_step_10")
+    tracker = {"last_global_step": 10, "best_global_step": 10, "finalized": {"keep": "last", "steps": [10]}}
+    (tmp_path / CHECKPOINT_TRACKER).write_text(json.dumps(tracker))
+    with pytest.raises(RuntimeError, match="finalized"):
+        find_latest_ckpt(str(tmp_path))

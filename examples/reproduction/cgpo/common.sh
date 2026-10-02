@@ -73,7 +73,7 @@ launch_cgpo() {
         "trainer.val_generations_to_log=5"
         "trainer.val_before_train=true"
         "trainer.find_last_checkpoint=true"
-        "trainer.save_limit=2"
+        "trainer.save_limit=1"
     )
     launch_training "$@"
 }

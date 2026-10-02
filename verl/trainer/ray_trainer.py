@@ -210,7 +210,7 @@ class RayPPOTrainer:
         self.reward_fn = reward_fn
         self.val_reward_fn = val_reward_fn
 
-        self.val_reward_score = 0.0
+        self.val_reward_score: Optional[float] = None  # None until a validation has run
         self.best_val_reward_score = -1.0
         self.best_global_step = None
 
@@ -690,16 +690,10 @@ class RayPPOTrainer:
 
     def _save_checkpoint(self) -> None:
         # path: {save_checkpoint_path}/global_step_{global_step}/{actor,critic}
-        if self.val_reward_score > self.best_val_reward_score:
+        if self.val_reward_score is not None and self.val_reward_score > self.best_val_reward_score:
             self.best_val_reward_score = self.val_reward_score
             self.best_global_step = self.global_step
 
-        remove_obsolete_ckpt(
-            self.config.trainer.save_checkpoint_path,
-            self.global_step,
-            self.best_global_step,
-            self.config.trainer.save_limit,
-        )
         folder_path = os.path.join(self.config.trainer.save_checkpoint_path, f"global_step_{self.global_step}")
         actor_path = os.path.join(folder_path, "actor")
         self.actor_rollout_ref_wg.save_checkpoint(actor_path, save_model_only=self.config.trainer.save_model_only)
@@ -719,8 +713,18 @@ class RayPPOTrainer:
             "last_actor_path": os.path.abspath(actor_path),
         }
         checkpointer_tracker_path = os.path.join(self.config.trainer.save_checkpoint_path, CHECKPOINT_TRACKER)
-        with open(checkpointer_tracker_path, "w") as f:
+        with open(f"{checkpointer_tracker_path}.tmp", "w") as f:
             json.dump(checkpointer_tracker_info, f, ensure_ascii=False, indent=2)
+        os.replace(f"{checkpointer_tracker_path}.tmp", checkpointer_tracker_path)
+
+        # Remove older checkpoints only once the new one and the tracker pointing to it are complete:
+        # removing them first leaves nothing to resume from if saving fails.
+        remove_obsolete_ckpt(
+            self.config.trainer.save_checkpoint_path,
+            self.global_step,
+            self.best_global_step,
+            self.config.trainer.save_limit,
+        )
 
     def _load_checkpoint(self) -> None:
         if self.config.trainer.load_checkpoint_path is not None:

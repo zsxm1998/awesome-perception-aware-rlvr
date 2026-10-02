@@ -17,7 +17,8 @@ Accepted inputs (see ``resolve_eval_targets``):
 
 - a Hugging Face model id (``Qwen/Qwen2.5-VL-3B-Instruct``);
 - a merged Hugging Face directory (``config.json`` + weights);
-- an actor directory with FSDP shards (``.../global_step_N/actor``);
+- an actor directory with FSDP shards (``.../global_step_N/actor``), or with merged weights directly
+  in it after ``scripts/finalize_run.py``;
 - a step directory (``.../global_step_N``);
 - a run checkpoint root containing ``global_step_*`` directories (latest step, or every
   step with ``all_steps=True``).
@@ -88,6 +89,8 @@ def _actor_target(actor_dir: Path, run_name: str | None) -> EvalTarget:
     step_dir = actor_dir.parent
     step = step_dir.name if step_number(step_dir) is not None else None
     name = run_name or (step_dir.parent.name if step else actor_dir.name)
+    if has_hf_weights(actor_dir):  # finalized by scripts/finalize_run.py
+        return EvalTarget(model=str(actor_dir), run_name=name, step=step)
     hf_dir = actor_dir / "huggingface"
     if not has_hf_weights(hf_dir) and not has_fsdp_shards(actor_dir):
         raise FileNotFoundError(f"{actor_dir} has neither merged weights in huggingface/ nor FSDP shards")
@@ -114,6 +117,8 @@ def resolve_eval_targets(value: str, *, all_steps: bool = False, run_name: str |
         return [EvalTarget(model=value, run_name=run_name or value.rstrip("/").split("/")[-1])]
     path = path.resolve()
     if has_hf_weights(path):
+        if path.name == "actor" and step_number(path.parent) is not None:
+            return [_actor_target(path, run_name)]
         if path.name == "huggingface" and path.parent.name == "actor" and step_number(path.parent.parent) is not None:
             return [
                 EvalTarget(
