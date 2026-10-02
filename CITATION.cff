@@ -1,0 +1,44 @@
+cff-version: 1.2.0
+message: "If you use this repository, please cite CGPO and the papers of the methods you use."
+title: "Awesome Perception-Aware RLVR"
+type: software
+license: Apache-2.0
+repository-code: "https://github.com/zsxm1998/awesome-perception-aware-rlvr"
+authors:
+  - family-names: Zhang
+    given-names: Shengxuming
+keywords:
+  - reinforcement learning with verifiable rewards
+  - vision-language models
+  - visual perception
+  - multimodal reasoning
+preferred-citation:
+  type: conference-paper
+  title: "CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning"
+  authors:
+    - family-names: Zhang
+      given-names: Shengxuming
+    - family-names: Zhou
+      given-names: Linyun
+    - family-names: Lou
+      given-names: Hengrui
+    - family-names: Wang
+      given-names: Zhenyang
+    - family-names: Zhang
+      given-names: Xiuming
+    - family-names: Feng
+      given-names: Zunlei
+  collection-title: "Proceedings of the 34th ACM International Conference on Multimedia"
+  conference:
+    name: "MM '26"
+    city: "Rio de Janeiro"
+    country: BR
+    date-start: 2026-11-10
+    date-end: 2026-11-14
+  publisher:
+    name: ACM
+    city: "New York, NY"
+    country: US
+  year: 2026
+  doi: "10.1145/3767308.3835969"
+  url: "https://doi.org/10.1145/3767308.3835969"

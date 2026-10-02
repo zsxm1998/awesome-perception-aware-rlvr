@@ -9,8 +9,16 @@ on:
     branches:
       - "main"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   lint:
+    name: lint, license headers and docs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,12 +30,43 @@ jobs:
       - name: Install tools
         run: pip install ruff
 
-      - name: Lint (pyflakes errors)
-        run: ruff check --select F401,F811,F821,F841 verl scripts eval examples tests
+      - name: Ruff (lint and format)
+        run: |
+          ruff check eval examples scripts tests verl setup.py
+          ruff format --check eval examples scripts tests verl setup.py
 
       - name: License headers
-        run: python tests/check_license.py scripts tests verl eval examples
+        run: python tests/check_license.py eval examples scripts tests verl setup.py
 
       - name: Shell syntax
         run: |
           for f in scripts/*.sh reproduction/*/*.sh comparison/*/*.sh; do bash -n "$f"; done
+
+      - name: Paper list, badges and Markdown anchors
+        run: python scripts/check_docs.py
+
+  unit-tests:
+    name: unit tests (CPU)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            scripts/constraints.txt
+
+      # GitHub-hosted runners have no GPU: install CPU PyTorch and skip vLLM / flash-attn. Tests that
+      # need vLLM are skipped by tests/conftest.py; GPU training and evaluation are not run in CI.
+      - name: Install CPU dependencies
+        run: |
+          pip install torch==2.10.0 torchvision --index-url https://download.pytorch.org/whl/cpu
+          grep -v -E '^(vllm|flash-attn)' requirements.txt > "$RUNNER_TEMP/requirements-cpu.txt"
+          pip install -r "$RUNNER_TEMP/requirements-cpu.txt" pytest -c scripts/constraints.txt
+
+      - name: Unit tests
+        run: python -m pytest -q tests/

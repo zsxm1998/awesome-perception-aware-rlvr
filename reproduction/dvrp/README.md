@@ -77,7 +77,7 @@ described in [eval/README.md](../../eval/README.md).
 > come from our unofficial re-implementation, trained once with a single seed on our hardware and
 > software versions and evaluated with this repository's harness. They may differ from the official
 > results, including smaller or no gains over the baselines, and do not replace them; corrections
-> from the authors are welcome. See [About the results](../../README.md#about-the-results).
+> from the authors are welcome. See [About the results](../../README.md#-about-the-results).
 
 Paper Table 1, general-domain columns (avg@8 accuracy, %; "MMK12" is printed as "MMKI2").
 

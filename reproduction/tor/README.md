@@ -78,7 +78,7 @@ validation split) and set `N_GPUS_PER_NODE`, `MODEL_PATH`, `DATA_ROOT`, `LOGGER`
 > come from our unofficial re-implementation, trained once with a single seed on our hardware and
 > software versions and evaluated with this repository's harness. They may differ from the official
 > results, including smaller or no gains over the baselines, and do not replace them; corrections
-> from the authors are welcome. See [About the results](../../README.md#about-the-results).
+> from the authors are welcome. See [About the results](../../README.md#-about-the-results).
 
 Paper Table 4, Qwen2.5-VL-7B trained on Geometry3K (2.1K). The paper reports no average; the Avg
 column is the mean of the five benchmarks. The paper's GRPO row is identical to NoisyRollout's

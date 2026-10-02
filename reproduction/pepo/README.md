@@ -80,7 +80,7 @@ environment. Evaluation is described in [eval/README.md](../../eval/README.md).
 > come from our unofficial re-implementation, trained once with a single seed on our hardware and
 > software versions and evaluated with this repository's harness. They may differ from the official
 > results, including smaller or no gains over the baselines, and do not replace them; corrections
-> from the authors are welcome. See [About the results](../../README.md#about-the-results).
+> from the authors are welcome. See [About the results](../../README.md#-about-the-results).
 
 Paper Table 1 (Qwen2.5-VL-3B trained on Geometry3K, avg@8 accuracy, %). The paper average also
 includes Geometry3K val; InternVL3-2B rows give the paper average only.

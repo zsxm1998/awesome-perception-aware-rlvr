@@ -15,6 +15,7 @@
 The main entry point to run the PPO algorithm
 """
 
+import importlib.util
 from contextlib import nullcontext
 from typing import Any, Literal, Optional, Union, cast
 
@@ -65,9 +66,15 @@ from ..utils.torch_functional import (
     get_cosine_schedule_with_warmup,
 )
 from .config import ActorConfig, CriticConfig, FSDPConfig, ModelConfig, OptimConfig, WorkerConfig
-from .rollout import vLLMRollout
-from .sharding_manager import FSDPVLLMShardingManager
 from .sharding_manager.fsdp_ulysses import FSDPUlyssesShardingManager
+
+
+# vLLM sets environment variables (CUDA / inductor) when it is imported, so it is imported together with
+# this module, before torch.distributed starts. It is optional only so that the CPU unit tests can import
+# this module on machines without vLLM.
+if importlib.util.find_spec("vllm") is not None:
+    from .rollout import vLLMRollout
+    from .sharding_manager import FSDPVLLMShardingManager
 
 
 class FSDPWorker(Worker):

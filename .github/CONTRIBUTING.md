@@ -25,9 +25,12 @@ reproduction results, bug reports and documentation fixes.
    make quality   # ruff
    make license   # Apache license headers
    make test      # unit tests (CPU)
+   python scripts/check_docs.py --fix                 # paper list, badges and Markdown anchors
    DRY_RUN=1 bash reproduction/<method>/<script>.sh   # validates a launcher without GPUs
    ```
 
-4. Open a pull request describing the change and how it was tested.
+4. Open a pull request and fill in the template. GitHub Actions runs the lint, license, docs and
+   CPU unit-test checks on every pull request; GPU training and evaluation are not run in CI, so
+   describe how you tested them.
 
 Please be respectful and follow the [code of conduct](CODE_OF_CONDUCT.md).

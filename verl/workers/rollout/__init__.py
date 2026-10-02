@@ -14,7 +14,16 @@
 
 
 from .config import RolloutConfig
-from .vllm_rollout_spmd import vLLMRollout
 
 
 __all__ = ["RolloutConfig", "vLLMRollout"]
+
+
+def __getattr__(name: str):
+    # vLLM is imported only when the rollout engine is requested, so that configs (and the CPU unit
+    # tests) can be imported on machines without vLLM.
+    if name == "vLLMRollout":
+        from .vllm_rollout_spmd import vLLMRollout
+
+        return vLLMRollout
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

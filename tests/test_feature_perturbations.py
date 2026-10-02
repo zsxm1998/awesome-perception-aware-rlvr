@@ -396,7 +396,7 @@ def test_vllm_activation_validation_requires_positive_expected_levels(tmp_path):
 
 
 def test_vllm_backend_sets_feature_env_before_each_engine_and_clears_clean(tmp_path, monkeypatch):
-    import vllm
+    vllm = pytest.importorskip("vllm")
 
     import eval.easyr1_eval.backends as backend_module
     import eval.easyr1_eval.vllm_feature_models as feature_model_module
@@ -465,12 +465,15 @@ def test_vllm_feature_plugin_env_writes_discoverable_entry_point(tmp_path, monke
 
     plugin_root = tmp_path / ".vllm_feature_plugin"
     distributions = list(importlib_metadata.distributions(path=[str(plugin_root)]))
-    entry_points = [
-        entry_point
-        for dist in distributions
-        for entry_point in dist.entry_points
-        if entry_point.group == "vllm.general_plugins"
-    ]
+    # one distinct entry point (some environments expose the same distribution through two finders)
+    entry_points = list(
+        {
+            (entry_point.name, entry_point.value): entry_point
+            for dist in distributions
+            for entry_point in dist.entry_points
+            if entry_point.group == "vllm.general_plugins"
+        }.values()
+    )
     assert len(entry_points) == 1
     assert entry_points[0].name == VLLM_FEATURE_PLUGIN_NAME
     assert entry_points[0].value == "eval.easyr1_eval.vllm_feature_models:register_vllm_feature_models"

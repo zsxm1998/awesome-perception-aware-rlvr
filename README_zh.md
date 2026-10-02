@@ -4,11 +4,16 @@
 
 **视觉感知导向的可验证奖励强化学习（Perception-Aware RLVR）的论文清单与统一、可复现的代码库**
 
+🌟 **[CGPO](#-cgpo-acm-mm-2026)（ACM MM 2026）官方代码仓库** 🌟
+
 [English](README.md) | [简体中文](README_zh.md)
 
+[![Awesome](https://awesome.re/badge.svg)](https://github.com/sindresorhus/awesome)
+[![Papers](https://img.shields.io/badge/Papers-91-blue)](#-论文清单)
+[![Reproduced](https://img.shields.io/badge/Reproduced-11-brightgreen)](#-已复现方法)
+[![CGPO](https://img.shields.io/badge/CGPO-ACM%20MM%202026-8A2BE2)](https://doi.org/10.1145/3767308.3835969)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Built on EasyR1](https://img.shields.io/badge/built%20on-EasyR1-orange)](https://github.com/hiyouga/EasyR1)
-[![Awesome](https://awesome.re/badge.svg)](https://github.com/sindresorhus/awesome)
 
 </div>
 
@@ -19,15 +24,15 @@
 
 本仓库提供：
 
-- **[论文清单](#论文清单)**：感知导向的策略优化、基于定位的推理 / 看图思考（thinking with images），
+- **[CGPO](#-cgpo-acm-mm-2026) 官方实现**（ACM MM 2026）；
+- **[论文清单](#-论文清单)**：感知导向的策略优化、基于定位的推理 / 看图思考（thinking with images），
   以及这一方向常用的评测基准；
-- **[方法复现](#已复现方法)**：10 个方法（PAPO、VPPO、DVRP、ToR、PGPO、PEPO、CFPO、VEPO、GRIT、
+- **[方法复现](#-已复现方法)**：10 个方法（PAPO、VPPO、DVRP、ToR、PGPO、PEPO、CFPO、VEPO、GRIT、
   DeepEyes），各自使用原论文的数据、模型和超参数，并附带论文中对比的 GRPO/DAPO 基线；
 - **[统一设定下的公平对比](comparison/README.md)**：所有方法在同一设定下训练（Qwen3-VL-4B、
   相同数据、相同超参数）；
 - **[一键评测](eval/README.md)**：覆盖这些论文所用评测基准的并集，每个基准都有下载处理脚本，
-  每篇论文都有对应的评测套件；
-- **CGPO 官方实现**（[reproduction/cgpo](reproduction/cgpo/README.md)，ACM MM 2026）。
+  每篇论文都有对应的评测套件。
 
 所有方法共用同一个训练框架（[EasyR1](https://github.com/hiyouga/EasyR1) 的分支），
 通过少量配置开关即可组合、对比和扩展。
@@ -35,32 +40,57 @@
 > [!NOTE]
 > 除 CGPO 外，其余方法均为**非官方复现**。请参考并引用原论文和原仓库。与官方实现的差异记录在
 > 各方法目录的 README 中。我们的数字来自这些复现的单种子运行，未必能复现论文报告的提升，见
-> [关于结果的说明](#关于结果的说明)。
+> [关于结果的说明](#-关于结果的说明)。
 
-## 目录
+## 📖 目录
 
-- [更新](#更新)
-- [已复现方法](#已复现方法)
-- [快速开始](#快速开始)
-- [仓库结构](#仓库结构)
-- [统一设定对比](#统一设定对比)
-- [评测](#评测)
-- [配置](#配置)
-- [论文清单](#论文清单)
-- [贡献](#贡献)
-- [引用](#引用)
-- [致谢](#致谢)
+- [更新](#-更新)
+- [CGPO (ACM MM 2026)](#-cgpo-acm-mm-2026)
+- [已复现方法](#-已复现方法)
+- [快速开始](#-快速开始)
+- [仓库结构](#-仓库结构)
+- [统一设定对比](#-统一设定对比)
+- [评测](#-评测)
+- [配置](#-配置)
+- [论文清单](#-论文清单)
+- [贡献](#-贡献)
+- [引用](#-引用)
+- [致谢](#-致谢)
 
-## 更新
+## 🔥 更新
 
-- **2026-10**：首次发布：10 个复现方法 + CGPO、Qwen3-VL-4B 上的统一对比、一键评测。
-  复现结果正在用本代码库重新跑，完成后补充到下面的表格中。
+- **2026-10**：🎉 首次发布：[CGPO](#-cgpo-acm-mm-2026)（ACM MM 2026）官方实现、10 个复现方法、
+  Qwen3-VL-4B 上的统一对比、一键评测。复现结果正在用本代码库重新跑，完成后补充到下面的表格中。
 
-## 已复现方法
+## 🌟 CGPO (ACM MM 2026)
+
+本仓库是以下论文的官方代码：
+
+> **CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning**<br>
+> Shengxuming Zhang, Linyun Zhou, Hengrui Lou, Zhenyang Wang, Xiuming Zhang, Zunlei Feng<br>
+> *Proceedings of the 34th ACM International Conference on Multimedia (MM '26)*, Rio de Janeiro, Brazil, 2026<br>
+> [[论文]](https://doi.org/10.1145/3767308.3835969) · [[代码与脚本]](reproduction/cgpo/README.md) · [[BibTeX]](#-引用)
+
+CGPO 训练视觉语言模型进行*证据敏感推理*：关键推理步骤要定位它所依据的视觉证据，并且去掉这些证据后结论应当改变。
+策略在思维链中以内联方式定位证据；把定位到的区域遮挡得到反事实图像，用策略在原图与反事实图像上输出分布的
+变化衡量每个 token 对证据的依赖程度。证据依赖越强的回答，其感知关键 token 的优势被放大；定位一致性奖励
+（由策略对每个定位实体重新检测）防止证据框被刻意放大。整个方法只需要答案级监督。
+
+论文用最初的 ms-swift 实现在病理数据上训练，其中的院内病理数据无法公开。本仓库在统一的 EasyR1 代码库上
+重新实现了 CGPO，在公开的自然图像数据（ViRL39K）上复现其强化学习阶段，使用论文的模型（Qwen2.5-VL-7B、
+Qwen3-VL-8B）和强化学习超参数；CGPO 也参与了[统一设定对比](comparison/README.md)。
+
+```bash
+bash scripts/prepare_data.sh cgpo
+bash reproduction/cgpo/qwen3_vl_8b_cgpo.sh
+bash scripts/eval.sh checkpoints/CGPO-Reproduce/qwen3_vl_8b_cgpo --suite cgpo
+```
+
+## 🧪 已复现方法
 
 | 方法 | 论文 | 会议 | 官方代码 | 脚本 | 主要设定 |
 | --- | --- | --- | --- | --- | --- |
-| **CGPO**（本仓库） | [Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](reproduction/cgpo/README.md) | ACM MM 2026 | 本仓库 | [reproduction/cgpo](reproduction/cgpo) | Qwen2.5-VL-7B / Qwen3-VL-8B，ViRL39K（自然图像复现） |
+| **CGPO**（本仓库） | [Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](https://doi.org/10.1145/3767308.3835969) | ACM MM 2026 | 本仓库 | [reproduction/cgpo](reproduction/cgpo) | Qwen2.5-VL-7B / Qwen3-VL-8B，ViRL39K（自然图像复现） |
 | PAPO | [Perception-Aware Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2507.06448) | ICLR 2026 | [GitHub](https://github.com/MikeWangWZHL/PAPO) | [reproduction/papo](reproduction/papo) | Qwen2.5-VL-3B/7B，ViRL39K |
 | VPPO | [Spotlight on Token Perception for Multimodal Reinforcement Learning](https://arxiv.org/abs/2510.09285) | ICLR 2026 | [GitHub](https://github.com/huaixuheqing/VPPO-RL) | [reproduction/vppo](reproduction/vppo) | Qwen2.5-VL-7B / Qwen3-VL-8B，ViRL39K |
 | DVRP | [Thinking with Deltas: Incentivizing Reinforcement Learning via Differential Visual Reasoning Policy](https://arxiv.org/abs/2601.06801) | arXiv | - | [reproduction/dvrp](reproduction/dvrp) | Qwen2.5-VL-3B/7B，ViRL39K |
@@ -75,7 +105,7 @@
 每个方法目录都有 README，说明论文设定、脚本（方法与基线）、与官方实现的差异以及论文报告的结果。
 EasyR1 原有的算法（GRPO、DAPO、GSPO、CISPO、SAPO、REINFORCE++、RLOO、ReMax）仍然可用。
 
-## 快速开始
+## 🚀 快速开始
 
 **1. 安装环境**（Linux、CUDA 12.8 驱动、conda）：
 
@@ -119,7 +149,7 @@ bash scripts/eval.sh Qwen/Qwen2.5-VL-7B-Instruct --suite papo         # 基座�
 评测脚本会自动把 FSDP checkpoint 合并成 Hugging Face 格式，在所有可见 GPU 上用 vLLM 跑完套件中的
 每个基准，并输出汇总表。详见 [eval/README.md](eval/README.md)。
 
-## 仓库结构
+## 📁 仓库结构
 
 ```
 .
@@ -139,7 +169,7 @@ token 选择、优势缩放、辅助损失和额外奖励。所有开关见
 [docs/algorithm_parameters.md](docs/algorithm_parameters.md)，新增方法见
 [docs/add_method.md](docs/add_method.md)。
 
-## 统一设定对比
+## 📊 统一设定对比
 
 [`comparison/qwen3_vl_4b`](comparison/README.md) 在 Qwen3-VL-4B-Instruct 上训练所有方法，使用相同的
 数据（ViRL39K / MMK12）、相同的 GRPO 超参数和相同的评测，只有方法相关的参数不同。结果将补充到这里。
@@ -148,7 +178,7 @@ token 选择、优势缩放、辅助损失和额外奖励。所有开关见
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 平均（comparison 套件） | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 
-### 关于结果的说明
+### 📌 关于结果的说明
 
 用本仓库得到的数字（上表、[comparison/README.md](comparison/README.md) 以及各 `reproduction/<method>`
 README 中标注为本仓库的列）请结合以下几点阅读：
@@ -156,7 +186,7 @@ README 中标注为本仓库的列）请结合以下几点阅读：
 - **非官方复现。** 除 CGPO 外，所有方法都由我们依据论文（以及已公开的官方代码）重新实现。论文未写明
   的细节可能与作者代码不同，已知差异列在各方法的 README 中。
 - **环境不同。** 硬件、软件版本（PyTorch、vLLM、transformers、强化学习框架）、数据预处理和评测框架
-  都与原论文不同，并且所有方法使用同一套评测协议（见[评测](#评测)）。
+  都与原论文不同，并且所有方法使用同一套评测协议（见[评测](#-评测)）。
 - **单种子。** 每个配置只训练一次。在这些基准上，强化学习结果在不同种子之间常有一个点以上的波动，
   与许多论文报告的提升幅度相当。
 - **统一设定。** 统一对比对所有方法使用同一个模型、同一份数据和同一组超参数；针对其他设定调优的方法
@@ -166,7 +196,7 @@ README 中标注为本仓库的列）请结合以下几点阅读：
 我们的设定下的结果，不能作为否定该方法的证据。各方法的性能请以原论文为准。如果原作者发现差异，
 非常欢迎提交 issue 或 PR，我们会修正实现或数字。
 
-## 评测
+## 📈 评测
 
 评测系统覆盖所复现论文使用的基准的并集：数学与多模态推理（Geometry3K、MathVista、We-Math、MMK12、
 MathVerse、MathVerse-V、LogicVista、CLEVR 计数、MMMU-Pro、DynaMath、MathVision），感知与幻觉
@@ -181,7 +211,7 @@ MME-RealWorld-Lite）。每个基准都有下载脚本，每篇论文都有评�
 > ToR/VEPO/GRIT/DeepEyes 使用贪心解码加 LLM 裁判）。本仓库用同一套评测系统评测所有模型，
 > 因此请与本仓库中跑出的基线比较，而不要直接与跨论文摘抄的数字比较。
 
-## 配置
+## 🔧 配置
 
 所有训练脚本都支持以下环境变量：
 
@@ -197,15 +227,15 @@ MME-RealWorld-Lite）。每个基准都有下载脚本，每篇论文都有评�
 任何配置项都可以用 `key=value` 追加在命令后面（见 [examples/config.yaml](examples/config.yaml) 和
 [verl/trainer/config.py](verl/trainer/config.py)）。设置 `USE_MODELSCOPE_HUB=1` 可从 ModelScope 下载模型。
 
-## 论文清单
+## 📚 论文清单
 
 以下条目于 2026-10-01 逐条对照 arXiv、OpenReview 和官方仓库核实；只有在一手来源确认时才标注会议（来源见 [docs/paper_list_sources.md](docs/paper_list_sources.md)，BibTeX 见 [docs/paper_list.bib](docs/paper_list.bib)）。按时间倒序排列，欢迎提交 PR 补充论文。
 
-### 本仓库已复现的论文
+### ✅ 本仓库已复现的论文
 
 下列方法都可以用 `reproduction/<method>`（论文原设定）和 `comparison/`（统一设定）中的脚本训练。除 CGPO 外均为非官方复现，与官方代码的差异见各方法的 README。
 
-- **CGPO**（本仓库） · [CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](reproduction/cgpo/README.md) · ACM MM 2026 · 官方代码：本仓库<br>
+- **CGPO**（本仓库） · [CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](https://doi.org/10.1145/3767308.3835969) · Shengxuming Zhang et al. · ACM MM 2026 · 官方代码：本仓库<br>
   策略在思维链中以内联方式定位证据；将定位到的区域遮挡得到反事实图像，用策略在原图与反事实图像上输出分布的 KL 衡量每个 token 对证据的依赖程度。证据依赖越强的回答，其感知关键 token 的优势被放大；定位一致性奖励（由策略对每个定位实体重新检测）防止框被刻意放大。脚本覆盖自然图像设定，论文中的病理设定在 README 中以文字说明。脚本与设定：[reproduction/cgpo](reproduction/cgpo/README.md)。
 - **PAPO** · [Perception-Aware Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2507.06448) · Zhenhailong Wang et al. · ICLR 2026 · [代码](https://github.com/MikeWangWZHL/PAPO)<br>
   在 GRPO/DAPO 上加入*隐式感知损失*：最大化策略在原图与随机块遮挡图像上输出分布的 KL，迫使输出依赖图像；再在两个视图上加入*双熵损失*，防止策略以退化方式抬高这一 KL 项。脚本与设定：[reproduction/papo](reproduction/papo/README.md)。
@@ -228,9 +258,9 @@ MME-RealWorld-Lite）。每个基准都有下载脚本，每篇论文都有评�
 - **DeepEyes** · [DeepEyes: Incentivizing "Thinking with Images" via Reinforcement Learning](https://arxiv.org/abs/2505.14362) · Ziwei Zheng et al. · ICLR 2026 · [代码](https://github.com/Visual-Agent/DeepEyes)<br>
   带图像放大工具的多轮智能体强化学习：模型推理后用边界框调用 `image_zoom_in_tool`，把原图裁剪结果作为新观测继续推理。GRPO 优化整条轨迹，奖励由准确率、格式以及只发给使用了工具且答对的回答的工具奖励组成。本仓库支持 Qwen2.5-VL（与论文一致的绝对像素坐标）和 Qwen3-VL（0-1000 坐标）。脚本与设定：[reproduction/deepeyes](reproduction/deepeyes/README.md)。
 
-### 其他论文
+### 📑 其他论文
 
-#### 感知导向的策略优化
+#### 🎯 感知导向的策略优化
 
 | Date | Paper | Venue | Code | Key idea |
 |---|---|---|---|---|
@@ -266,7 +296,7 @@ MME-RealWorld-Lite）。每个基准都有下载脚本，每篇论文都有评�
 | 2025-05 | [Visionary-R1: Mitigating Shortcuts in Visual Reasoning with Reinforcement Learning](https://arxiv.org/abs/2505.14677)<br>Jiaer Xia et al. · `2505.14677` | TMLR | [GitHub](https://github.com/maifoundations/Visionary-R1) | **Visionary-R1**: Caption-reason-answer output format trained with pure RL to mitigate shortcut learning. |
 | 2025-04 | [NoisyRollout: Reinforcing Visual Reasoning with Data Augmentation](https://arxiv.org/abs/2504.13055)<br>Xiangyan Liu et al. · `2504.13055` | NeurIPS 2025 | [GitHub](https://github.com/real-absolute-AI/NoisyRollout) | **NoisyRollout**: Mixes rollouts from clean and moderately distorted images with noise annealing in GRPO; RL objective unchanged. |
 
-#### 基于定位的推理与看图思考
+#### 🔍 基于定位的推理与看图思考
 
 | Date | Paper | Venue | Code | Key idea |
 |---|---|---|---|---|
@@ -303,7 +333,7 @@ MME-RealWorld-Lite）。每个基准都有下载脚本，每篇论文都有评�
 | 2025-04 | [VLM-R1: A Stable and Generalizable R1-style Large Vision-Language Model](https://arxiv.org/abs/2504.07615)<br>Haozhan Shen et al. · `2504.07615` | arXiv | [GitHub](https://github.com/om-ai-lab/VLM-R1) | **VLM-R1**: R1-style rule-based RL framework for VLMs on visual understanding tasks; better generalization than SFT. |
 | 2025-03 | [Visual-RFT: Visual Reinforcement Fine-Tuning](https://arxiv.org/abs/2503.01785)<br>Ziyu Liu et al. · `2503.01785` | ICCV 2025 | [GitHub](https://github.com/Liuziyu77/Visual-RFT) | **Visual-RFT**: GRPO with verifiable perception rewards (e.g., IoU) for detection, reasoning grounding and fine-grained classification. |
 
-#### 评测基准与数据集
+#### 📏 评测基准与数据集
 
 | Date | Paper | Venue | Code | Key idea |
 |---|---|---|---|---|
@@ -325,11 +355,12 @@ MME-RealWorld-Lite）。每个基准都有下载脚本，每篇论文都有评�
 | 2023-05 | [Evaluating Object Hallucination in Large Vision-Language Models](https://arxiv.org/abs/2305.10355)<br>Yifan Li et al. · `2305.10355` | EMNLP 2023 | [GitHub](https://github.com/RUCAIBox/POPE) | **POPE**: Polling-based object probing evaluation for object hallucination in LVLMs. |
 | 2021-05 | [Inter-GPS: Interpretable Geometry Problem Solving with Formal Language and Symbolic Reasoning](https://arxiv.org/abs/2105.04165)<br>Pan Lu et al. · `2105.04165` | ACL 2021 | [GitHub](https://github.com/lupantech/InterGPS) | **Inter-GPS / Geometry3K**: Introduces Geometry3K (3,002 geometry problems with formal-language annotations) and the Inter-GPS solver. |
 
-## 贡献
+## 🤝 贡献
 
 欢迎贡献：
 
-- **补充论文**：提交 PR，在清单中按时间倒序添加一行（arXiv 链接、会议、代码链接）。
+- **补充论文**：提交 PR，在中英文两份 README 的清单中按时间倒序各添加一行（arXiv 链接、会议、代码链接），
+  然后运行 `python scripts/check_docs.py --fix`。
 - **新增方法**：参考 [docs/add_method.md](docs/add_method.md)，新增 `reproduction/<method>/` 目录，
   包含 README 和基线脚本。
 - **新增评测基准**：参考 [eval/README.md](eval/README.md#adding-a-new-benchmark)。
@@ -337,27 +368,34 @@ MME-RealWorld-Lite）。每个基准都有下载脚本，每篇论文都有评�
 
 提交代码前请运行 `make quality` 和 `make test`。
 
-## 引用
+## 📝 引用
 
 如果本仓库对你有帮助，请引用 CGPO 以及你所使用方法的原论文：
 
 ```bibtex
-@inproceedings{cgpo2026,
+@inproceedings{zhang2026cgpo,
   title     = {{CGPO}: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning},
-  author    = {TODO},
-  booktitle = {Proceedings of the ACM International Conference on Multimedia (ACM MM)},
-  year      = {2026}
+  author    = {Zhang, Shengxuming and Zhou, Linyun and Lou, Hengrui and Wang, Zhenyang and Zhang, Xiuming and Feng, Zunlei},
+  booktitle = {Proceedings of the 34th ACM International Conference on Multimedia},
+  series    = {MM '26},
+  year      = {2026},
+  location  = {Rio de Janeiro, Brazil},
+  publisher = {ACM},
+  address   = {New York, NY, USA},
+  numpages  = {10},
+  doi       = {10.1145/3767308.3835969},
+  url       = {https://doi.org/10.1145/3767308.3835969}
 }
 ```
 
 各复现方法的 BibTeX 见对应目录的 README 和 [docs/references.bib](docs/references.bib)。
 
-## 致谢
+## 🙏 致谢
 
 本仓库基于 [EasyR1](https://github.com/hiyouga/EasyR1) 和 [veRL](https://github.com/volcengine/verl)
 构建，使用 [vLLM](https://github.com/vllm-project/vllm) 进行 rollout 和评测。感谢所有被复现方法的
 作者公开论文、代码和数据，特别感谢 PAPO、VPPO、GRIT 和 DeepEyes 公开的训练与评测数据。
 
-## 许可证
+## 📄 许可证
 
 Apache-2.0，见 [LICENSE](LICENSE)。脚本下载的数据集和模型遵循各自的许可证。

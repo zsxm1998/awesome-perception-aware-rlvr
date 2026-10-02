@@ -1,0 +1,34 @@
+name: links
+
+# Weekly check of the links in the Markdown files (paper list, code links, docs). Not run on
+# pull requests, so that a temporarily unreachable site does not block contributions.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  lychee:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          # 403/429: sites that block or rate-limit crawlers. The CGPO DOI is registered when the
+          # ACM MM 2026 proceedings go online; remove its exclusion afterwards.
+          args: >-
+            --no-progress
+            --max-concurrency 8
+            --max-retries 3
+            --retry-wait-time 10
+            --accept '200..=299,403,429'
+            --exclude 'doi\.org/10\.1145/3767308\.3835969'
+            './**/*.md'
+          fail: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

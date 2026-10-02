@@ -130,7 +130,7 @@ python scripts/check_bbox_mapping.py --model Qwen/Qwen2.5-VL-7B-Instruct
 > come from our unofficial re-implementation, trained once with a single seed on our hardware and
 > software versions and evaluated with this repository's harness. They may differ from the official
 > results, including smaller or no gains over the baselines, and do not replace them; corrections
-> from the authors are welcome. See [About the results](../../README.md#about-the-results).
+> from the authors are welcome. See [About the results](../../README.md#-about-the-results).
 
 Paper Tables 1-3 (Qwen2.5-VL-7B backbone, accuracy %; MME-RealWorld-Lite is the Overall column of
 Table 2); text-only CoT from paper Table 9 (v3).

@@ -101,5 +101,5 @@ Results will be added after the runs finish.
 > our hardware and software versions, with a single seed per method. Differences of a point or less
 > between methods can come from training randomness alone. A method that does not beat GRPO here is
 > not shown to be ineffective: the original papers remain the reference for each method's
-> performance. See [About the results](../README.md#about-the-results); corrections from the
+> performance. See [About the results](../README.md#-about-the-results); corrections from the
 > authors are welcome.

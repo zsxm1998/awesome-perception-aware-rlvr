@@ -17,9 +17,7 @@ import asyncio
 import hashlib
 import re
 from collections.abc import Awaitable, Callable
-from typing import Any
-
-from vllm import SamplingParams
+from typing import TYPE_CHECKING, Any
 
 from verl.workers.agent.backends import (
     VLLMAgentBatchScheduler,
@@ -38,6 +36,10 @@ from verl.workers.agent.tool_call import NativeToolCallCodec
 
 from .backends import VLLMBackend, image_size_records, process_eval_image
 from .schemas import EvalSample, GenerationConfig, GenerationOutput
+
+
+if TYPE_CHECKING:
+    from vllm import SamplingParams
 
 
 AgentRunner = Callable[..., Awaitable[AgentTrajectory]]
@@ -171,6 +173,8 @@ class AgenticVLLMBackend:
             min_pixels=self.min_pixels,
             max_pixels=self.max_pixels,
         )
+        from vllm import SamplingParams
+
         sampling_params = SamplingParams(
             temperature=config.temperature,
             top_p=config.top_p,

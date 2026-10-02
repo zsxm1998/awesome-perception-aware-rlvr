@@ -81,7 +81,7 @@ command (e.g. `algorithm.disable_kl=true`) and set `N_GPUS_PER_NODE`, `MODEL_PAT
 > come from our unofficial re-implementation, trained once with a single seed on our hardware and
 > software versions and evaluated with this repository's harness. They may differ from the official
 > results, including smaller or no gains over the baselines, and do not replace them; corrections
-> from the authors are welcome. See [About the results](../../README.md#about-the-results).
+> from the authors are welcome. See [About the results](../../README.md#-about-the-results).
 
 Paper Table 1 (Qwen2.5-VL-7B trained on the 4.2K Geometry3K + MMK12 mix; greedy accuracy, %).
 

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib.util
 import math
 from types import SimpleNamespace
 
@@ -83,6 +84,11 @@ from verl.workers.actor import dp_actor as dp_actor_module
 from verl.workers.actor.config import ActorConfig
 from verl.workers.actor.dp_actor import DataParallelPPOActor
 from verl.workers.fsdp_workers import FSDPWorker
+
+
+requires_flash_attn = pytest.mark.skipif(
+    importlib.util.find_spec("flash_attn") is None, reason="exercises the flash-attn code path"
+)
 
 
 class _DummyTokenizer:
@@ -1298,6 +1304,7 @@ def test_regular_forward_keeps_effective_token_dynamic_batching():
     assert seen_batch_sizes == [6]
 
 
+@requires_flash_attn
 def test_padded_qwen_text_positions_use_masked_flash_path(monkeypatch):
     monkeypatch.setattr(
         flash_attention_module,
@@ -1723,6 +1730,7 @@ def test_cross_modal_value_mean_correction_is_sample_isolated():
     torch.testing.assert_close(original[0], changed[0], atol=0.0, rtol=0.0)
 
 
+@requires_flash_attn
 def test_model_level_visual_corruption_does_not_touch_noncausal_vision_attention(monkeypatch):
     monkeypatch.setattr(
         flash_attention_module,

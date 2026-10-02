@@ -1,7 +1,10 @@
 # CGPO — Counterfactual Grounding Policy Optimization
 
 **CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology
-Vision-Language Reasoning** (ACM MM 2026). **This directory is the official implementation.**
+Vision-Language Reasoning**<br>
+Shengxuming Zhang, Linyun Zhou, Hengrui Lou, Zhenyang Wang, Xiuming Zhang, Zunlei Feng<br>
+ACM MM 2026 (Proceedings of the 34th ACM International Conference on Multimedia, Rio de Janeiro,
+Brazil) · [Paper](https://doi.org/10.1145/3767308.3835969) · [BibTeX](#citation) · **This directory is the official implementation.**
 
 ## Method
 
@@ -89,7 +92,7 @@ Notes:
 > The paper's results were obtained with the original ms-swift implementation on pathology data. The
 > natural-image numbers of this repository come from the EasyR1 re-implementation, trained once with
 > a single seed and evaluated with this repository's harness, together with baselines run in the
-> same way. See [About the results](../../README.md#about-the-results).
+> same way. See [About the results](../../README.md#-about-the-results).
 
 Pathology results reported in the paper (PathMMU overall accuracy, %):
 
@@ -110,10 +113,17 @@ Natural-image reproduction in this repository (eval suite `cgpo`):
 ## Citation
 
 ```bibtex
-@inproceedings{cgpo2026,
+@inproceedings{zhang2026cgpo,
   title     = {{CGPO}: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning},
-  author    = {TODO},
-  booktitle = {Proceedings of the ACM International Conference on Multimedia (ACM MM)},
-  year      = {2026}
+  author    = {Zhang, Shengxuming and Zhou, Linyun and Lou, Hengrui and Wang, Zhenyang and Zhang, Xiuming and Feng, Zunlei},
+  booktitle = {Proceedings of the 34th ACM International Conference on Multimedia},
+  series    = {MM '26},
+  year      = {2026},
+  location  = {Rio de Janeiro, Brazil},
+  publisher = {ACM},
+  address   = {New York, NY, USA},
+  numpages  = {10},
+  doi       = {10.1145/3767308.3835969},
+  url       = {https://doi.org/10.1145/3767308.3835969}
 }
 ```

@@ -4,11 +4,16 @@
 
 **A curated list and a unified, reproducible codebase for perception-aware reinforcement learning with verifiable rewards (RLVR) for vision-language models.**
 
+🌟 **Official repository of [CGPO](#-cgpo-acm-mm-2026) (ACM MM 2026)** 🌟
+
 [English](README.md) | [简体中文](README_zh.md)
 
+[![Awesome](https://awesome.re/badge.svg)](https://github.com/sindresorhus/awesome)
+[![Papers](https://img.shields.io/badge/Papers-91-blue)](#-paper-list)
+[![Reproduced](https://img.shields.io/badge/Reproduced-11-brightgreen)](#-reproduced-methods)
+[![CGPO](https://img.shields.io/badge/CGPO-ACM%20MM%202026-8A2BE2)](https://doi.org/10.1145/3767308.3835969)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Built on EasyR1](https://img.shields.io/badge/built%20on-EasyR1-orange)](https://github.com/hiyouga/EasyR1)
-[![Awesome](https://awesome.re/badge.svg)](https://github.com/sindresorhus/awesome)
 
 </div>
 
@@ -21,17 +26,16 @@ reasons.
 
 This repository provides
 
-- **[Paper list](#paper-list)**: perception-aware policy optimization, grounded reasoning /
+- the **official implementation of [CGPO](#-cgpo-acm-mm-2026)** (ACM MM 2026);
+- **[Paper list](#-paper-list)**: perception-aware policy optimization, grounded reasoning /
   thinking with images, and the benchmarks used in this line of work;
-- **[Reproductions](#reproduced-methods)** of 10 methods (PAPO, VPPO, DVRP, ToR, PGPO, PEPO, CFPO,
+- **[Reproductions](#-reproduced-methods)** of 10 methods (PAPO, VPPO, DVRP, ToR, PGPO, PEPO, CFPO,
   VEPO, GRIT, DeepEyes) with each paper's own data, model and hyper-parameters, plus the GRPO/DAPO
   baselines they compare against;
 - **[A controlled comparison](comparison/README.md)** of all methods under one setting
   (Qwen3-VL-4B, the same data and the same hyper-parameters);
 - **[One-click evaluation](eval/README.md)** on the union of the benchmarks used by these papers,
-  with per-benchmark download scripts and per-paper suites;
-- the **official implementation of CGPO** ([reproduction/cgpo](reproduction/cgpo/README.md),
-  ACM MM 2026).
+  with per-benchmark download scripts and per-paper suites.
 
 All methods share one training framework (a fork of [EasyR1](https://github.com/hiyouga/EasyR1)),
 so they can be combined, compared and extended with a few configuration switches.
@@ -40,33 +44,64 @@ so they can be combined, compared and extended with a few configuration switches
 > Except for CGPO, the methods are **unofficial re-implementations**. Please refer to and cite the
 > original papers and repositories. Differences from the official recipes are documented in each
 > method's README. Our numbers come from single-seed runs of these re-implementations and may not
-> reproduce the gains reported in the papers; see [About the results](#about-the-results).
+> reproduce the gains reported in the papers; see [About the results](#-about-the-results).
 
-## Contents
+## 📖 Contents
 
-- [News](#news)
-- [Reproduced methods](#reproduced-methods)
-- [Quick start](#quick-start)
-- [Repository layout](#repository-layout)
-- [Controlled comparison](#controlled-comparison)
-- [Evaluation](#evaluation)
-- [Configuration](#configuration)
-- [Paper list](#paper-list)
-- [Contributing](#contributing)
-- [Citation](#citation)
-- [Acknowledgements](#acknowledgements)
+- [News](#-news)
+- [CGPO (ACM MM 2026)](#-cgpo-acm-mm-2026)
+- [Reproduced methods](#-reproduced-methods)
+- [Quick start](#-quick-start)
+- [Repository layout](#-repository-layout)
+- [Controlled comparison](#-controlled-comparison)
+- [Evaluation](#-evaluation)
+- [Configuration](#-configuration)
+- [Paper list](#-paper-list)
+- [Contributing](#-contributing)
+- [Citation](#-citation)
+- [Acknowledgements](#-acknowledgements)
 
-## News
+## 🔥 News
 
-- **2026-10**: First release: 10 reproduced methods + CGPO, a controlled comparison on
-  Qwen3-VL-4B, and one-click evaluation. Reproduction results are being collected with this
-  codebase and will be added to the tables below.
+- **2026-10**: 🎉 First release: the official implementation of [CGPO](#-cgpo-acm-mm-2026) (ACM MM
+  2026), 10 reproduced methods, a controlled comparison on Qwen3-VL-4B, and one-click evaluation.
+  Reproduction results are being collected with this codebase and will be added to the tables below.
 
-## Reproduced methods
+## 🌟 CGPO (ACM MM 2026)
+
+This repository is the official code release of
+
+> **CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning**<br>
+> Shengxuming Zhang, Linyun Zhou, Hengrui Lou, Zhenyang Wang, Xiuming Zhang, Zunlei Feng<br>
+> *Proceedings of the 34th ACM International Conference on Multimedia (MM '26)*, Rio de Janeiro, Brazil, 2026<br>
+> [[Paper]](https://doi.org/10.1145/3767308.3835969) · [[Code and scripts]](reproduction/cgpo/README.md) · [[BibTeX]](#-citation)
+
+CGPO teaches a vision-language model *evidence-sensitive reasoning*: key reasoning steps ground the
+visual evidence they rely on, and the conclusion should change when that evidence is removed. The
+policy grounds its evidence inline in the chain of thought; masking the grounded regions gives a
+counterfactual image, and the shift of the policy's output distribution between the original and
+the counterfactual image measures how much each token depends on the evidence. Responses that
+depend more on their evidence receive larger advantages on perception-critical tokens, and a
+grounding-consistency reward (the policy re-detects every grounded entity) keeps the evidence
+boxes from being inflated. Only answer-level supervision is needed.
+
+The paper trains pathology models with the original ms-swift implementation; its in-house
+pathology data cannot be released. This repository re-implements CGPO on the shared EasyR1 codebase
+and provides the RLVR stage on public natural-image data (ViRL39K) with the paper's backbones
+(Qwen2.5-VL-7B, Qwen3-VL-8B) and RL hyper-parameters; CGPO is also part of the
+[controlled comparison](comparison/README.md).
+
+```bash
+bash scripts/prepare_data.sh cgpo
+bash reproduction/cgpo/qwen3_vl_8b_cgpo.sh
+bash scripts/eval.sh checkpoints/CGPO-Reproduce/qwen3_vl_8b_cgpo --suite cgpo
+```
+
+## 🧪 Reproduced methods
 
 | Method | Paper | Venue | Official code | Scripts | Main setting |
 | --- | --- | --- | --- | --- | --- |
-| **CGPO** (ours) | [Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](reproduction/cgpo/README.md) | ACM MM 2026 | this repo | [reproduction/cgpo](reproduction/cgpo) | Qwen2.5-VL-7B / Qwen3-VL-8B, ViRL39K (natural-image reproduction) |
+| **CGPO** (ours) | [Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](https://doi.org/10.1145/3767308.3835969) | ACM MM 2026 | this repo | [reproduction/cgpo](reproduction/cgpo) | Qwen2.5-VL-7B / Qwen3-VL-8B, ViRL39K (natural-image reproduction) |
 | PAPO | [Perception-Aware Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2507.06448) | ICLR 2026 | [GitHub](https://github.com/MikeWangWZHL/PAPO) | [reproduction/papo](reproduction/papo) | Qwen2.5-VL-3B/7B, ViRL39K |
 | VPPO | [Spotlight on Token Perception for Multimodal Reinforcement Learning](https://arxiv.org/abs/2510.09285) | ICLR 2026 | [GitHub](https://github.com/huaixuheqing/VPPO-RL) | [reproduction/vppo](reproduction/vppo) | Qwen2.5-VL-7B / Qwen3-VL-8B, ViRL39K |
 | DVRP | [Thinking with Deltas: Incentivizing Reinforcement Learning via Differential Visual Reasoning Policy](https://arxiv.org/abs/2601.06801) | arXiv | - | [reproduction/dvrp](reproduction/dvrp) | Qwen2.5-VL-3B/7B, ViRL39K |
@@ -82,7 +117,7 @@ Every directory contains a README with the paper's setting, the scripts (method 
 the differences from the official recipe and the reported numbers. The upstream EasyR1 algorithms
 (GRPO, DAPO, GSPO, CISPO, SAPO, REINFORCE++, RLOO, ReMax) remain available.
 
-## Quick start
+## 🚀 Quick start
 
 **1. Install** (Linux, CUDA 12.8 drivers, conda):
 
@@ -127,7 +162,7 @@ bash scripts/eval.sh Qwen/Qwen2.5-VL-7B-Instruct --suite papo         # base mod
 The wrapper merges FSDP checkpoints into Hugging Face format, runs every benchmark of the suite
 with vLLM on all visible GPUs and writes a summary table. See [eval/README.md](eval/README.md).
 
-## Repository layout
+## 📁 Repository layout
 
 ```
 .
@@ -148,7 +183,7 @@ advantage scaling, auxiliary losses and extra rewards. See
 [docs/algorithm_parameters.md](docs/algorithm_parameters.md) for every switch and
 [docs/add_method.md](docs/add_method.md) for adding a new method.
 
-## Controlled comparison
+## 📊 Controlled comparison
 
 [`comparison/qwen3_vl_4b`](comparison/README.md) trains every method on Qwen3-VL-4B-Instruct with
 the same data (ViRL39K / MMK12), the same GRPO hyper-parameters and the same evaluation; only the
@@ -158,7 +193,7 @@ method-specific arguments differ. Results will be added here.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Avg. (comparison suite) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 
-### About the results
+### 📌 About the results
 
 The numbers produced with this repository (the table above, [comparison/README.md](comparison/README.md)
 and the "this repo" columns of every `reproduction/<method>` README) come with these caveats:
@@ -169,7 +204,7 @@ and the "this repo" columns of every `reproduction/<method>` README) come with t
   method's README.
 - **Different environment.** Hardware, software versions (PyTorch, vLLM, transformers, the RL
   framework), data preprocessing and the evaluation harness differ from those of the original
-  papers, and one evaluation protocol is used for all methods (see [Evaluation](#evaluation)).
+  papers, and one evaluation protocol is used for all methods (see [Evaluation](#-evaluation)).
 - **Single seed.** Each configuration is trained once. On these benchmarks RLVR results often move
   by a point or more between seeds, which is as large as many reported gains.
 - **Shared setting.** The controlled comparison uses one backbone, one dataset and one set of
@@ -182,7 +217,7 @@ The original papers remain the reference for each method's performance. Authors 
 discrepancy are very welcome to open an issue or a pull request, and we will correct the
 implementation or the numbers.
 
-## Evaluation
+## 📈 Evaluation
 
 The evaluation harness covers the union of the benchmarks used by the reproduced papers:
 math and multimodal reasoning (Geometry3K, MathVista, We-Math, MMK12, MathVerse, MathVerse-V,
@@ -199,7 +234,7 @@ and a registry entry; see the tutorial in [eval/README.md](eval/README.md#adding
 > repository evaluates every model with one harness, so compare methods against baselines run in
 > this repository rather than against numbers copied across papers.
 
-## Configuration
+## 🔧 Configuration
 
 Environment variables understood by every training script:
 
@@ -216,15 +251,15 @@ Any config key can be appended as `key=value` (see [examples/config.yaml](exampl
 and [verl/trainer/config.py](verl/trainer/config.py)). Set `USE_MODELSCOPE_HUB=1` to download models
 from ModelScope.
 
-## Paper list
+## 📚 Paper list
 
 Verified on 2026-10-01 against arXiv, OpenReview and the official repositories; venues are only listed when confirmed by a primary source (sources: [docs/paper_list_sources.md](docs/paper_list_sources.md), BibTeX: [docs/paper_list.bib](docs/paper_list.bib)). Newest first. Pull requests that add papers are welcome.
 
-### Reproduced in this repository
+### ✅ Reproduced in this repository
 
 Each method below can be trained with the scripts in `reproduction/<method>` (paper setting) and `comparison/` (shared setting). Except for CGPO these are unofficial re-implementations; see each README for the differences from the official code.
 
-- **CGPO** (ours) · [CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](reproduction/cgpo/README.md) · ACM MM 2026 · official code: this repository<br>
+- **CGPO** (ours) · [CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](https://doi.org/10.1145/3767308.3835969) · Shengxuming Zhang et al. · ACM MM 2026 · official code: this repository<br>
   The policy grounds its evidence inline in the chain of thought; the grounded regions are masked to form a counterfactual image, and the KL between the policy on the original and on the counterfactual image measures how much each token depends on that evidence. Responses that depend more on their evidence get larger advantages on perception-critical tokens, and a grounding-consistency reward (the policy re-detects every grounded entity) keeps the boxes from being inflated. Scripts cover the natural-image setting; the pathology setting of the paper is described in the README. Scripts and setting: [reproduction/cgpo](reproduction/cgpo/README.md).
 - **PAPO** · [Perception-Aware Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2507.06448) · Zhenhailong Wang et al. · ICLR 2026 · [code](https://github.com/MikeWangWZHL/PAPO)<br>
   Adds an *Implicit Perception Loss* to GRPO/DAPO that maximizes the KL between the policy on the original image and on a randomly patch-masked copy, so the outputs have to depend on the image. A *Double Entropy Loss* on both views keeps the policy from inflating this KL term in degenerate ways. Scripts and setting: [reproduction/papo](reproduction/papo/README.md).
@@ -247,9 +282,9 @@ Each method below can be trained with the scripts in `reproduction/<method>` (pa
 - **DeepEyes** · [DeepEyes: Incentivizing "Thinking with Images" via Reinforcement Learning](https://arxiv.org/abs/2505.14362) · Ziwei Zheng et al. · ICLR 2026 · [code](https://github.com/Visual-Agent/DeepEyes)<br>
   Multi-turn agentic RL with an image zoom-in tool: the model reasons, calls `image_zoom_in_tool` with a bounding box, receives the crop of the original image as a new observation and continues. GRPO optimizes the whole trajectory with an accuracy and format reward plus a tool bonus that is granted only to correct answers that used the tool. Supported here on Qwen2.5-VL (absolute pixel coordinates, as in the paper) and Qwen3-VL (0-1000 coordinates). Scripts and setting: [reproduction/deepeyes](reproduction/deepeyes/README.md).
 
-### Other papers
+### 📑 Other papers
 
-#### Perception-aware policy optimization
+#### 🎯 Perception-aware policy optimization
 
 | Date | Paper | Venue | Code | Key idea |
 |---|---|---|---|---|
@@ -285,7 +320,7 @@ Each method below can be trained with the scripts in `reproduction/<method>` (pa
 | 2025-05 | [Visionary-R1: Mitigating Shortcuts in Visual Reasoning with Reinforcement Learning](https://arxiv.org/abs/2505.14677)<br>Jiaer Xia et al. · `2505.14677` | TMLR | [GitHub](https://github.com/maifoundations/Visionary-R1) | **Visionary-R1**: Caption-reason-answer output format trained with pure RL to mitigate shortcut learning. |
 | 2025-04 | [NoisyRollout: Reinforcing Visual Reasoning with Data Augmentation](https://arxiv.org/abs/2504.13055)<br>Xiangyan Liu et al. · `2504.13055` | NeurIPS 2025 | [GitHub](https://github.com/real-absolute-AI/NoisyRollout) | **NoisyRollout**: Mixes rollouts from clean and moderately distorted images with noise annealing in GRPO; RL objective unchanged. |
 
-#### Grounded reasoning and thinking with images
+#### 🔍 Grounded reasoning and thinking with images
 
 | Date | Paper | Venue | Code | Key idea |
 |---|---|---|---|---|
@@ -322,7 +357,7 @@ Each method below can be trained with the scripts in `reproduction/<method>` (pa
 | 2025-04 | [VLM-R1: A Stable and Generalizable R1-style Large Vision-Language Model](https://arxiv.org/abs/2504.07615)<br>Haozhan Shen et al. · `2504.07615` | arXiv | [GitHub](https://github.com/om-ai-lab/VLM-R1) | **VLM-R1**: R1-style rule-based RL framework for VLMs on visual understanding tasks; better generalization than SFT. |
 | 2025-03 | [Visual-RFT: Visual Reinforcement Fine-Tuning](https://arxiv.org/abs/2503.01785)<br>Ziyu Liu et al. · `2503.01785` | ICCV 2025 | [GitHub](https://github.com/Liuziyu77/Visual-RFT) | **Visual-RFT**: GRPO with verifiable perception rewards (e.g., IoU) for detection, reasoning grounding and fine-grained classification. |
 
-#### Benchmarks and datasets
+#### 📏 Benchmarks and datasets
 
 | Date | Paper | Venue | Code | Key idea |
 |---|---|---|---|---|
@@ -344,12 +379,12 @@ Each method below can be trained with the scripts in `reproduction/<method>` (pa
 | 2023-05 | [Evaluating Object Hallucination in Large Vision-Language Models](https://arxiv.org/abs/2305.10355)<br>Yifan Li et al. · `2305.10355` | EMNLP 2023 | [GitHub](https://github.com/RUCAIBox/POPE) | **POPE**: Polling-based object probing evaluation for object hallucination in LVLMs. |
 | 2021-05 | [Inter-GPS: Interpretable Geometry Problem Solving with Formal Language and Symbolic Reasoning](https://arxiv.org/abs/2105.04165)<br>Pan Lu et al. · `2105.04165` | ACL 2021 | [GitHub](https://github.com/lupantech/InterGPS) | **Inter-GPS / Geometry3K**: Introduces Geometry3K (3,002 geometry problems with formal-language annotations) and the Inter-GPS solver. |
 
-## Contributing
+## 🤝 Contributing
 
 Contributions are welcome:
 
 - **Add a paper** to the list: open a pull request that adds a row (newest first) with the arXiv
-  link, venue and code link.
+  link, venue and code link to both READMEs, then run `python scripts/check_docs.py --fix`.
 - **Add a method**: follow [docs/add_method.md](docs/add_method.md) and add a
   `reproduction/<method>/` directory with a README and baseline scripts.
 - **Add a benchmark**: follow [eval/README.md](eval/README.md#adding-a-new-benchmark).
@@ -358,22 +393,29 @@ Contributions are welcome:
 
 Please run `make quality` and `make test` before submitting code.
 
-## Citation
+## 📝 Citation
 
 If you find this repository useful, please cite CGPO and the papers of the methods you use:
 
 ```bibtex
-@inproceedings{cgpo2026,
+@inproceedings{zhang2026cgpo,
   title     = {{CGPO}: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning},
-  author    = {TODO},
-  booktitle = {Proceedings of the ACM International Conference on Multimedia (ACM MM)},
-  year      = {2026}
+  author    = {Zhang, Shengxuming and Zhou, Linyun and Lou, Hengrui and Wang, Zhenyang and Zhang, Xiuming and Feng, Zunlei},
+  booktitle = {Proceedings of the 34th ACM International Conference on Multimedia},
+  series    = {MM '26},
+  year      = {2026},
+  location  = {Rio de Janeiro, Brazil},
+  publisher = {ACM},
+  address   = {New York, NY, USA},
+  numpages  = {10},
+  doi       = {10.1145/3767308.3835969},
+  url       = {https://doi.org/10.1145/3767308.3835969}
 }
 ```
 
 BibTeX entries of the reproduced methods are in their READMEs and in [docs/references.bib](docs/references.bib).
 
-## Acknowledgements
+## 🙏 Acknowledgements
 
 This repository is built on [EasyR1](https://github.com/hiyouga/EasyR1) and
 [veRL](https://github.com/volcengine/verl), and uses [vLLM](https://github.com/vllm-project/vllm)
@@ -381,7 +423,7 @@ for rollout and evaluation. We thank the authors of all reproduced methods for r
 papers, code and data; PAPO, VPPO, GRIT and DeepEyes in particular for their public datasets and
 evaluation sets.
 
-## License
+## 📄 License
 
 Apache-2.0, see [LICENSE](LICENSE). Datasets and models downloaded by the scripts are subject to
 their own licenses.
