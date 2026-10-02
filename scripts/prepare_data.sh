@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-click training data preparation. Examples:
-#   bash scripts/prepare_data.sh papo            # data needed by reproduction/papo
-#   bash scripts/prepare_data.sh comparison      # data needed by comparison/
+#   bash scripts/prepare_data.sh papo            # data needed by examples/reproduction/papo
+#   bash scripts/prepare_data.sh comparison      # data needed by examples/comparison/
 #   bash scripts/prepare_data.sh all             # everything
 #   bash scripts/prepare_data.sh --list          # show datasets and method groups
 # Set HF_ENDPOINT=https://hf-mirror.com if huggingface.co is slow or blocked.

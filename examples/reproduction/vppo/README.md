@@ -31,7 +31,7 @@ most visually dependent tokens of each response receive policy gradients, and (2
 | TGF | `algorithm.top_perception_quantile=0.4`, `algorithm.perception_thr_granularity=response` |
 | TAS | `algorithm.response_advantage_scaling_method=vppo`, `algorithm.vppo_response_scaling_min=0.9` (β_min; β_max is dynamic) |
 
-See [docs/algorithm_parameters.md](../../docs/algorithm_parameters.md) for the full list of `algorithm.*` switches.
+See [docs/algorithm_parameters.md](../../../docs/algorithm_parameters.md) for the full list of `algorithm.*` switches.
 
 ## Scripts
 
@@ -44,7 +44,7 @@ See [docs/algorithm_parameters.md](../../docs/algorithm_parameters.md) for the f
 
 ```bash
 bash scripts/prepare_data.sh vppo
-bash reproduction/vppo/qwen2_5_vl_7b_dapo_vppo.sh
+bash examples/reproduction/vppo/qwen2_5_vl_7b_dapo_vppo.sh
 bash scripts/prepare_eval_data.sh vppo
 bash scripts/eval.sh checkpoints/VPPO-Reproduce/qwen2_5_vl_7b_dapo_vppo --suite vppo
 ```
@@ -53,7 +53,7 @@ Checkpoints go to `checkpoints/VPPO-Reproduce/<script name>`. Append `key=value`
 command (e.g. `trainer.total_epochs=1`) and set `N_GPUS_PER_NODE`, `MODEL_PATH`, `DATA_ROOT`,
 `LOGGER` or `EXPERIMENT_NAME` in the environment (e.g. `N_GPUS_PER_NODE=4 bash ...`). The
 Qwen3-VL-8B runs are trained with 8,192-token responses while the suite default is 2,048 new
-tokens; use `--max-new-tokens` to change it (see [eval/README.md](../../eval/README.md)).
+tokens; use `--max-new-tokens` to change it (see [eval/README.md](../../../eval/README.md)).
 
 ## Differences from the paper / official code
 
@@ -75,7 +75,7 @@ tokens; use `--max-new-tokens` to change it (see [eval/README.md](../../eval/REA
 > come from our unofficial re-implementation, trained once with a single seed on our hardware and
 > software versions and evaluated with this repository's harness. They may differ from the official
 > results, including smaller or no gains over the baselines, and do not replace them; corrections
-> from the authors are welcome. See [About the results](../../README.md#-about-the-results).
+> from the authors are welcome. See [About the results](../../../README.md#-about-the-results).
 
 Paper Table 1 (avg@8 accuracy, %). The Qwen3-VL-8B row comes from the official README figure
 (not in the paper; no 8B baseline is given).

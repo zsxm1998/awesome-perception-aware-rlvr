@@ -1,6 +1,6 @@
 # Controlled comparison on Qwen3-VL-4B-Instruct
 
-The perception-aware RLVR papers reproduced in [reproduction/](../reproduction/) use different
+The perception-aware RLVR papers reproduced in [examples/reproduction/](../reproduction/) use different
 backbones, training sets, baseline definitions and evaluation protocols, and several of them reuse
 baseline numbers from other papers. Their reported gains are therefore hard to compare with each
 other. This directory trains every method under **one** recipe: same model, same data, same GRPO
@@ -9,7 +9,7 @@ define the method; everything else comes from [qwen3_vl_4b/common.sh](qwen3_vl_4
 
 ## Shared setting
 
-| | `comparison/qwen3_vl_4b/common.sh` |
+| | `examples/comparison/qwen3_vl_4b/common.sh` |
 | --- | --- |
 | Model | Qwen3-VL-4B-Instruct |
 | Training data | ViRL39K as processed by PAPO (`PAPOGalaxy/PAPO_ViRL39K_train`, 38,870) |
@@ -29,7 +29,7 @@ perturbs the image, the perturbation is harmonized to blackening 16-px patches (
 size) with probability 0.6, one mask per prompt (`algorithm.corrupt_image=random_patch`,
 `corrupt_image_kwargs={"patch_size":16,"black_prob":0.6}`, `corrupt_image_position=prompt`); the
 "Auxiliary view" column says where this replaces the paper's own perturbation. Parameter names are listed in
-[docs/algorithm_parameters.md](../docs/algorithm_parameters.md).
+[docs/algorithm_parameters.md](../../docs/algorithm_parameters.md).
 
 | Script | Method | Auxiliary view | `ALGO_ARGS` (abridged) |
 | --- | --- | --- | --- |
@@ -43,32 +43,32 @@ size) with probability 0.6, one mask per prompt (`algorithm.corrupt_image=random
 | `cfpo.sh` | [CFPO](../reproduction/cfpo/README.md) | in-model attention-value counterfactual (paper: the same) | `corrupt_image=cross_modal_attention_value_mean` (λ=2), `visual_sensitivity_loss_coef=0.02`, `visual_sensitivity_reference=current` |
 | `vepo.sh` | [VEPO](../reproduction/vepo/README.md) | random patch (paper: Gaussian noise) | `visual_sensitivity_metric=vepo`, `visual_sensitivity_jsd_weight=0.7`, `visual_sensitivity_entropy_gate=normal_entropy`, `top_perception_quantile=0.2` per response, `normalize_pg_loss_by_selected_tokens=true` |
 | `grit.sh` | [GRIT](../reproduction/grit/README.md) | – | think / rethink / answer format with inline JSON evidence boxes (`examples/system_prompt/grit_GR.txt`, no format prompt) and `grit.py:compute_score` (format, box format, rule-based answer, 0.1·BLEU-1); trained on ViRL39K instead of GRIT's 20 samples |
-| `cgpo.sh` | CGPO ([reproduction/cgpo](../reproduction/cgpo/README.md)) | evidence regions flattened to their local mean (`cgpo_flat`, one per response) | `<region>` evidence format (`xml_grounded_reasoning.jinja` and reward, format weight 0.1); `top_entropy_quantile=0.3`, `top_perception_quantile=0.3` (batch), `include_region_tokens_in_perception_mask=true`; `advantage_scaling_method=cgpo`, `cgpo_response_scaling_coef=0.1`; grounding-consistency reward weight 0.1; `visual_sensitivity_reference=old` |
+| `cgpo.sh` | CGPO ([examples/reproduction/cgpo](../reproduction/cgpo/README.md)) | evidence regions flattened to their local mean (`cgpo_flat`, one per response) | `<region>` evidence format (`xml_grounded_reasoning.jinja` and reward, format weight 0.1); `top_entropy_quantile=0.3`, `top_perception_quantile=0.3` (batch), `include_region_tokens_in_perception_mask=true`; `advantage_scaling_method=cgpo`, `cgpo_response_scaling_coef=0.1`; grounding-consistency reward weight 0.1; `visual_sensitivity_reference=old` |
 
 Because the recipe is shared, method-specific settings that the papers tune together with their
 base algorithm (DAPO dynamic sampling and clip-higher, VPPO's entropy penalty, PAPO's and DVRP's
 view-entropy terms, VEPO's frozen vision tower) are not used here. The per-paper settings are in
-[reproduction/](../reproduction/).
+[examples/reproduction/](../reproduction/).
 
 ## Running
 
 ```bash
 bash scripts/prepare_data.sh comparison
-bash comparison/qwen3_vl_4b/papo.sh                      # one method
+bash examples/comparison/qwen3_vl_4b/papo.sh                      # one method
 for m in grpo papo vppo tor dvrp pgpo pepo cfpo vepo grit cgpo; do
-    bash comparison/qwen3_vl_4b/$m.sh                    # all methods, one after another
+    bash examples/comparison/qwen3_vl_4b/$m.sh                    # all methods, one after another
 done
 bash scripts/prepare_eval_data.sh comparison
 bash scripts/eval.sh checkpoints/Comparison-Qwen3-VL-4B/papo --suite comparison
 ```
 
 Checkpoints go to `checkpoints/Comparison-Qwen3-VL-4B/<method>`. Any `key=value` appended to a
-script overrides the shared setting (e.g. `bash comparison/qwen3_vl_4b/papo.sh trainer.total_epochs=1`);
+script overrides the shared setting (e.g. `bash examples/comparison/qwen3_vl_4b/papo.sh trainer.total_epochs=1`);
 `N_GPUS_PER_NODE`, `MODEL_PATH`, `DATA_ROOT`, `LOGGER` and `EXPERIMENT_NAME` are read from the
 environment. `grit` and `cgpo` answer in their own formats, so evaluate them with the matching
 prompt: `--format-prompt none --system-prompt examples/system_prompt/grit_GR.txt` for `grit`,
 `--format-prompt examples/format_prompt/xml_grounded_reasoning.jinja` for `cgpo`. See
-[eval/README.md](../eval/README.md).
+[eval/README.md](../../eval/README.md).
 
 ## Results
 
@@ -101,5 +101,5 @@ Results will be added after the runs finish.
 > our hardware and software versions, with a single seed per method. Differences of a point or less
 > between methods can come from training randomness alone. A method that does not beat GRPO here is
 > not shown to be ineffective: the original papers remain the reference for each method's
-> performance. See [About the results](../README.md#-about-the-results); corrections from the
+> performance. See [About the results](../../README.md#-about-the-results); corrections from the
 > authors are welcome.

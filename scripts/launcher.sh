@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared launcher for every training script under reproduction/ and comparison/.
+# Shared launcher for every training script under examples/reproduction/ and examples/comparison/.
 #
 # A leaf script sets EXPERIMENT_NAME and ALGO_ARGS, its method-level common.sh
 # sets MODEL_PATH and METHOD_COMMON_ARGS, then calls `launch_training "$@"`.

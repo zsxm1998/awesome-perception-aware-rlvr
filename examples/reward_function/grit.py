@@ -140,7 +140,7 @@ def compute_score(reward_inputs: list[dict[str, Any]]) -> list[dict[str, float]]
 
 
 # ---------------------------------------------------------------------------
-# Official-recipe reward used by reproduction/grit.
+# Official-recipe reward used by examples/reproduction/grit.
 #
 # Mirrors the reward set of the released GRIT code (grpo-gr/rewards.py, "think_rethink"
 # setting), all terms summed with weight 1:

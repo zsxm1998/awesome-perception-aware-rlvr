@@ -11,7 +11,7 @@
 # coordinates of the resized image it sees (QWEN25_VL_ARGS); qwen3_vl_8b_* use Qwen3-VL-8B-Instruct
 # with its native 0-1000 coordinates and tool-call chat template.
 #
-# Differences from the official release (see reproduction/deepeyes/README.md):
+# Differences from the official release (see examples/reproduction/deepeyes/README.md):
 #   * answer judging: set DEEPEYES_JUDGE_BASE_URL / DEEPEYES_JUDGE_MODEL to an OpenAI-compatible
 #     judge (the paper uses Qwen2.5-72B-Instruct served by vLLM); without it a rule-based
 #     matcher is used;

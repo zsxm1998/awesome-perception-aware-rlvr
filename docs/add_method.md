@@ -37,14 +37,14 @@ All switches are fields of `AlgorithmConfig` in `verl/trainer/config.py`; see
 4. **Tests.** Add unit tests to `tests/test_perception_reasoning.py` that run the loss on tiny
    synthetic tensors (see the existing PGPO/PEPO tests) and, for transforms, on a small PIL
    image.
-5. **Launchers.** Create `reproduction/<method>/common.sh` with the paper's data, model and
+5. **Launchers.** Create `examples/reproduction/<method>/common.sh` with the paper's data, model and
    hyper-parameters (copy the closest existing method), a GRPO/DAPO baseline leaf and the method
    leaf. If the method should also take part in the controlled comparison, add
-   `comparison/qwen3_vl_4b/<method>.sh` that only sets `ALGO_ARGS`.
+   `examples/comparison/qwen3_vl_4b/<method>.sh` that only sets `ALGO_ARGS`.
 6. **Data and evaluation.** If the paper uses new training data, register it in
    `scripts/data/prepare_train_data.py`; if it uses new benchmarks, follow
    [eval/README.md](../eval/README.md#adding-a-new-benchmark) and add a suite for the paper.
-7. **Docs.** Add `reproduction/<method>/README.md` (paper, official code, setting, differences
+7. **Docs.** Add `examples/reproduction/<method>/README.md` (paper, official code, setting, differences
    from the official implementation, expected numbers) and a row to the method table in the
    top-level README.
 
@@ -69,4 +69,4 @@ launch_mymethod "$@"
 Arguments are appended in the order `METHOD_COMMON_ARGS`, `ALGO_ARGS`, `EXTRA_ARGS`, runtime
 arguments (`LOGGER`, `NNODES`, `N_GPUS_PER_NODE`) and finally the command line, so later
 values win. Any config key can be overridden from the command line, e.g.
-`bash reproduction/papo/qwen2_5_vl_7b_grpo_papo.sh trainer.total_epochs=1`.
+`bash examples/reproduction/papo/qwen2_5_vl_7b_grpo_papo.sh trainer.total_epochs=1`.

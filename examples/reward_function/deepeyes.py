@@ -115,7 +115,7 @@ def compute_score(
 
 
 # ---------------------------------------------------------------------------
-# Official-recipe reward used by reproduction/deepeyes (DeepEyes-Datasets-47k).
+# Official-recipe reward used by examples/reproduction/deepeyes (DeepEyes-Datasets-47k).
 #
 # Released DeepEyes code (verl/utils/reward_score/vl_agent.py) routes by data source:
 #   vstar / chart:     0.8 * acc + 0.2 * format(0 / -1) + 1.2 * tool   (tool only if correct)

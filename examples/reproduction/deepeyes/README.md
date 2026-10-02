@@ -43,7 +43,7 @@ DeepEyes changes the rollout mode and the reward; no `algorithm.*` switch is use
 ```bash
 bash scripts/prepare_data.sh deepeyes
 DEEPEYES_JUDGE_BASE_URL=http://<judge-host>:8000/v1 DEEPEYES_JUDGE_MODEL=judge \
-    bash reproduction/deepeyes/qwen2_5_vl_7b_grpo_deepeyes.sh
+    bash examples/reproduction/deepeyes/qwen2_5_vl_7b_grpo_deepeyes.sh
 bash scripts/prepare_eval_data.sh deepeyes
 bash scripts/eval.sh checkpoints/DeepEyes-Reproduce/qwen2_5_vl_7b_grpo_deepeyes --suite deepeyes
 ```
@@ -52,7 +52,7 @@ The `deepeyes` suite runs the agent loop by default. For the text-only baseline,
 `--interaction-mode one_shot --system-prompt examples/system_prompt/deepeyes_text_only.txt`.
 Checkpoints go to `checkpoints/DeepEyes-Reproduce/<script name>`. Append `key=value` overrides to
 the training command and set `N_GPUS_PER_NODE`, `NNODES`, `MODEL_PATH`, `DATA_ROOT`, `LOGGER` or
-`EXPERIMENT_NAME` in the environment. Evaluation is described in [eval/README.md](../../eval/README.md).
+`EXPERIMENT_NAME` in the environment. Evaluation is described in [eval/README.md](../../../eval/README.md).
 
 ## Coordinates
 
@@ -130,7 +130,7 @@ python scripts/check_bbox_mapping.py --model Qwen/Qwen2.5-VL-7B-Instruct
 > come from our unofficial re-implementation, trained once with a single seed on our hardware and
 > software versions and evaluated with this repository's harness. They may differ from the official
 > results, including smaller or no gains over the baselines, and do not replace them; corrections
-> from the authors are welcome. See [About the results](../../README.md#-about-the-results).
+> from the authors are welcome. See [About the results](../../../README.md#-about-the-results).
 
 Paper Tables 1-3 (Qwen2.5-VL-7B backbone, accuracy %; MME-RealWorld-Lite is the Overall column of
 Table 2); text-only CoT from paper Table 9 (v3).

@@ -119,7 +119,7 @@ suites:
       format_prompt: examples/format_prompt/xml_grounded_reasoning.jinja
 
   comparison:
-    description: Union used by comparison/ (PAPO + VPPO reasoning sets, POPE, HallusionBench)
+    description: Union used by examples/comparison/ (PAPO + VPPO reasoning sets, POPE, HallusionBench)
     include: [papo, vppo]
     benchmarks: [pope, hallusionbench]
 

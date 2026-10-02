@@ -12,5 +12,5 @@ evaluation harness under eval/.
 
 The methods reproduced here (PAPO, VPPO, DVRP, ToR, PGPO, PEPO, CFPO, VEPO, GRIT, DeepEyes) are
 independent re-implementations based on the respective papers and, where available, their public
-code; see each reproduction/<method>/README.md for references. Datasets and model weights
+code; see each examples/reproduction/<method>/README.md for references. Datasets and model weights
 downloaded by the scripts are distributed by their owners under their own licenses.

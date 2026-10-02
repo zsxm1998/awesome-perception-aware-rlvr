@@ -30,7 +30,7 @@ their sum equal to the response length, and multiply the DAPO advantage token by
 | Visual dependency | `algorithm.visual_sensitivity_metric=sampled_low_var_kl`, `algorithm.visual_sensitivity_reference=old` |
 | Token scaling | `algorithm.advantage_scaling_method=pgpo`, `algorithm.pgpo_token_scaling_threshold=0.4` (τ), `algorithm.pgpo_token_scaling_boost=2.0` (β) |
 
-See [docs/algorithm_parameters.md](../../docs/algorithm_parameters.md) for the full list of `algorithm.*` switches.
+See [docs/algorithm_parameters.md](../../../docs/algorithm_parameters.md) for the full list of `algorithm.*` switches.
 
 ## Scripts
 
@@ -43,7 +43,7 @@ See [docs/algorithm_parameters.md](../../docs/algorithm_parameters.md) for the f
 
 ```bash
 bash scripts/prepare_data.sh pgpo
-bash reproduction/pgpo/qwen2_5_vl_7b_dapo_pgpo.sh
+bash examples/reproduction/pgpo/qwen2_5_vl_7b_dapo_pgpo.sh
 bash scripts/prepare_eval_data.sh pgpo
 bash scripts/eval.sh checkpoints/PGPO-Reproduce/qwen2_5_vl_7b_dapo_pgpo --suite pgpo
 ```
@@ -51,7 +51,7 @@ bash scripts/eval.sh checkpoints/PGPO-Reproduce/qwen2_5_vl_7b_dapo_pgpo --suite 
 Checkpoints go to `checkpoints/PGPO-Reproduce/<script name>`. Append `key=value` overrides to the
 command (e.g. `trainer.total_epochs=1`) and set `N_GPUS_PER_NODE`, `MODEL_PATH`, `DATA_ROOT`,
 `LOGGER` or `EXPERIMENT_NAME` in the environment (e.g. `N_GPUS_PER_NODE=8 bash ...`). Evaluation is
-described in [eval/README.md](../../eval/README.md).
+described in [eval/README.md](../../../eval/README.md).
 
 ## Differences from the paper
 
@@ -75,7 +75,7 @@ described in [eval/README.md](../../eval/README.md).
 > come from our unofficial re-implementation, trained once with a single seed on our hardware and
 > software versions and evaluated with this repository's harness. They may differ from the official
 > results, including smaller or no gains over the baselines, and do not replace them; corrections
-> from the authors are welcome. See [About the results](../../README.md#-about-the-results).
+> from the authors are welcome. See [About the results](../../../README.md#-about-the-results).
 
 Paper Table 1 (avg@8 accuracy, %). The paper reports its 7B DAPO baseline from the best
 pre-collapse checkpoint (step 190 of 202).

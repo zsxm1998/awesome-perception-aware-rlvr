@@ -31,7 +31,7 @@ or DAPO (CFPO_D, which also adds an entropy term).
 | KL_cf | `algorithm.visual_sensitivity_metric=sampled_low_var_kl`, `algorithm.visual_sensitivity_reference=current`, `algorithm.visual_sensitivity_loss_coef` γ = 0.02 (CFPO_G) / 0.01 (CFPO_D) |
 | Entropy (CFPO_D) | `algorithm.invariant_entropy_coef=0.03`, `algorithm.entropy_loss_type=sampled` |
 
-See [docs/algorithm_parameters.md](../../docs/algorithm_parameters.md) for the full list of `algorithm.*` switches.
+See [docs/algorithm_parameters.md](../../../docs/algorithm_parameters.md) for the full list of `algorithm.*` switches.
 
 ## Scripts
 
@@ -44,7 +44,7 @@ See [docs/algorithm_parameters.md](../../docs/algorithm_parameters.md) for the f
 
 ```bash
 bash scripts/prepare_data.sh cfpo
-bash reproduction/cfpo/qwen2_5_vl_3b_cfpo_g.sh
+bash examples/reproduction/cfpo/qwen2_5_vl_3b_cfpo_g.sh
 bash scripts/prepare_eval_data.sh cfpo
 bash scripts/eval.sh checkpoints/CFPO-Reproduce/qwen2_5_vl_3b_cfpo_g --suite cfpo
 ```
@@ -52,7 +52,7 @@ bash scripts/eval.sh checkpoints/CFPO-Reproduce/qwen2_5_vl_3b_cfpo_g --suite cfp
 Checkpoints go to `checkpoints/CFPO-Reproduce/<script name>`. Append `key=value` overrides to the
 command (e.g. `trainer.total_epochs=1`) and set `N_GPUS_PER_NODE`, `MODEL_PATH`, `DATA_ROOT`,
 `LOGGER` or `EXPERIMENT_NAME` in the environment (e.g. `N_GPUS_PER_NODE=4 bash ...`). Evaluation is
-described in [eval/README.md](../../eval/README.md).
+described in [eval/README.md](../../../eval/README.md).
 
 ## Differences from the paper / official code
 
@@ -77,7 +77,7 @@ described in [eval/README.md](../../eval/README.md).
 > come from our unofficial re-implementation, trained once with a single seed on our hardware and
 > software versions and evaluated with this repository's harness. They may differ from the official
 > results, including smaller or no gains over the baselines, and do not replace them; corrections
-> from the authors are welcome. See [About the results](../../README.md#-about-the-results).
+> from the authors are welcome. See [About the results](../../../README.md#-about-the-results).
 
 Paper Table 1 (Qwen2.5-VL-3B trained on ViRL39K, avg@8 accuracy, %); Overall is the mean of the ten
 benchmarks.

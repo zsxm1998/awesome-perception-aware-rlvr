@@ -30,7 +30,7 @@ from 0 to 1 over training. Variants: PEPO_G (on GRPO) and PEPO_D (on DAPO).
 | Perception prior | `algorithm.visual_sensitivity_metric=hidden_state_similarity`, `algorithm.visual_sensitivity_hidden_metric=cosine`, `algorithm.visual_token` (`auto`, `<|image_pad|>` for Qwen, `<IMG_CONTEXT>` for InternVL) |
 | Token weighting | `algorithm.advantage_scaling_method=pepo`, `algorithm.advantage_scaling_schedule=linear` (λ: 0 → 1), `algorithm.pepo_gate_alpha=0.05` (α), `algorithm.pepo_gate_temperature=1.8` |
 
-See [docs/algorithm_parameters.md](../../docs/algorithm_parameters.md) for the full list of `algorithm.*` switches.
+See [docs/algorithm_parameters.md](../../../docs/algorithm_parameters.md) for the full list of `algorithm.*` switches.
 
 ## Scripts
 
@@ -46,7 +46,7 @@ See [docs/algorithm_parameters.md](../../docs/algorithm_parameters.md) for the f
 
 ```bash
 bash scripts/prepare_data.sh pepo
-bash reproduction/pepo/qwen2_5_vl_3b_pepo.sh
+bash examples/reproduction/pepo/qwen2_5_vl_3b_pepo.sh
 bash scripts/prepare_eval_data.sh pepo_geometry
 bash scripts/eval.sh checkpoints/PEPO-Reproduce/qwen2_5_vl_3b_pepo --suite pepo_geometry
 ```
@@ -55,7 +55,7 @@ The `pepo_geometry` suite evaluates Geometry3K-trained models with the same `<an
 were trained with; the `pepo` suite holds the benchmarks of the paper's ViRL39K scaling table.
 Checkpoints go to `checkpoints/PEPO-Reproduce/<script name>`. Append `key=value` overrides to the
 command and set `N_GPUS_PER_NODE`, `MODEL_PATH`, `DATA_ROOT`, `LOGGER` or `EXPERIMENT_NAME` in the
-environment. Evaluation is described in [eval/README.md](../../eval/README.md).
+environment. Evaluation is described in [eval/README.md](../../../eval/README.md).
 
 ## Differences from the paper / official code
 
@@ -80,7 +80,7 @@ environment. Evaluation is described in [eval/README.md](../../eval/README.md).
 > come from our unofficial re-implementation, trained once with a single seed on our hardware and
 > software versions and evaluated with this repository's harness. They may differ from the official
 > results, including smaller or no gains over the baselines, and do not replace them; corrections
-> from the authors are welcome. See [About the results](../../README.md#-about-the-results).
+> from the authors are welcome. See [About the results](../../../README.md#-about-the-results).
 
 Paper Table 1 (Qwen2.5-VL-3B trained on Geometry3K, avg@8 accuracy, %). The paper average also
 includes Geometry3K val; InternVL3-2B rows give the paper average only.

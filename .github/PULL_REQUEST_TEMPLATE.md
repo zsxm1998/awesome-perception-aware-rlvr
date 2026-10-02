@@ -5,7 +5,7 @@
 ## Type of change
 
 - [ ] Add or update a paper in the list
-- [ ] Add a method (`reproduction/<method>/`)
+- [ ] Add a method (`examples/reproduction/<method>/`)
 - [ ] Add a benchmark to the evaluation harness
 - [ ] Report reproduction results
 - [ ] Bug fix

@@ -9,7 +9,7 @@ reproduction results, bug reports and documentation fixes.
   link, first author, venue only if it is confirmed by the arXiv comments, OpenReview or the
   official repository, code link and a one-line key idea.
 - **Add a method.** Follow [docs/add_method.md](../docs/add_method.md). A new method needs config
-  fields with validation, unit tests, a `reproduction/<method>/` directory with baseline and method
+  fields with validation, unit tests, a `examples/reproduction/<method>/` directory with baseline and method
   scripts, and a README that states the differences from the official recipe.
 - **Add a benchmark.** Follow the tutorial in [eval/README.md](../eval/README.md#adding-a-new-benchmark).
 - **Report results.** Open an issue with the exact command, the commit, the training logs
@@ -26,7 +26,7 @@ reproduction results, bug reports and documentation fixes.
    make license   # Apache license headers
    make test      # unit tests (CPU)
    python scripts/check_docs.py --fix                 # paper list, badges and Markdown anchors
-   DRY_RUN=1 bash reproduction/<method>/<script>.sh   # validates a launcher without GPUs
+   DRY_RUN=1 bash examples/reproduction/<method>/<script>.sh   # validates a launcher without GPUs
    ```
 
 4. Open a pull request and fill in the template. GitHub Actions runs the lint, license, docs and

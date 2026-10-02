@@ -102,7 +102,7 @@ also set prompt defaults (see [Prompts](#prompts)); explicit flags always win.
 | `grit` | grit_vsr, grit_tallyqa, grit_gqa, ovdeval_position | GRIT Table 1 (GRIT judges answers with GPT-4o, we use relaxed exact match); default prompt: `grit_GR.txt` |
 | `deepeyes` | vstar, hrbench_4k, hrbench_8k, mme_realworld_lite, pope | DeepEyes Tables 1-3; default: agentic DeepEyes inference (see [Agentic evaluation](#agentic-evaluation-deepeyes)) |
 | `cgpo` | = `papo` | CGPO natural-image reproduction (trained on ViRL39K); default prompt `xml_grounded_reasoning.jinja` |
-| `comparison` | `papo` + `vppo` + pope, hallusionbench | the benchmark set used by `comparison/` |
+| `comparison` | `papo` + `vppo` + pope, hallusionbench | the benchmark set used by `examples/comparison/` |
 | `perception` | pope, hallusionbench, mme, gqa, mm_vet | general perception / hallucination |
 | `refcoco` | refcoco_val, refcoco_plus_val, refcocog_val | optional (COCO images) |
 | `all` | every non-optional benchmark | |

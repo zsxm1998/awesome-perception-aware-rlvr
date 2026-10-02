@@ -70,12 +70,12 @@ policy-optimization algorithm differs.
 
 ```bash
 bash scripts/prepare_data.sh cgpo
-bash reproduction/cgpo/qwen3_vl_8b_cgpo.sh
+bash examples/reproduction/cgpo/qwen3_vl_8b_cgpo.sh
 bash scripts/eval.sh checkpoints/CGPO-Reproduce/qwen3_vl_8b_cgpo --suite cgpo
 ```
 
 CGPO is also part of the controlled comparison on Qwen3-VL-4B
-([comparison/](../../comparison/README.md)), where it shares every hyper-parameter with the other
+([examples/comparison/](../../comparison/README.md)), where it shares every hyper-parameter with the other
 methods (GCR weight 0.1 there).
 
 Notes:
@@ -92,7 +92,7 @@ Notes:
 > The paper's results were obtained with the original ms-swift implementation on pathology data. The
 > natural-image numbers of this repository come from the EasyR1 re-implementation, trained once with
 > a single seed and evaluated with this repository's harness, together with baselines run in the
-> same way. See [About the results](../../README.md#-about-the-results).
+> same way. See [About the results](../../../README.md#-about-the-results).
 
 Pathology results reported in the paper (PathMMU overall accuracy, %):
 

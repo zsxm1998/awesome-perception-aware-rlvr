@@ -29,7 +29,7 @@ weight 0 and are excluded from optimization. Variants: ToR-GRPO and ToR-DAPO.
 | Perception set T_p | `algorithm.top_perception_quantile=0.3`, `algorithm.perception_thr_granularity=batch` |
 | Token weights | `algorithm.tor_use_token_weighting=true`, `algorithm.tor_rsn_weight=1.0` (γ_r), `algorithm.tor_prcp_weight=0.5` (γ_p) |
 
-See [docs/algorithm_parameters.md](../../docs/algorithm_parameters.md) for the full list of `algorithm.*` switches.
+See [docs/algorithm_parameters.md](../../../docs/algorithm_parameters.md) for the full list of `algorithm.*` switches.
 
 ## Scripts
 
@@ -42,7 +42,7 @@ See [docs/algorithm_parameters.md](../../docs/algorithm_parameters.md) for the f
 
 ```bash
 bash scripts/prepare_data.sh tor
-bash reproduction/tor/qwen2_5_vl_7b_grpo_tor.sh
+bash examples/reproduction/tor/qwen2_5_vl_7b_grpo_tor.sh
 bash scripts/prepare_eval_data.sh tor
 bash scripts/eval.sh checkpoints/ToR-Reproduce/qwen2_5_vl_7b_grpo_tor --suite tor
 ```
@@ -50,7 +50,7 @@ bash scripts/eval.sh checkpoints/ToR-Reproduce/qwen2_5_vl_7b_grpo_tor --suite to
 Checkpoints go to `checkpoints/ToR-Reproduce/<script name>`. Append `key=value` overrides to the
 command (e.g. `data.val_files=data/geometry3k/validation.parquet` to validate on the 300-item
 validation split) and set `N_GPUS_PER_NODE`, `MODEL_PATH`, `DATA_ROOT`, `LOGGER` or
-`EXPERIMENT_NAME` in the environment. Evaluation is described in [eval/README.md](../../eval/README.md).
+`EXPERIMENT_NAME` in the environment. Evaluation is described in [eval/README.md](../../../eval/README.md).
 
 ## Differences from the paper
 
@@ -78,7 +78,7 @@ validation split) and set `N_GPUS_PER_NODE`, `MODEL_PATH`, `DATA_ROOT`, `LOGGER`
 > come from our unofficial re-implementation, trained once with a single seed on our hardware and
 > software versions and evaluated with this repository's harness. They may differ from the official
 > results, including smaller or no gains over the baselines, and do not replace them; corrections
-> from the authors are welcome. See [About the results](../../README.md#-about-the-results).
+> from the authors are welcome. See [About the results](../../../README.md#-about-the-results).
 
 Paper Table 4, Qwen2.5-VL-7B trained on Geometry3K (2.1K). The paper reports no average; the Avg
 column is the mean of the five benchmarks. The paper's GRPO row is identical to NoisyRollout's

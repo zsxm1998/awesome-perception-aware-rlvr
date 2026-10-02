@@ -40,7 +40,7 @@ jobs:
 
       - name: Shell syntax
         run: |
-          for f in scripts/*.sh reproduction/*/*.sh comparison/*/*.sh; do bash -n "$f"; done
+          for f in scripts/*.sh examples/reproduction/*/*.sh examples/comparison/*/*.sh; do bash -n "$f"; done
 
       - name: Paper list, badges and Markdown anchors
         run: python scripts/check_docs.py

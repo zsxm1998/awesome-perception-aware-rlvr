@@ -30,7 +30,7 @@ image-question-answer triplets without box or reasoning annotations.
 | GPUs | 8 |
 
 GRIT changes only the output format and the reward; no `algorithm.*` switch is used. See
-[docs/algorithm_parameters.md](../../docs/algorithm_parameters.md) for the switches of the other methods.
+[docs/algorithm_parameters.md](../../../docs/algorithm_parameters.md) for the switches of the other methods.
 
 ## Scripts
 
@@ -41,17 +41,17 @@ GRIT changes only the output format and the reward; no `algorithm.*` switch is u
 
 ```bash
 bash scripts/prepare_data.sh grit
-bash reproduction/grit/qwen2_5_vl_3b_grpo_grit.sh
+bash examples/reproduction/grit/qwen2_5_vl_3b_grpo_grit.sh
 bash scripts/prepare_eval_data.sh grit
 bash scripts/eval.sh checkpoints/GRIT-Reproduce/qwen2_5_vl_3b_grpo_grit --suite grit \
     --format-prompt examples/format_prompt/grit.jinja --system-prompt none
 ```
 
-The `grit` suite defaults to the JSON-evidence system prompt used by `comparison/qwen3_vl_4b/grit.sh`;
+The `grit` suite defaults to the JSON-evidence system prompt used by `examples/comparison/qwen3_vl_4b/grit.sh`;
 models trained here should be evaluated with the official GRIT prompt as shown above. Checkpoints go
 to `checkpoints/GRIT-Reproduce/<script name>`. Append `key=value` overrides to the training command
 and set `N_GPUS_PER_NODE`, `MODEL_PATH`, `DATA_ROOT`, `LOGGER` or `EXPERIMENT_NAME` in the
-environment. Evaluation is described in [eval/README.md](../../eval/README.md).
+environment. Evaluation is described in [eval/README.md](../../../eval/README.md).
 
 ## Differences from the paper / official code
 
@@ -82,7 +82,7 @@ environment. Evaluation is described in [eval/README.md](../../eval/README.md).
 > come from our unofficial re-implementation, trained once with a single seed on our hardware and
 > software versions and evaluated with this repository's harness. They may differ from the official
 > results, including smaller or no gains over the baselines, and do not replace them; corrections
-> from the authors are welcome. See [About the results](../../README.md#-about-the-results).
+> from the authors are welcome. See [About the results](../../../README.md#-about-the-results).
 
 Paper Table 1 (ACC = GPT-4o answer score ×100; GIoU = grounding IoU). InternVL3-2B's OVDEval GIoU is
 printed on a 0-100 scale in the paper. The paper reports no RL baseline without grounding.

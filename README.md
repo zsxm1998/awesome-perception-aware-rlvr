@@ -32,7 +32,7 @@ This repository provides
 - **[Reproductions](#-reproduced-methods)** of 10 methods (PAPO, VPPO, DVRP, ToR, PGPO, PEPO, CFPO,
   VEPO, GRIT, DeepEyes) with each paper's own data, model and hyper-parameters, plus the GRPO/DAPO
   baselines they compare against;
-- **[A controlled comparison](comparison/README.md)** of all methods under one setting
+- **[A controlled comparison](examples/comparison/README.md)** of all methods under one setting
   (Qwen3-VL-4B, the same data and the same hyper-parameters);
 - **[One-click evaluation](eval/README.md)** on the union of the benchmarks used by these papers,
   with per-benchmark download scripts and per-paper suites.
@@ -74,7 +74,7 @@ This repository is the official code release of
 > **CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning**<br>
 > Shengxuming Zhang, Linyun Zhou, Hengrui Lou, Zhenyang Wang, Xiuming Zhang, Zunlei Feng<br>
 > *Proceedings of the 34th ACM International Conference on Multimedia (MM '26)*, Rio de Janeiro, Brazil, 2026<br>
-> [[Paper]](https://doi.org/10.1145/3767308.3835969) · [[Code and scripts]](reproduction/cgpo/README.md) · [[BibTeX]](#-citation)
+> [[Paper]](https://doi.org/10.1145/3767308.3835969) · [[Code and scripts]](examples/reproduction/cgpo/README.md) · [[BibTeX]](#-citation)
 
 CGPO teaches a vision-language model *evidence-sensitive reasoning*: key reasoning steps ground the
 visual evidence they rely on, and the conclusion should change when that evidence is removed. The
@@ -89,11 +89,11 @@ The paper trains pathology models with the original ms-swift implementation; its
 pathology data cannot be released. This repository re-implements CGPO on the shared EasyR1 codebase
 and provides the RLVR stage on public natural-image data (ViRL39K) with the paper's backbones
 (Qwen2.5-VL-7B, Qwen3-VL-8B) and RL hyper-parameters; CGPO is also part of the
-[controlled comparison](comparison/README.md).
+[controlled comparison](examples/comparison/README.md).
 
 ```bash
 bash scripts/prepare_data.sh cgpo
-bash reproduction/cgpo/qwen3_vl_8b_cgpo.sh
+bash examples/reproduction/cgpo/qwen3_vl_8b_cgpo.sh
 bash scripts/eval.sh checkpoints/CGPO-Reproduce/qwen3_vl_8b_cgpo --suite cgpo
 ```
 
@@ -101,17 +101,17 @@ bash scripts/eval.sh checkpoints/CGPO-Reproduce/qwen3_vl_8b_cgpo --suite cgpo
 
 | Method | Paper | Venue | Official code | Scripts | Main setting |
 | --- | --- | --- | --- | --- | --- |
-| **CGPO** (ours) | [Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](https://doi.org/10.1145/3767308.3835969) | ACM MM 2026 | this repo | [reproduction/cgpo](reproduction/cgpo) | Qwen2.5-VL-7B / Qwen3-VL-8B, ViRL39K (natural-image reproduction) |
-| PAPO | [Perception-Aware Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2507.06448) | ICLR 2026 | [GitHub](https://github.com/MikeWangWZHL/PAPO) | [reproduction/papo](reproduction/papo) | Qwen2.5-VL-3B/7B, ViRL39K |
-| VPPO | [Spotlight on Token Perception for Multimodal Reinforcement Learning](https://arxiv.org/abs/2510.09285) | ICLR 2026 | [GitHub](https://github.com/huaixuheqing/VPPO-RL) | [reproduction/vppo](reproduction/vppo) | Qwen2.5-VL-7B / Qwen3-VL-8B, ViRL39K |
-| DVRP | [Thinking with Deltas: Incentivizing Reinforcement Learning via Differential Visual Reasoning Policy](https://arxiv.org/abs/2601.06801) | arXiv | - | [reproduction/dvrp](reproduction/dvrp) | Qwen2.5-VL-3B/7B, ViRL39K |
-| ToR | [Bridging Perception and Reasoning: Token Reweighting for RLVR in Multimodal LLMs](https://arxiv.org/abs/2603.25077) | arXiv | - | [reproduction/tor](reproduction/tor) | Qwen2.5-VL-7B, Geometry3K |
-| PGPO | [Not All Tokens See Equally: Perception-Grounded Policy Optimization for Large Vision-Language Models](https://arxiv.org/abs/2604.01840) | arXiv | - | [reproduction/pgpo](reproduction/pgpo) | Qwen2.5-VL-3B/7B, ViRL39K |
-| PEPO | [Rethinking Token-Level Policy Optimization for Multimodal Chain-of-Thought](https://arxiv.org/abs/2603.22847) | arXiv | [GitHub](https://github.com/xzxxntxdy/PEPO) | [reproduction/pepo](reproduction/pepo) | Qwen2.5-VL-3B / InternVL3-2B, Geometry3K |
-| CFPO | [CFPO: Counterfactual Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2606.23206) | ICML 2026 | [GitHub](https://github.com/Raven-July/CFPO) | [reproduction/cfpo](reproduction/cfpo) | Qwen2.5-VL-3B, ViRL39K |
-| VEPO | [Entropy Is Not Enough: Unlocking Effective Reinforcement Learning for Visual Reasoning via Vision-Anchored Token Selection](https://arxiv.org/abs/2606.03937) | arXiv | [GitHub](https://github.com/Leonnnnnn929/VEPO) | [reproduction/vepo](reproduction/vepo) | Qwen2.5-VL-7B, Geometry3K |
-| GRIT | [GRIT: Teaching MLLMs to Think with Images](https://arxiv.org/abs/2505.15879) | NeurIPS 2025 | [GitHub](https://github.com/UCSB-AI/GRIT) | [reproduction/grit](reproduction/grit) | Qwen2.5-VL-3B / InternVL3-2B, 20 GRIT samples |
-| DeepEyes | [DeepEyes: Incentivizing "Thinking with Images" via Reinforcement Learning](https://arxiv.org/abs/2505.14362) | ICLR 2026 | [GitHub](https://github.com/Visual-Agent/DeepEyes) | [reproduction/deepeyes](reproduction/deepeyes) | Qwen2.5-VL-7B / Qwen3-VL-8B, DeepEyes-47k, multi-turn zoom-in tool |
+| **CGPO** (ours) | [Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](https://doi.org/10.1145/3767308.3835969) | ACM MM 2026 | this repo | [examples/reproduction/cgpo](examples/reproduction/cgpo) | Qwen2.5-VL-7B / Qwen3-VL-8B, ViRL39K (natural-image reproduction) |
+| PAPO | [Perception-Aware Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2507.06448) | ICLR 2026 | [GitHub](https://github.com/MikeWangWZHL/PAPO) | [examples/reproduction/papo](examples/reproduction/papo) | Qwen2.5-VL-3B/7B, ViRL39K |
+| VPPO | [Spotlight on Token Perception for Multimodal Reinforcement Learning](https://arxiv.org/abs/2510.09285) | ICLR 2026 | [GitHub](https://github.com/huaixuheqing/VPPO-RL) | [examples/reproduction/vppo](examples/reproduction/vppo) | Qwen2.5-VL-7B / Qwen3-VL-8B, ViRL39K |
+| DVRP | [Thinking with Deltas: Incentivizing Reinforcement Learning via Differential Visual Reasoning Policy](https://arxiv.org/abs/2601.06801) | arXiv | - | [examples/reproduction/dvrp](examples/reproduction/dvrp) | Qwen2.5-VL-3B/7B, ViRL39K |
+| ToR | [Bridging Perception and Reasoning: Token Reweighting for RLVR in Multimodal LLMs](https://arxiv.org/abs/2603.25077) | arXiv | - | [examples/reproduction/tor](examples/reproduction/tor) | Qwen2.5-VL-7B, Geometry3K |
+| PGPO | [Not All Tokens See Equally: Perception-Grounded Policy Optimization for Large Vision-Language Models](https://arxiv.org/abs/2604.01840) | arXiv | - | [examples/reproduction/pgpo](examples/reproduction/pgpo) | Qwen2.5-VL-3B/7B, ViRL39K |
+| PEPO | [Rethinking Token-Level Policy Optimization for Multimodal Chain-of-Thought](https://arxiv.org/abs/2603.22847) | arXiv | [GitHub](https://github.com/xzxxntxdy/PEPO) | [examples/reproduction/pepo](examples/reproduction/pepo) | Qwen2.5-VL-3B / InternVL3-2B, Geometry3K |
+| CFPO | [CFPO: Counterfactual Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2606.23206) | ICML 2026 | [GitHub](https://github.com/Raven-July/CFPO) | [examples/reproduction/cfpo](examples/reproduction/cfpo) | Qwen2.5-VL-3B, ViRL39K |
+| VEPO | [Entropy Is Not Enough: Unlocking Effective Reinforcement Learning for Visual Reasoning via Vision-Anchored Token Selection](https://arxiv.org/abs/2606.03937) | arXiv | [GitHub](https://github.com/Leonnnnnn929/VEPO) | [examples/reproduction/vepo](examples/reproduction/vepo) | Qwen2.5-VL-7B, Geometry3K |
+| GRIT | [GRIT: Teaching MLLMs to Think with Images](https://arxiv.org/abs/2505.15879) | NeurIPS 2025 | [GitHub](https://github.com/UCSB-AI/GRIT) | [examples/reproduction/grit](examples/reproduction/grit) | Qwen2.5-VL-3B / InternVL3-2B, 20 GRIT samples |
+| DeepEyes | [DeepEyes: Incentivizing "Thinking with Images" via Reinforcement Learning](https://arxiv.org/abs/2505.14362) | ICLR 2026 | [GitHub](https://github.com/Visual-Agent/DeepEyes) | [examples/reproduction/deepeyes](examples/reproduction/deepeyes) | Qwen2.5-VL-7B / Qwen3-VL-8B, DeepEyes-47k, multi-turn zoom-in tool |
 
 Every directory contains a README with the paper's setting, the scripts (method and baselines),
 the differences from the official recipe and the reported numbers. The upstream EasyR1 algorithms
@@ -143,9 +143,9 @@ If `huggingface.co` is slow or blocked, set `HF_ENDPOINT=https://hf-mirror.com`.
 **3. Train**:
 
 ```bash
-bash reproduction/papo/qwen2_5_vl_7b_grpo_papo.sh                       # PAPO-G, paper setting
-bash comparison/qwen3_vl_4b/cgpo.sh                                      # CGPO in the controlled comparison
-N_GPUS_PER_NODE=4 bash reproduction/papo/qwen2_5_vl_7b_grpo.sh trainer.total_epochs=1   # any override
+bash examples/reproduction/papo/qwen2_5_vl_7b_grpo_papo.sh                       # PAPO-G, paper setting
+bash examples/comparison/qwen3_vl_4b/cgpo.sh                                      # CGPO in the controlled comparison
+N_GPUS_PER_NODE=4 bash examples/reproduction/papo/qwen2_5_vl_7b_grpo.sh trainer.total_epochs=1   # any override
 ```
 
 Checkpoints go to `checkpoints/<project>/<experiment>/global_step_*`; logs go to the console and
@@ -166,10 +166,13 @@ with vLLM on all visible GPUs and writes a summary table. See [eval/README.md](e
 
 ```
 .
-├── reproduction/<method>/   # paper settings: common.sh (shared args) + one script per run
-├── comparison/qwen3_vl_4b/  # controlled comparison: one script per method, identical common.sh
+├── examples/
+│   ├── reproduction/<method>/   # paper settings: common.sh (shared args) + one script per run
+│   ├── comparison/qwen3_vl_4b/  # controlled comparison: one script per method, identical common.sh
+│   ├── config.yaml              # base training config
+│   ├── reward_function/         # reward functions
+│   └── format_prompt/, system_prompt/, chat_template/
 ├── eval/                    # one-click evaluation (registry, loaders, scorers, prepare/)
-├── examples/                # shared assets: config.yaml, format prompts, system prompts, reward functions
 ├── scripts/                 # install_env.sh, prepare_data.sh, prepare_eval_data.sh, eval.sh, launcher.sh
 ├── verl/                    # training framework (EasyR1 fork) with all method implementations
 ├── docs/                    # algorithm parameters, adding a method, BibTeX
@@ -185,7 +188,7 @@ advantage scaling, auxiliary losses and extra rewards. See
 
 ## 📊 Controlled comparison
 
-[`comparison/qwen3_vl_4b`](comparison/README.md) trains every method on Qwen3-VL-4B-Instruct with
+[`examples/comparison/qwen3_vl_4b`](examples/comparison/README.md) trains every method on Qwen3-VL-4B-Instruct with
 the same data (ViRL39K / MMK12), the same GRPO hyper-parameters and the same evaluation; only the
 method-specific arguments differ. Results will be added here.
 
@@ -195,8 +198,8 @@ method-specific arguments differ. Results will be added here.
 
 ### 📌 About the results
 
-The numbers produced with this repository (the table above, [comparison/README.md](comparison/README.md)
-and the "this repo" columns of every `reproduction/<method>` README) come with these caveats:
+The numbers produced with this repository (the table above, [examples/comparison/README.md](examples/comparison/README.md)
+and the "this repo" columns of every `examples/reproduction/<method>` README) come with these caveats:
 
 - **Unofficial re-implementations.** Except for CGPO, every method was re-implemented by us from
   the paper and, where available, the official code. Details that a paper leaves open may be
@@ -257,30 +260,30 @@ Verified on 2026-10-01 against arXiv, OpenReview and the official repositories; 
 
 ### ✅ Reproduced in this repository
 
-Each method below can be trained with the scripts in `reproduction/<method>` (paper setting) and `comparison/` (shared setting). Except for CGPO these are unofficial re-implementations; see each README for the differences from the official code.
+Each method below can be trained with the scripts in `examples/reproduction/<method>` (paper setting) and `examples/comparison/` (shared setting). Except for CGPO these are unofficial re-implementations; see each README for the differences from the official code.
 
 - **CGPO** (ours) · [CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](https://doi.org/10.1145/3767308.3835969) · Shengxuming Zhang et al. · ACM MM 2026 · official code: this repository<br>
-  The policy grounds its evidence inline in the chain of thought; the grounded regions are masked to form a counterfactual image, and the KL between the policy on the original and on the counterfactual image measures how much each token depends on that evidence. Responses that depend more on their evidence get larger advantages on perception-critical tokens, and a grounding-consistency reward (the policy re-detects every grounded entity) keeps the boxes from being inflated. Scripts cover the natural-image setting; the pathology setting of the paper is described in the README. Scripts and setting: [reproduction/cgpo](reproduction/cgpo/README.md).
+  The policy grounds its evidence inline in the chain of thought; the grounded regions are masked to form a counterfactual image, and the KL between the policy on the original and on the counterfactual image measures how much each token depends on that evidence. Responses that depend more on their evidence get larger advantages on perception-critical tokens, and a grounding-consistency reward (the policy re-detects every grounded entity) keeps the boxes from being inflated. Scripts cover the natural-image setting; the pathology setting of the paper is described in the README. Scripts and setting: [examples/reproduction/cgpo](examples/reproduction/cgpo/README.md).
 - **PAPO** · [Perception-Aware Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2507.06448) · Zhenhailong Wang et al. · ICLR 2026 · [code](https://github.com/MikeWangWZHL/PAPO)<br>
-  Adds an *Implicit Perception Loss* to GRPO/DAPO that maximizes the KL between the policy on the original image and on a randomly patch-masked copy, so the outputs have to depend on the image. A *Double Entropy Loss* on both views keeps the policy from inflating this KL term in degenerate ways. Scripts and setting: [reproduction/papo](reproduction/papo/README.md).
+  Adds an *Implicit Perception Loss* to GRPO/DAPO that maximizes the KL between the policy on the original image and on a randomly patch-masked copy, so the outputs have to depend on the image. A *Double Entropy Loss* on both views keeps the policy from inflating this KL term in degenerate ways. Scripts and setting: [examples/reproduction/papo](examples/reproduction/papo/README.md).
 - **VPPO** · [Spotlight on Token Perception for Multimodal Reinforcement Learning](https://arxiv.org/abs/2510.09285) · Siyuan Huang et al. · ICLR 2026 · [code](https://github.com/huaixuheqing/VPPO-RL)<br>
-  Measures each token's visual dependency as the KL between predictions with the original and with a perturbed image. Only the 40% most visually dependent tokens of a response receive gradients, and each response's advantage is scaled by its mean visual dependency (built on DAPO). Scripts and setting: [reproduction/vppo](reproduction/vppo/README.md).
+  Measures each token's visual dependency as the KL between predictions with the original and with a perturbed image. Only the 40% most visually dependent tokens of a response receive gradients, and each response's advantage is scaled by its mean visual dependency (built on DAPO). Scripts and setting: [examples/reproduction/vppo](examples/reproduction/vppo/README.md).
 - **DVRP** · [Thinking with Deltas: Incentivizing Reinforcement Learning via Differential Visual Reasoning Policy](https://arxiv.org/abs/2601.06801) · Shujian Gao et al. · arXiv<br>
-  Builds a visual triplet for every image: the original, a patch-masked view and a diffusion-noised view. It maximizes the KL to the masked view (the answer must need the image), minimizes the KL to the noised view (the answer should be robust to small changes) and adds an entropy penalty on both auxiliary views; on GRPO or DAPO. Scripts and setting: [reproduction/dvrp](reproduction/dvrp/README.md).
+  Builds a visual triplet for every image: the original, a patch-masked view and a diffusion-noised view. It maximizes the KL to the masked view (the answer must need the image), minimizes the KL to the noised view (the answer should be robust to small changes) and adds an entropy penalty on both auxiliary views; on GRPO or DAPO. Scripts and setting: [examples/reproduction/dvrp](examples/reproduction/dvrp/README.md).
 - **ToR** · [Bridging Perception and Reasoning: Token Reweighting for RLVR in Multimodal LLMs](https://arxiv.org/abs/2603.25077) · Jinda Lu et al. · arXiv<br>
-  Reweights tokens in the GRPO/DAPO objective. The 30% highest-entropy tokens (reasoning tokens) and the 30% tokens whose log-probability changes most when the image is removed (perception tokens) are optimized with separate weights; all other tokens are excluded. Scripts and setting: [reproduction/tor](reproduction/tor/README.md).
+  Reweights tokens in the GRPO/DAPO objective. The 30% highest-entropy tokens (reasoning tokens) and the 30% tokens whose log-probability changes most when the image is removed (perception tokens) are optimized with separate weights; all other tokens are excluded. Scripts and setting: [examples/reproduction/tor](examples/reproduction/tor/README.md).
 - **PGPO** · [Not All Tokens See Equally: Perception-Grounded Policy Optimization for Large Vision-Language Models](https://arxiv.org/abs/2604.01840) · Zekai Ye et al. · arXiv<br>
-  A second forward pass with the attention to all visual tokens masked gives each token's visual dependency (KL with vs. without the image). After log compression and per-response normalization, a threshold-gated weight, renormalized to keep the response total, multiplies the DAPO advantage token by token. Scripts and setting: [reproduction/pgpo](reproduction/pgpo/README.md).
+  A second forward pass with the attention to all visual tokens masked gives each token's visual dependency (KL with vs. without the image). After log compression and per-response normalization, a threshold-gated weight, renormalized to keep the response total, multiplies the DAPO advantage token by token. Scripts and setting: [examples/reproduction/pgpo](examples/reproduction/pgpo/README.md).
 - **PEPO** · [Rethinking Token-Level Policy Optimization for Multimodal Chain-of-Thought](https://arxiv.org/abs/2603.22847) · Yunheng Li et al. · arXiv · [code](https://github.com/xzxxntxdy/PEPO)<br>
-  Reweights token advantages without an extra forward pass. A perception prior (cosine similarity between a token's hidden state and the vision-token hidden states) is gated by token entropy and turned into softmax token weights, which are mixed into the advantage with a coefficient that grows linearly during training; on GRPO or DAPO. Scripts and setting: [reproduction/pepo](reproduction/pepo/README.md).
+  Reweights token advantages without an extra forward pass. A perception prior (cosine similarity between a token's hidden state and the vision-token hidden states) is gated by token entropy and turned into softmax token weights, which are mixed into the advantage with a coefficient that grows linearly during training; on GRPO or DAPO. Scripts and setting: [examples/reproduction/pepo](examples/reproduction/pepo/README.md).
 - **CFPO** · [CFPO: Counterfactual Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2606.23206) · Zhangyuan Yu et al. · ICML 2026 · [code](https://github.com/Raven-July/CFPO)<br>
-  Builds the counterfactual inside the model: in every self-attention layer the image-token values that receive the highest text-to-image attention are replaced by the mean image-token value. The policy is pushed away from this counterfactual by maximizing the KL between the factual and the counterfactual outputs; on GRPO or DAPO. Scripts and setting: [reproduction/cfpo](reproduction/cfpo/README.md).
+  Builds the counterfactual inside the model: in every self-attention layer the image-token values that receive the highest text-to-image attention are replaced by the mean image-token value. The policy is pushed away from this counterfactual by maximizing the KL between the factual and the counterfactual outputs; on GRPO or DAPO. Scripts and setting: [examples/reproduction/cfpo](examples/reproduction/cfpo/README.md).
 - **VEPO** · [Entropy Is Not Enough: Unlocking Effective Reinforcement Learning for Visual Reasoning via Vision-Anchored Token Selection](https://arxiv.org/abs/2606.03937) · Senjie Jin et al. · arXiv · [code](https://github.com/Leonnnnnn929/VEPO)<br>
-  Selects which tokens receive policy gradients. Per token it combines the Jensen-Shannon divergence and the entropy gap between predictions on the original and on a perturbed image with the token entropy, and optimizes only the top 20% of tokens of each response; the sequence-level advantage is unchanged. Scripts and setting: [reproduction/vepo](reproduction/vepo/README.md).
+  Selects which tokens receive policy gradients. Per token it combines the Jensen-Shannon divergence and the entropy gap between predictions on the original and on a perturbed image with the token entropy, and optimizes only the top 20% of tokens of each response; the sequence-level advantage is unchanged. Scripts and setting: [examples/reproduction/vepo](examples/reproduction/vepo/README.md).
 - **GRIT** · [GRIT: Teaching MLLMs to Think with Images](https://arxiv.org/abs/2505.15879) · Yue Fan et al. · NeurIPS 2025 · [code](https://github.com/UCSB-AI/GRIT)<br>
-  Trains single-turn grounded reasoning chains that interleave text with bounding boxes, without feeding crops back to the model. GRPO-GR rewards the output structure, producing boxes (with a counting bonus) and answer correctness, with no supervision on the boxes; the paper trains on only 20 image-question-answer triplets. Scripts and setting: [reproduction/grit](reproduction/grit/README.md).
+  Trains single-turn grounded reasoning chains that interleave text with bounding boxes, without feeding crops back to the model. GRPO-GR rewards the output structure, producing boxes (with a counting bonus) and answer correctness, with no supervision on the boxes; the paper trains on only 20 image-question-answer triplets. Scripts and setting: [examples/reproduction/grit](examples/reproduction/grit/README.md).
 - **DeepEyes** · [DeepEyes: Incentivizing "Thinking with Images" via Reinforcement Learning](https://arxiv.org/abs/2505.14362) · Ziwei Zheng et al. · ICLR 2026 · [code](https://github.com/Visual-Agent/DeepEyes)<br>
-  Multi-turn agentic RL with an image zoom-in tool: the model reasons, calls `image_zoom_in_tool` with a bounding box, receives the crop of the original image as a new observation and continues. GRPO optimizes the whole trajectory with an accuracy and format reward plus a tool bonus that is granted only to correct answers that used the tool. Supported here on Qwen2.5-VL (absolute pixel coordinates, as in the paper) and Qwen3-VL (0-1000 coordinates). Scripts and setting: [reproduction/deepeyes](reproduction/deepeyes/README.md).
+  Multi-turn agentic RL with an image zoom-in tool: the model reasons, calls `image_zoom_in_tool` with a bounding box, receives the crop of the original image as a new observation and continues. GRPO optimizes the whole trajectory with an accuracy and format reward plus a tool bonus that is granted only to correct answers that used the tool. Supported here on Qwen2.5-VL (absolute pixel coordinates, as in the paper) and Qwen3-VL (0-1000 coordinates). Scripts and setting: [examples/reproduction/deepeyes](examples/reproduction/deepeyes/README.md).
 
 ### 📑 Other papers
 
@@ -386,7 +389,7 @@ Contributions are welcome:
 - **Add a paper** to the list: open a pull request that adds a row (newest first) with the arXiv
   link, venue and code link to both READMEs, then run `python scripts/check_docs.py --fix`.
 - **Add a method**: follow [docs/add_method.md](docs/add_method.md) and add a
-  `reproduction/<method>/` directory with a README and baseline scripts.
+  `examples/reproduction/<method>/` directory with a README and baseline scripts.
 - **Add a benchmark**: follow [eval/README.md](eval/README.md#adding-a-new-benchmark).
 - **Report reproduction results**: open an issue or a pull request with the command, the logs
   and the evaluation summary.

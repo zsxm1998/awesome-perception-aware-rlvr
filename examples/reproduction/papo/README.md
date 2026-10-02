@@ -31,7 +31,7 @@ GRPO) and PAPO-D (on DAPO).
 | γ (KL_prcp) | `algorithm.visual_sensitivity_loss_coef`: 0.02 (PAPO-G), 0.01 (PAPO-D and no-KL-ref) |
 | η (Double Entropy) | `algorithm.invariant_entropy_coef` = `algorithm.decremental_entropy_coef`: 0.05 (PAPO-G-7B), 0.03 (PAPO-D, no-KL-ref), off (PAPO-G-3B); `algorithm.entropy_loss_type=sampled` |
 
-See [docs/algorithm_parameters.md](../../docs/algorithm_parameters.md) for the full list of `algorithm.*` switches.
+See [docs/algorithm_parameters.md](../../../docs/algorithm_parameters.md) for the full list of `algorithm.*` switches.
 
 ## Scripts
 
@@ -50,17 +50,17 @@ See [docs/algorithm_parameters.md](../../docs/algorithm_parameters.md) for the f
 
 ```bash
 bash scripts/prepare_data.sh papo
-bash reproduction/papo/qwen2_5_vl_7b_grpo_papo.sh
+bash examples/reproduction/papo/qwen2_5_vl_7b_grpo_papo.sh
 bash scripts/prepare_eval_data.sh papo
 bash scripts/eval.sh checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_papo --suite papo
 ```
 
 Checkpoints go to `checkpoints/PAPO-Reproduce/<script name>`. Any `key=value` appended to the
-command overrides the script (e.g. `bash reproduction/papo/qwen2_5_vl_7b_grpo_papo.sh trainer.total_epochs=1`),
+command overrides the script (e.g. `bash examples/reproduction/papo/qwen2_5_vl_7b_grpo_papo.sh trainer.total_epochs=1`),
 and `N_GPUS_PER_NODE=4 bash ...`, `MODEL_PATH`, `DATA_ROOT`, `LOGGER` and `EXPERIMENT_NAME` are read
 from the environment. The "GRPO + No KL_ref" baseline of App. F has no dedicated script:
-`EXPERIMENT_NAME=qwen2_5_vl_3b_grpo_no_kl_ref bash reproduction/papo/qwen2_5_vl_3b_grpo.sh algorithm.disable_kl=true`.
-Evaluation is described in [eval/README.md](../../eval/README.md).
+`EXPERIMENT_NAME=qwen2_5_vl_3b_grpo_no_kl_ref bash examples/reproduction/papo/qwen2_5_vl_3b_grpo.sh algorithm.disable_kl=true`.
+Evaluation is described in [eval/README.md](../../../eval/README.md).
 
 ## Differences from the paper / official code
 
@@ -83,7 +83,7 @@ Evaluation is described in [eval/README.md](../../eval/README.md).
 > come from our unofficial re-implementation, trained once with a single seed on our hardware and
 > software versions and evaluated with this repository's harness. They may differ from the official
 > results, including smaller or no gains over the baselines, and do not replace them; corrections
-> from the authors are welcome. See [About the results](../../README.md#-about-the-results).
+> from the authors are welcome. See [About the results](../../../README.md#-about-the-results).
 
 Paper Table 1 (avg@8 accuracy, %); Gen AVG = Geo3k, MathVista, We-Math, MMK12, MathVerse; Vis AVG =
 LogicVista, Counting, MMMU-Pro, MathVerse_V. No-KL-ref rows: paper Table 4 (overall only).
