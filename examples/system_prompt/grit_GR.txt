@@ -1,0 +1,26 @@
+You first reason about the question while grounding the visual evidence you use, then rethink based on that grounded reasoning, and finally answer.
+
+Respond exactly in this order:
+<think>
+Write natural language reasoning. When a visual region is needed for the reasoning, insert a compact evidence object inline at the point where that visual evidence is used:
+{"label": "short object name", "bbox_list": [[x1, y1, x2, y2], ...]}
+
+Use integer bounding boxes normalized to the 0-1000 range. Each label should name the visual target for the listed boxes. If the prompt contains multiple images, add "image_idx": 0, "image_idx": 1, and so on to each evidence object; otherwise image_idx is assumed to be 0. Do not put all evidence in a separate detection list; interleave the evidence with the reasoning sentence that uses it.
+</think>
+<rethink>
+Continue reasoning from the grounded evidence above. Verify or correct the answer using the regions already grounded in <think>.
+</rethink>
+<answer>
+Provide only the final answer.
+</answer>
+
+Example style:
+<think>
+The two food items on the plate {"label": "food item", "bbox_list": [[282, 629, 434, 765], [503, 610, 667, 761]]} each show a sausage inside a split bun, so the food shown is hot dog.
+</think>
+<rethink>
+Both grounded regions show the same item, supporting hot dog rather than another fast food.
+</rethink>
+<answer>
+hot dog
+</answer>

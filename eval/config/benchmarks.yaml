@@ -1,0 +1,463 @@
+# Benchmark registry. Paths are relative to the evaluation data root
+# (default <repo>/data/eval; override with --data-root or $EVAL_DATA_ROOT) and match the
+# layout written by `python -m eval.prepare <key>` / `bash scripts/prepare_eval_data.sh <key>`.
+#
+# Fields: key, label, group (columns are averaged per group in the summaries), loader,
+# scorer, primary_metric, source (upstream dataset, informational), path/paths, image_root,
+# generation defaults (max_new_tokens, temperature, top_p, num_samples; the runner flags
+# --temperature/--num-samples/--max-new-tokens/--top-p override them for every benchmark),
+# requires_judge (benchmark is skipped with a warning unless an LLM judge is configured),
+# optional (excluded from the `all` suite and `prepare all`), metadata (loader/scorer options).
+
+benchmarks:
+  # ---------------------------------------------------------------------------
+  # Reasoning: PAPO-Eval protocol (rule-based exact match on the last \boxed{},
+  # mean accuracy over 8 samples at temperature 1.0, top_p 1.0, 2048 new tokens).
+  # ---------------------------------------------------------------------------
+  - key: geo3k
+    label: Geo3k
+    group: Reasoning
+    loader: sharegpt
+    scorer: boxed_exact_match
+    primary_metric: mean_acc_at_k
+    source: PAPO-Galaxy/PAPO_eval (hiyouga_geometry3k)
+    path: geo3k/test.parquet
+    image_root: geo3k
+    max_new_tokens: 2048
+    temperature: 1.0
+    top_p: 1.0
+    num_samples: 8
+
+  - key: mathvista
+    label: MathVista
+    group: Reasoning
+    loader: sharegpt
+    scorer: boxed_exact_match
+    primary_metric: mean_acc_at_k
+    source: PAPO-Galaxy/PAPO_eval (AI4Math_MathVista)
+    path: mathvista/test.parquet
+    image_root: mathvista
+    max_new_tokens: 2048
+    temperature: 1.0
+    top_p: 1.0
+    num_samples: 8
+
+  - key: wemath
+    label: We-Math
+    group: Reasoning
+    loader: sharegpt
+    scorer: boxed_exact_match
+    primary_metric: mean_acc_at_k
+    source: PAPO-Galaxy/PAPO_eval (We_Math)
+    path: wemath/test.parquet
+    image_root: wemath
+    max_new_tokens: 2048
+    temperature: 1.0
+    top_p: 1.0
+    num_samples: 8
+
+  - key: mmk12
+    label: MMK12
+    group: Reasoning
+    loader: sharegpt
+    scorer: boxed_exact_match
+    primary_metric: mean_acc_at_k
+    source: PAPO-Galaxy/PAPO_eval (PAPO_MMK12)
+    path: mmk12/test.parquet
+    image_root: mmk12
+    max_new_tokens: 2048
+    temperature: 1.0
+    top_p: 1.0
+    num_samples: 8
+
+  - key: mathverse
+    label: MathVerse
+    group: Reasoning
+    loader: sharegpt
+    scorer: boxed_exact_match
+    primary_metric: mean_acc_at_k
+    source: PAPO-Galaxy/PAPO_eval (AI4Math_MathVerse)
+    path: mathverse/test.parquet
+    image_root: mathverse
+    max_new_tokens: 2048
+    temperature: 1.0
+    top_p: 1.0
+    num_samples: 8
+
+  - key: mathverse_v
+    label: MathVerse_V
+    group: Reasoning
+    loader: sharegpt
+    scorer: boxed_exact_match
+    primary_metric: mean_acc_at_k
+    source: PAPO-Galaxy/PAPO_eval (AI4Math_MathVerse_vision_dependent)
+    path: mathverse_v/test.parquet
+    image_root: mathverse_v
+    max_new_tokens: 2048
+    temperature: 1.0
+    top_p: 1.0
+    num_samples: 8
+
+  - key: logicvista
+    label: LogicVista
+    group: Reasoning
+    loader: sharegpt
+    scorer: boxed_exact_match
+    primary_metric: mean_acc_at_k
+    source: PAPO-Galaxy/PAPO_eval (lscpku_LogicVista)
+    path: logicvista/test.parquet
+    image_root: logicvista
+    max_new_tokens: 2048
+    temperature: 1.0
+    top_p: 1.0
+    num_samples: 8
+
+  - key: clevr_count
+    label: Counting (CLEVR)
+    group: Reasoning
+    loader: sharegpt
+    scorer: boxed_exact_match
+    primary_metric: mean_acc_at_k
+    source: PAPO-Galaxy/PAPO_eval (BUAADreamer_clevr_count_70k)
+    path: clevr_count/test.parquet
+    image_root: clevr_count
+    max_new_tokens: 2048
+    temperature: 1.0
+    top_p: 1.0
+    num_samples: 8
+
+  - key: mmmu_pro
+    label: MMMU-Pro (vision)
+    group: Reasoning
+    loader: sharegpt
+    scorer: boxed_exact_match
+    primary_metric: mean_acc_at_k
+    source: PAPO-Galaxy/PAPO_eval (MMMU_MMMU_Pro)
+    path: mmmu_pro/test.parquet
+    image_root: mmmu_pro
+    max_new_tokens: 2048
+    temperature: 1.0
+    top_p: 1.0
+    num_samples: 8
+
+  - key: dynamath
+    label: DynaMath
+    group: Reasoning
+    loader: sharegpt
+    scorer: boxed_exact_match
+    primary_metric: mean_acc_at_k
+    source: chamber111/VPPO-Eval (DynaMath_DynaMath_Sample)
+    path: dynamath/test.json
+    image_root: dynamath
+    max_new_tokens: 2048
+    temperature: 1.0
+    top_p: 1.0
+    num_samples: 8
+
+  - key: mathvision
+    label: MathVision
+    group: Reasoning
+    loader: sharegpt
+    scorer: boxed_exact_match
+    primary_metric: mean_acc_at_k
+    source: chamber111/VPPO-Eval (MathLLMs_MathVision)
+    path: mathvision/test.json
+    image_root: mathvision
+    max_new_tokens: 2048
+    temperature: 1.0
+    top_p: 1.0
+    num_samples: 8
+
+  # ---------------------------------------------------------------------------
+  # Perception / hallucination (greedy, single sample).
+  # ---------------------------------------------------------------------------
+  - key: pope
+    label: POPE
+    group: Perception
+    loader: pope
+    scorer: pope
+    primary_metric: macro_f1
+    source: lmms-lab/POPE (Full)
+    paths:
+      - pope/random.parquet
+      - pope/popular.parquet
+      - pope/adversarial.parquet
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+
+  - key: hallusionbench
+    label: HallusionBench
+    group: Perception
+    loader: hallusionbench
+    scorer: hallusionbench
+    primary_metric: question_accuracy
+    source: lmms-lab/HallusionBench (image split)
+    path: hallusionbench/image.parquet
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+
+  - key: mme
+    label: MME
+    group: Perception
+    loader: mme
+    scorer: mme
+    primary_metric: total_score
+    source: lmms-lab/MME
+    path: mme/*.parquet
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+
+  - key: gqa
+    label: GQA
+    group: Perception
+    loader: gqa
+    scorer: gqa
+    primary_metric: accuracy
+    source: lmms-lab/GQA (testdev balanced)
+    paths:
+      - gqa/testdev_balanced_instructions.parquet
+      - gqa/testdev_balanced_images.parquet
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+
+  - key: mm_vet
+    label: MM-Vet
+    group: Perception
+    loader: mmvet
+    scorer: mmvet
+    primary_metric: judge_score
+    source: lmms-lab/MMVet
+    path: mm_vet/test.parquet
+    max_new_tokens: 4096
+    temperature: 0.0
+    num_samples: 1
+    requires_judge: true
+
+  - key: seed_bench
+    label: SEED-Bench
+    group: Perception
+    loader: seed_bench
+    scorer: seed_bench
+    primary_metric: seed_all_accuracy
+    source: lmms-lab/SEED-Bench
+    path: seed_bench/annotations.jsonl
+    image_root: seed_bench
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+    optional: true
+
+  # ---------------------------------------------------------------------------
+  # CFPO real-world benchmarks (RavenInJuly/CFPO_Datasets), scored like CFPO's
+  # Counterfactual-Eval: mathruler grade_answer on the last \boxed{} (whole response when
+  # there is no box), any of the reference answers counts, mean accuracy over 8 samples.
+  # ---------------------------------------------------------------------------
+  - key: cvqa_real
+    label: C-VQA-Real
+    group: Perception
+    loader: cfpo_json
+    scorer: cfpo_match
+    primary_metric: mean_acc_at_k
+    source: RavenInJuly/CFPO_Datasets (C-VQA-Real_test) + COCO val2014 images
+    path: cvqa_real/test.json
+    image_root: cvqa_real/images
+    max_new_tokens: 2048
+    temperature: 1.0
+    top_p: 1.0
+    num_samples: 8
+
+  - key: mars_bench
+    label: MARS-Bench
+    group: Perception
+    loader: cfpo_json
+    scorer: cfpo_match
+    primary_metric: mean_acc_at_k
+    source: RavenInJuly/CFPO_Datasets (MARS_Bench_test) + COCO val2014 images
+    path: mars_bench/test.json
+    image_root: mars_bench/images
+    max_new_tokens: 2048
+    temperature: 1.0
+    top_p: 1.0
+    num_samples: 8
+
+  - key: textvqa
+    label: TextVQA (val)
+    group: Perception
+    loader: cfpo_json
+    scorer: cfpo_match
+    primary_metric: mean_acc_at_k
+    source: RavenInJuly/CFPO_Datasets (Textvqa_test = TextVQA validation)
+    path: textvqa/test.json
+    image_root: textvqa/images
+    max_new_tokens: 2048
+    temperature: 1.0
+    top_p: 1.0
+    num_samples: 8
+
+  # ---------------------------------------------------------------------------
+  # High-resolution perception (DeepEyes tables): MCQ accuracy with rule-based
+  # option-letter extraction. Works with one-shot and agentic (DeepEyes) inference.
+  # ---------------------------------------------------------------------------
+  - key: vstar
+    label: V* Bench
+    group: HighRes
+    loader: vstar
+    scorer: mcq
+    primary_metric: overall_accuracy
+    source: craigwu/vstar_bench
+    path: vstar/test_questions.jsonl
+    image_root: vstar
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+    metadata:
+      aggregate: micro
+
+  - key: hrbench_4k
+    label: HR-Bench 4K
+    group: HighRes
+    loader: hrbench
+    scorer: mcq
+    primary_metric: overall_accuracy
+    source: DreamMr/HR-Bench (hr_bench_4k)
+    path: hrbench_4k/annotations.jsonl
+    image_root: hrbench_4k
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+    metadata:
+      aggregate: category_mean
+
+  - key: hrbench_8k
+    label: HR-Bench 8K
+    group: HighRes
+    loader: hrbench
+    scorer: mcq
+    primary_metric: overall_accuracy
+    source: DreamMr/HR-Bench (hr_bench_8k)
+    path: hrbench_8k/annotations.jsonl
+    image_root: hrbench_8k
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+    metadata:
+      aggregate: category_mean
+
+  - key: mme_realworld_lite
+    label: MME-RealWorld-Lite
+    group: HighRes
+    loader: mme_realworld
+    scorer: mcq
+    primary_metric: overall_accuracy
+    source: yifanzhang114/MME-RealWorld-lite-lmms-eval
+    path: mme_realworld_lite/annotations.jsonl
+    image_root: mme_realworld_lite
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+    metadata:
+      aggregate: micro
+
+  # ---------------------------------------------------------------------------
+  # Grounding. GRIT sets (official GRIT_data annotations) follow the GRIT paper: answer
+  # accuracy (rule-based here) and the GRIT grounding IoU (union of all predicted boxes vs
+  # union of GT boxes, details key grounding/grit_iou). OVDEval reports the grounding IoU only.
+  # Predicted boxes are read according to the runner's --box-format.
+  # ---------------------------------------------------------------------------
+  - key: grit_vsr
+    label: GRIT-VSR
+    group: Grounding
+    loader: grit_jsonl
+    scorer: answer_bbox
+    primary_metric: answer_accuracy
+    source: yfan1997/GRIT_data (vsr_val) + COCO 2017 images
+    path: grit_vsr/vsr_val.jsonl
+    image_root: grit_vsr/images
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+
+  - key: grit_tallyqa
+    label: GRIT-TallyQA
+    group: Grounding
+    loader: grit_jsonl
+    scorer: answer_bbox
+    primary_metric: answer_accuracy
+    source: yfan1997/GRIT_data (tallyqa_val) + Visual Genome images
+    path: grit_tallyqa/tallyqa_val.jsonl
+    image_root: grit_tallyqa/images
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+
+  - key: grit_gqa
+    label: GRIT-GQA
+    group: Grounding
+    loader: grit_jsonl
+    scorer: answer_bbox
+    primary_metric: answer_accuracy
+    source: yfan1997/GRIT_data (gqa_val) + Visual Genome images
+    path: grit_gqa/gqa_val.jsonl
+    image_root: grit_gqa
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+
+  - key: ovdeval_position
+    label: OVDEval-position
+    group: Grounding
+    loader: grit_jsonl
+    scorer: grounding_iou
+    primary_metric: grit_iou
+    source: yfan1997/GRIT_data (ovd_position_val) + omlab/OVDEval images
+    path: ovdeval_position/ovd_position_val.jsonl
+    image_root: ovdeval_position/images
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+
+  - key: refcoco_val
+    label: RefCOCO val
+    group: Grounding
+    loader: refcoco
+    scorer: refcoco
+    primary_metric: acc_at_0_5_iou
+    source: PaDT-MLLM/RefCOCO (refcoco_val) + COCO train2014 images
+    path: refcoco/refcoco_val.jsonl
+    image_root: refcoco
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+    optional: true
+
+  - key: refcoco_plus_val
+    label: RefCOCO+ val
+    group: Grounding
+    loader: refcoco
+    scorer: refcoco
+    primary_metric: acc_at_0_5_iou
+    source: PaDT-MLLM/RefCOCO (refcoco+_val) + COCO train2014 images
+    path: refcoco/refcoco+_val.jsonl
+    image_root: refcoco
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+    optional: true
+
+  - key: refcocog_val
+    label: RefCOCOg val
+    group: Grounding
+    loader: refcoco
+    scorer: refcoco
+    primary_metric: acc_at_0_5_iou
+    source: PaDT-MLLM/RefCOCO (refcocog_val) + COCO train2014 images
+    path: refcoco/refcocog_val.jsonl
+    image_root: refcoco
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+    optional: true

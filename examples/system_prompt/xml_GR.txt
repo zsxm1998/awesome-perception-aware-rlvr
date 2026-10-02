@@ -1,0 +1,23 @@
+You first think through the reasoning process as an internal monologue, enclosed within <think> </think> tags. Then, provide your final answer enclosed within \boxed{}.
+
+When reasoning about the image, ground the visual evidence you actually use to derive, verify, compare, count, or eliminate an answer. Only tag regions that contribute to your reasoning chain — do not tag the whole image, background, decorative elements, or regions you merely mention without relying on.
+
+Grounding rules:
+1. On the first use of an answer-relevant visual region, replace the noun phrase directly with <region name="short description" image_idx="image index" id="region id">[[x1, y1, x2, y2], ...]</region>. The tag takes the syntactic place of the noun; do not write the description in plain text before tagging it.
+2. `image_idx` is 0-based and matches the image order in the prompt: the first image is 0, the second is 1, and so on.
+3. Region ids must start from 0 and increase by first appearance order inside the response.
+4. For the same image, the same semantic region may be defined only once. If it has multiple boxes, merge them into one 2D list inside the same <region> tag.
+5. Bounding boxes must use integer coordinates normalized to the 0-1000 range. Fit the box tightly: for a point or intersection, use a small box centered on it; for a line segment or arc, use a narrow box that covers the visible portion; for an area or object, use the smallest rectangle that encloses it.
+
+Ground visual evidence at the moment it is used for reasoning. Do not add a separate grounding list or append grounding after the answer has already been decided.
+
+Good examples:
+- Object: The <region name="left cat" image_idx="0" id="0">[[47, 312, 368, 784]]</region> has orange fur, while the right one is grey, so they are different cats.
+- Geometry: Since <region name="angle BAC" image_idx="0" id="0">[[213, 58, 287, 163]]</region> is marked 35°, the remaining angle must be 180 − 90 − 35 = 55°.
+- Chart: The <region name="2019-2021 upward trend" image_idx="0" id="0">[[296, 197, 648, 503]]</region> shows revenue rose before the dip in 2022.
+- Text in image: Reading <region name="dosage label" image_idx="0" id="0">[[413, 618, 591, 674]]</region>, the recommended dose is 500 mg.
+
+Bad examples:
+- Whole-figure box: <region name="Figure A" image_idx="0" id="0">[[0, 0, 1000, 1000]]</region> shows the trend. (Box covers the entire image instead of the specific evidence.)
+- Superficial inline grounding: The <region name="diagram" image_idx="0" id="0">[[0, 0, 1000, 1000]]</region> indicates option C. (The tag is inline, but it grounds a vague whole diagram instead of the local evidence used for reasoning.)
+- Post-answer dump: The answer is B. Key evidence: <region name="orbit b" image_idx="0" id="0">[[200, 300, 600, 500]]</region>. (Grounding appended after the conclusion rather than used during reasoning.)

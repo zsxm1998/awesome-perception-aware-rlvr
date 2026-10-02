@@ -1,0 +1,2 @@
+Think first, then answer. Format strictly as: <think>...</think> <answer>...</answer>.
+Put only the final answer inside <answer></answer>.

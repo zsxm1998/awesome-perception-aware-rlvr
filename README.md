@@ -1,0 +1,387 @@
+<div align="center">
+
+# Awesome Perception-Aware RLVR
+
+**A curated list and a unified, reproducible codebase for perception-aware reinforcement learning with verifiable rewards (RLVR) for vision-language models.**
+
+[English](README.md) | [简体中文](README_zh.md)
+
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Built on EasyR1](https://img.shields.io/badge/built%20on-EasyR1-orange)](https://github.com/hiyouga/EasyR1)
+[![Awesome](https://awesome.re/badge.svg)](https://github.com/sindresorhus/awesome)
+
+</div>
+
+Outcome-reward RL makes vision-language models better reasoners, but the reward only checks the
+final answer: a model can be right for the wrong reasons and rely on language priors instead of
+the image. **Perception-aware RLVR** methods put visual perception back into the objective, e.g. by
+contrasting the policy on counterfactual views of the image, by giving credit to the tokens that
+actually depend on the image, or by letting the model ground or zoom into visual evidence while it
+reasons.
+
+This repository provides
+
+- **[Paper list](#paper-list)**: perception-aware policy optimization, grounded reasoning /
+  thinking with images, and the benchmarks used in this line of work;
+- **[Reproductions](#reproduced-methods)** of 10 methods (PAPO, VPPO, DVRP, ToR, PGPO, PEPO, CFPO,
+  VEPO, GRIT, DeepEyes) with each paper's own data, model and hyper-parameters, plus the GRPO/DAPO
+  baselines they compare against;
+- **[A controlled comparison](comparison/README.md)** of all methods under one setting
+  (Qwen3-VL-4B, the same data and the same hyper-parameters);
+- **[One-click evaluation](eval/README.md)** on the union of the benchmarks used by these papers,
+  with per-benchmark download scripts and per-paper suites;
+- the **official implementation of CGPO** ([reproduction/cgpo](reproduction/cgpo/README.md),
+  ACM MM 2026).
+
+All methods share one training framework (a fork of [EasyR1](https://github.com/hiyouga/EasyR1)),
+so they can be combined, compared and extended with a few configuration switches.
+
+> [!NOTE]
+> Except for CGPO, the methods are **unofficial re-implementations**. Please refer to and cite the
+> original papers and repositories. Differences from the official recipes are documented in each
+> method's README. Our numbers come from single-seed runs of these re-implementations and may not
+> reproduce the gains reported in the papers; see [About the results](#about-the-results).
+
+## Contents
+
+- [News](#news)
+- [Reproduced methods](#reproduced-methods)
+- [Quick start](#quick-start)
+- [Repository layout](#repository-layout)
+- [Controlled comparison](#controlled-comparison)
+- [Evaluation](#evaluation)
+- [Configuration](#configuration)
+- [Paper list](#paper-list)
+- [Contributing](#contributing)
+- [Citation](#citation)
+- [Acknowledgements](#acknowledgements)
+
+## News
+
+- **2026-10**: First release: 10 reproduced methods + CGPO, a controlled comparison on
+  Qwen3-VL-4B, and one-click evaluation. Reproduction results are being collected with this
+  codebase and will be added to the tables below.
+
+## Reproduced methods
+
+| Method | Paper | Venue | Official code | Scripts | Main setting |
+| --- | --- | --- | --- | --- | --- |
+| **CGPO** (ours) | [Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](reproduction/cgpo/README.md) | ACM MM 2026 | this repo | [reproduction/cgpo](reproduction/cgpo) | Qwen2.5-VL-7B / Qwen3-VL-8B, ViRL39K (natural-image reproduction) |
+| PAPO | [Perception-Aware Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2507.06448) | ICLR 2026 | [GitHub](https://github.com/MikeWangWZHL/PAPO) | [reproduction/papo](reproduction/papo) | Qwen2.5-VL-3B/7B, ViRL39K |
+| VPPO | [Spotlight on Token Perception for Multimodal Reinforcement Learning](https://arxiv.org/abs/2510.09285) | ICLR 2026 | [GitHub](https://github.com/huaixuheqing/VPPO-RL) | [reproduction/vppo](reproduction/vppo) | Qwen2.5-VL-7B / Qwen3-VL-8B, ViRL39K |
+| DVRP | [Thinking with Deltas: Incentivizing Reinforcement Learning via Differential Visual Reasoning Policy](https://arxiv.org/abs/2601.06801) | arXiv | - | [reproduction/dvrp](reproduction/dvrp) | Qwen2.5-VL-3B/7B, ViRL39K |
+| ToR | [Bridging Perception and Reasoning: Token Reweighting for RLVR in Multimodal LLMs](https://arxiv.org/abs/2603.25077) | arXiv | - | [reproduction/tor](reproduction/tor) | Qwen2.5-VL-7B, Geometry3K |
+| PGPO | [Not All Tokens See Equally: Perception-Grounded Policy Optimization for Large Vision-Language Models](https://arxiv.org/abs/2604.01840) | arXiv | - | [reproduction/pgpo](reproduction/pgpo) | Qwen2.5-VL-3B/7B, ViRL39K |
+| PEPO | [Rethinking Token-Level Policy Optimization for Multimodal Chain-of-Thought](https://arxiv.org/abs/2603.22847) | arXiv | [GitHub](https://github.com/xzxxntxdy/PEPO) | [reproduction/pepo](reproduction/pepo) | Qwen2.5-VL-3B / InternVL3-2B, Geometry3K |
+| CFPO | [CFPO: Counterfactual Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2606.23206) | ICML 2026 | [GitHub](https://github.com/Raven-July/CFPO) | [reproduction/cfpo](reproduction/cfpo) | Qwen2.5-VL-3B, ViRL39K |
+| VEPO | [Entropy Is Not Enough: Unlocking Effective Reinforcement Learning for Visual Reasoning via Vision-Anchored Token Selection](https://arxiv.org/abs/2606.03937) | arXiv | [GitHub](https://github.com/Leonnnnnn929/VEPO) | [reproduction/vepo](reproduction/vepo) | Qwen2.5-VL-7B, Geometry3K |
+| GRIT | [GRIT: Teaching MLLMs to Think with Images](https://arxiv.org/abs/2505.15879) | NeurIPS 2025 | [GitHub](https://github.com/UCSB-AI/GRIT) | [reproduction/grit](reproduction/grit) | Qwen2.5-VL-3B / InternVL3-2B, 20 GRIT samples |
+| DeepEyes | [DeepEyes: Incentivizing "Thinking with Images" via Reinforcement Learning](https://arxiv.org/abs/2505.14362) | ICLR 2026 | [GitHub](https://github.com/Visual-Agent/DeepEyes) | [reproduction/deepeyes](reproduction/deepeyes) | Qwen2.5-VL-7B / Qwen3-VL-8B, DeepEyes-47k, multi-turn zoom-in tool |
+
+Every directory contains a README with the paper's setting, the scripts (method and baselines),
+the differences from the official recipe and the reported numbers. The upstream EasyR1 algorithms
+(GRPO, DAPO, GSPO, CISPO, SAPO, REINFORCE++, RLOO, ReMax) remain available.
+
+## Quick start
+
+**1. Install** (Linux, CUDA 12.8 drivers, conda):
+
+```bash
+git clone https://github.com/zsxm1998/awesome-perception-aware-rlvr.git
+cd awesome-perception-aware-rlvr
+bash scripts/install_env.sh          # creates the conda env "parlvr" (torch 2.10, vLLM 0.19, flash-attn 2.8.3)
+conda activate parlvr
+```
+
+A [Dockerfile](Dockerfile) based on `vllm/vllm-openai:v0.19.0` is also provided.
+
+**2. Prepare data** (downloaded into `./data`, see [data/README.md](data/README.md)):
+
+```bash
+bash scripts/prepare_data.sh papo            # training/validation data of one method
+bash scripts/prepare_data.sh all             # or everything
+bash scripts/prepare_eval_data.sh papo       # benchmarks of the PAPO evaluation suite
+```
+
+If `huggingface.co` is slow or blocked, set `HF_ENDPOINT=https://hf-mirror.com`.
+
+**3. Train**:
+
+```bash
+bash reproduction/papo/qwen2_5_vl_7b_grpo_papo.sh                       # PAPO-G, paper setting
+bash comparison/qwen3_vl_4b/cgpo.sh                                      # CGPO in the controlled comparison
+N_GPUS_PER_NODE=4 bash reproduction/papo/qwen2_5_vl_7b_grpo.sh trainer.total_epochs=1   # any override
+```
+
+Checkpoints go to `checkpoints/<project>/<experiment>/global_step_*`; logs go to the console and
+to `experiment_log.jsonl` in the same folder (`LOGGER='["console","wandb"]'` or `swanlab` for
+online tracking).
+
+**4. Evaluate**:
+
+```bash
+bash scripts/eval.sh checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_papo --suite papo
+bash scripts/eval.sh Qwen/Qwen2.5-VL-7B-Instruct --suite papo         # base model
+```
+
+The wrapper merges FSDP checkpoints into Hugging Face format, runs every benchmark of the suite
+with vLLM on all visible GPUs and writes a summary table. See [eval/README.md](eval/README.md).
+
+## Repository layout
+
+```
+.
+├── reproduction/<method>/   # paper settings: common.sh (shared args) + one script per run
+├── comparison/qwen3_vl_4b/  # controlled comparison: one script per method, identical common.sh
+├── eval/                    # one-click evaluation (registry, loaders, scorers, prepare/)
+├── examples/                # shared assets: config.yaml, format prompts, system prompts, reward functions
+├── scripts/                 # install_env.sh, prepare_data.sh, prepare_eval_data.sh, eval.sh, launcher.sh
+├── verl/                    # training framework (EasyR1 fork) with all method implementations
+├── docs/                    # algorithm parameters, adding a method, BibTeX
+├── data/                    # downloaded data (git-ignored)
+└── tests/                   # unit tests
+```
+
+The perception-aware methods are implemented as composable blocks in `verl/trainer/`:
+auxiliary (counterfactual) image views, token-level visual-sensitivity signals, token selection,
+advantage scaling, auxiliary losses and extra rewards. See
+[docs/algorithm_parameters.md](docs/algorithm_parameters.md) for every switch and
+[docs/add_method.md](docs/add_method.md) for adding a new method.
+
+## Controlled comparison
+
+[`comparison/qwen3_vl_4b`](comparison/README.md) trains every method on Qwen3-VL-4B-Instruct with
+the same data (ViRL39K / MMK12), the same GRPO hyper-parameters and the same evaluation; only the
+method-specific arguments differ. Results will be added here.
+
+| Method | GRPO | PAPO | VPPO | ToR | DVRP | PGPO | PEPO | CFPO | VEPO | GRIT | CGPO |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Avg. (comparison suite) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+
+### About the results
+
+The numbers produced with this repository (the table above, [comparison/README.md](comparison/README.md)
+and the "this repo" columns of every `reproduction/<method>` README) come with these caveats:
+
+- **Unofficial re-implementations.** Except for CGPO, every method was re-implemented by us from
+  the paper and, where available, the official code. Details that a paper leaves open may be
+  implemented differently from the authors' code; the known differences are listed in each
+  method's README.
+- **Different environment.** Hardware, software versions (PyTorch, vLLM, transformers, the RL
+  framework), data preprocessing and the evaluation harness differ from those of the original
+  papers, and one evaluation protocol is used for all methods (see [Evaluation](#evaluation)).
+- **Single seed.** Each configuration is trained once. On these benchmarks RLVR results often move
+  by a point or more between seeds, which is as large as many reported gains.
+- **Shared setting.** The controlled comparison uses one backbone, one dataset and one set of
+  hyper-parameters for every method; a method tuned for another setting may not reach its best
+  performance here.
+
+If a method does not beat GRPO/DAPO in our tables, or falls short of the gain reported in its
+paper, this describes our re-implementation in our setting and is not evidence against the method.
+The original papers remain the reference for each method's performance. Authors who notice a
+discrepancy are very welcome to open an issue or a pull request, and we will correct the
+implementation or the numbers.
+
+## Evaluation
+
+The evaluation harness covers the union of the benchmarks used by the reproduced papers:
+math and multimodal reasoning (Geometry3K, MathVista, We-Math, MMK12, MathVerse, MathVerse-V,
+LogicVista, CLEVR counting, MMMU-Pro, DynaMath, MathVision), perception and hallucination (POPE,
+HallusionBench, MME, TextVQA, CFPO's counterfactual C-VQA-Real and MARS-Bench, SEED-Bench, ...),
+grounded reasoning (GRIT's VSR / TallyQA / GQA / OVDEval, refCOCO) and high-resolution perception
+(V*, HR-Bench, MME-RealWorld-Lite). Each benchmark has a download script, and each paper
+has a suite (`--suite papo`, `--suite deepeyes`, ...). Adding a benchmark takes a loader, a scorer
+and a registry entry; see the tutorial in [eval/README.md](eval/README.md#adding-a-new-benchmark).
+
+> [!IMPORTANT]
+> The papers use different evaluation protocols (rule-based avg@8 at temperature 1.0 for
+> PAPO/VPPO/PGPO/DVRP/CFPO; greedy decoding with an LLM judge for ToR/VEPO/GRIT/DeepEyes). This
+> repository evaluates every model with one harness, so compare methods against baselines run in
+> this repository rather than against numbers copied across papers.
+
+## Configuration
+
+Environment variables understood by every training script:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MODEL_PATH` | per script | Hugging Face id or local path of the policy |
+| `DATA_ROOT` | `./data` | prepared training data |
+| `LOGGER` | `["console","file"]` | add `"wandb"`, `"swanlab"`, `"tensorboard"` or `"mlflow"` |
+| `N_GPUS_PER_NODE` | per script | GPUs per node |
+| `NNODES` | `1` | number of nodes (start a Ray cluster first for multi-node runs) |
+| `EXPERIMENT_NAME` | script name | run name; checkpoints in `checkpoints/<project>/<experiment>` |
+
+Any config key can be appended as `key=value` (see [examples/config.yaml](examples/config.yaml)
+and [verl/trainer/config.py](verl/trainer/config.py)). Set `USE_MODELSCOPE_HUB=1` to download models
+from ModelScope.
+
+## Paper list
+
+Verified on 2026-10-01 against arXiv, OpenReview and the official repositories; venues are only listed when confirmed by a primary source (sources: [docs/paper_list_sources.md](docs/paper_list_sources.md), BibTeX: [docs/paper_list.bib](docs/paper_list.bib)). Newest first. Pull requests that add papers are welcome.
+
+### Reproduced in this repository
+
+Each method below can be trained with the scripts in `reproduction/<method>` (paper setting) and `comparison/` (shared setting). Except for CGPO these are unofficial re-implementations; see each README for the differences from the official code.
+
+- **CGPO** (ours) · [CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](reproduction/cgpo/README.md) · ACM MM 2026 · official code: this repository<br>
+  The policy grounds its evidence inline in the chain of thought; the grounded regions are masked to form a counterfactual image, and the KL between the policy on the original and on the counterfactual image measures how much each token depends on that evidence. Responses that depend more on their evidence get larger advantages on perception-critical tokens, and a grounding-consistency reward (the policy re-detects every grounded entity) keeps the boxes from being inflated. Scripts cover the natural-image setting; the pathology setting of the paper is described in the README. Scripts and setting: [reproduction/cgpo](reproduction/cgpo/README.md).
+- **PAPO** · [Perception-Aware Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2507.06448) · Zhenhailong Wang et al. · ICLR 2026 · [code](https://github.com/MikeWangWZHL/PAPO)<br>
+  Adds an *Implicit Perception Loss* to GRPO/DAPO that maximizes the KL between the policy on the original image and on a randomly patch-masked copy, so the outputs have to depend on the image. A *Double Entropy Loss* on both views keeps the policy from inflating this KL term in degenerate ways. Scripts and setting: [reproduction/papo](reproduction/papo/README.md).
+- **VPPO** · [Spotlight on Token Perception for Multimodal Reinforcement Learning](https://arxiv.org/abs/2510.09285) · Siyuan Huang et al. · ICLR 2026 · [code](https://github.com/huaixuheqing/VPPO-RL)<br>
+  Measures each token's visual dependency as the KL between predictions with the original and with a perturbed image. Only the 40% most visually dependent tokens of a response receive gradients, and each response's advantage is scaled by its mean visual dependency (built on DAPO). Scripts and setting: [reproduction/vppo](reproduction/vppo/README.md).
+- **DVRP** · [Thinking with Deltas: Incentivizing Reinforcement Learning via Differential Visual Reasoning Policy](https://arxiv.org/abs/2601.06801) · Shujian Gao et al. · arXiv<br>
+  Builds a visual triplet for every image: the original, a patch-masked view and a diffusion-noised view. It maximizes the KL to the masked view (the answer must need the image), minimizes the KL to the noised view (the answer should be robust to small changes) and adds an entropy penalty on both auxiliary views; on GRPO or DAPO. Scripts and setting: [reproduction/dvrp](reproduction/dvrp/README.md).
+- **ToR** · [Bridging Perception and Reasoning: Token Reweighting for RLVR in Multimodal LLMs](https://arxiv.org/abs/2603.25077) · Jinda Lu et al. · arXiv<br>
+  Reweights tokens in the GRPO/DAPO objective. The 30% highest-entropy tokens (reasoning tokens) and the 30% tokens whose log-probability changes most when the image is removed (perception tokens) are optimized with separate weights; all other tokens are excluded. Scripts and setting: [reproduction/tor](reproduction/tor/README.md).
+- **PGPO** · [Not All Tokens See Equally: Perception-Grounded Policy Optimization for Large Vision-Language Models](https://arxiv.org/abs/2604.01840) · Zekai Ye et al. · arXiv<br>
+  A second forward pass with the attention to all visual tokens masked gives each token's visual dependency (KL with vs. without the image). After log compression and per-response normalization, a threshold-gated weight, renormalized to keep the response total, multiplies the DAPO advantage token by token. Scripts and setting: [reproduction/pgpo](reproduction/pgpo/README.md).
+- **PEPO** · [Rethinking Token-Level Policy Optimization for Multimodal Chain-of-Thought](https://arxiv.org/abs/2603.22847) · Yunheng Li et al. · arXiv · [code](https://github.com/xzxxntxdy/PEPO)<br>
+  Reweights token advantages without an extra forward pass. A perception prior (cosine similarity between a token's hidden state and the vision-token hidden states) is gated by token entropy and turned into softmax token weights, which are mixed into the advantage with a coefficient that grows linearly during training; on GRPO or DAPO. Scripts and setting: [reproduction/pepo](reproduction/pepo/README.md).
+- **CFPO** · [CFPO: Counterfactual Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2606.23206) · Zhangyuan Yu et al. · ICML 2026 · [code](https://github.com/Raven-July/CFPO)<br>
+  Builds the counterfactual inside the model: in every self-attention layer the image-token values that receive the highest text-to-image attention are replaced by the mean image-token value. The policy is pushed away from this counterfactual by maximizing the KL between the factual and the counterfactual outputs; on GRPO or DAPO. Scripts and setting: [reproduction/cfpo](reproduction/cfpo/README.md).
+- **VEPO** · [Entropy Is Not Enough: Unlocking Effective Reinforcement Learning for Visual Reasoning via Vision-Anchored Token Selection](https://arxiv.org/abs/2606.03937) · Senjie Jin et al. · arXiv · [code](https://github.com/Leonnnnnn929/VEPO)<br>
+  Selects which tokens receive policy gradients. Per token it combines the Jensen-Shannon divergence and the entropy gap between predictions on the original and on a perturbed image with the token entropy, and optimizes only the top 20% of tokens of each response; the sequence-level advantage is unchanged. Scripts and setting: [reproduction/vepo](reproduction/vepo/README.md).
+- **GRIT** · [GRIT: Teaching MLLMs to Think with Images](https://arxiv.org/abs/2505.15879) · Yue Fan et al. · NeurIPS 2025 · [code](https://github.com/UCSB-AI/GRIT)<br>
+  Trains single-turn grounded reasoning chains that interleave text with bounding boxes, without feeding crops back to the model. GRPO-GR rewards the output structure, producing boxes (with a counting bonus) and answer correctness, with no supervision on the boxes; the paper trains on only 20 image-question-answer triplets. Scripts and setting: [reproduction/grit](reproduction/grit/README.md).
+- **DeepEyes** · [DeepEyes: Incentivizing "Thinking with Images" via Reinforcement Learning](https://arxiv.org/abs/2505.14362) · Ziwei Zheng et al. · ICLR 2026 · [code](https://github.com/Visual-Agent/DeepEyes)<br>
+  Multi-turn agentic RL with an image zoom-in tool: the model reasons, calls `image_zoom_in_tool` with a bounding box, receives the crop of the original image as a new observation and continues. GRPO optimizes the whole trajectory with an accuracy and format reward plus a tool bonus that is granted only to correct answers that used the tool. Supported here on Qwen2.5-VL (absolute pixel coordinates, as in the paper) and Qwen3-VL (0-1000 coordinates). Scripts and setting: [reproduction/deepeyes](reproduction/deepeyes/README.md).
+
+### Other papers
+
+#### Perception-aware policy optimization
+
+| Date | Paper | Venue | Code | Key idea |
+|---|---|---|---|---|
+| 2026-09 | [Reinforcing Multimodal Reasoning via Token-Level Perception-Grounded Advantage Estimation](https://arxiv.org/abs/2609.39168)<br>Zhihan Zhang et al. · `2609.39168` | ACM MM 2026 | [GitHub](https://github.com/Zhihan72/TPAE) | **TPAE**: Scores each token's consistency with vision-dependency/entropy patterns of correct rollouts to modulate sequence-level advantages. |
+| 2026-09 | [Anchoring What Matters: A Dual-Level Learning Framework for Visually-Grounded Multimodal Reasoning](https://arxiv.org/abs/2609.18057)<br>Xinxin Song et al. · `2609.18057` | arXiv | - | **PIVOT**: Replays visually-grounded past trajectories as anchors; allocates extra advantage by local visual support and downstream impact. |
+| 2026-08 | [Evidence-RL: Towards Evidence-intensive Visual Reasoning](https://arxiv.org/abs/2608.08021)<br>Haojie Huang et al. · `2608.08021` | NeurIPS 2026 | [GitHub](https://github.com/evidencerl/code) | **Evidence-RL (CED)**: Neutralizes object evidence regions vs. matched non-evidence regions; GRPO rewards correct answers that causally rely on evidence. |
+| 2026-08 | [ReGround: Restoring Visual Grounding in Multi-Step Reasoning through Self-Diagnosis and Visual Re-Examination](https://arxiv.org/abs/2608.04385)<br>Lei Peng et al. · `2608.04385` | ACM MM 2026 | [GitHub](https://github.com/sespoir/ReGround) | **ReGround**: SFT then GRPO teach self-diagnosis of grounding failures and selective image re-injection during multi-step reasoning. |
+| 2026-07 | [SIVA-RL: Sensitivity-Invariance Visual Alignment for Multimodal Reinforcement Learning](https://arxiv.org/abs/2607.13931)<br>Cheng Tang et al. · `2607.13931` | arXiv | [GitHub](https://github.com/tchenglv520/SIVA-RL) | **SIVA-RL**: Within-image PatchSwap interventions; audited reward drop routes each pair to sensitivity or invariance alignment. |
+| 2026-06 | [PRPO: Perception-Reinforced Policy Optimization via Token-Level Dynamic Advantage Reshaping](https://arxiv.org/abs/2606.08708)<br>Qiming Li et al. · `2606.08708` | arXiv | - | **PRPO**: Robust Visual Dependency finds grounded, perturbation-stable tokens; Perceptual Advantage Reshaping amplifies their token-level advantages. |
+| 2026-06 | [DyCo-RL: Dynamic Cross-Modal Coordination for Visual Reasoning](https://arxiv.org/abs/2606.08035)<br>Hangui Lin et al. · `2606.08035` | arXiv | [GitHub](https://github.com/Sammy20207109/DyCo-RL) | **DyCo-RL**: Assigns tokens visual/text roles via Fisher-Rao attention shifts; reweights advantages by attention-role alignment. |
+| 2026-05 | [Attend to Evidence: Evidence-Anchored Spatial Attention Supervision for Multimodal RLVR](https://arxiv.org/abs/2605.30912)<br>Ruina Hu et al. · `2605.30912` | EMNLP 2026 | [GitHub](https://github.com/Nrich-sunny/Attend-to-Evidence) | **EASE**: On high-reward rollouts only, supervises response-to-image attention toward annotated evidence regions (training-time labels). |
+| 2026-05 | [Bad Seeing or Bad Thinking? Rewarding Perception for Multimodal Reasoning](https://arxiv.org/abs/2605.14054)<br>Haozhe Wang et al. · `2605.14054` | ICML 2026 | - | **MoCA**: Perception Verification via a blindfolded text reasoner rewards perception separately; credit routed to bad seeing vs. bad thinking. |
+| 2026-05 | [Reinforcing Multimodal Reasoning Against Visual Degradation](https://arxiv.org/abs/2605.09262)<br>Rui Liu et al. · `2605.09262` | arXiv | - | **ROMA**: Teacher-forced corrupted views of clean trajectories, worst-case token KL, correctness-conditioned regularization for degradation robustness. |
+| 2026-05 | [Structured Role-Aware Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2605.07274)<br>Bingqing Jiang et al. · `2605.07274` | arXiv | - | **SRPO**: Role-aware token weights: perception tokens by original-vs-corrupted image dependency, reasoning tokens by consistency with perception. |
+| 2026-04 | [Improving Vision-language Models with Perception-centric Process Reward Models](https://arxiv.org/abs/2604.24583)<br>Yingqian Min et al. · `2604.24583` | CVPR 2026 | [GitHub](https://github.com/RUCAIBox/Perceval) | **Perceval**: Perception-centric PRM flags hallucinated image claims; RL applies token-level penalties on those spans instead of sequence-level advantages. |
+| 2026-04 | [Visually-Guided Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2604.09349)<br>Zengbin Wang et al. · `2604.09349` | ACL 2026 | [GitHub](https://github.com/wzb-bupt/VGPO) | **VGPO**: Visual Attention Compensation counters visual forgetting; reweights advantages by visual activation within and across trajectories. |
+| 2026-04 | [Faithful GRPO: Improving Visual Spatial Reasoning in Multimodal Language Models via Constrained Policy Optimization](https://arxiv.org/abs/2604.08476)<br>Sai Srinivas Kancheti et al. · `2604.08476` | COLM 2026 | - | **Faithful GRPO**: GRPO with logical-consistency and visual-grounding constraints enforced via Lagrangian dual ascent. |
+| 2026-03 | [Seeing with You: Perception-Reasoning Coevolution for Multimodal Reasoning](https://arxiv.org/abs/2603.28618)<br>Ziqi Miao et al. · `2603.28618` | arXiv | [GitHub](https://github.com/Dtc7w3PQ/PRCO) | **PRCO**: One shared policy plays Observer (question-tailored evidence caption, utility reward) and Solver (answer, outcome reward). |
+| 2026-02 | [Do MLLMs Really See It: Reinforcing Visual Attention in Multimodal LLMs](https://arxiv.org/abs/2602.08241)<br>Siqu Ou et al. · `2602.08241` | arXiv | - | **SAYO**: RL with a region-level visual-attention reward that aligns optimization with visually grounded reasoning steps. |
+| 2026-01 | [CPPO: Contrastive Perception Policy Optimization for VLM Agents](https://arxiv.org/abs/2601.00501)<br>Ahmad Rezaei et al. · `2601.00501` | ICML 2026 Workshop (AIWILD) | [GitHub](https://github.com/vbdi/cppo) | **CPPO**: Contrastive Perception Loss applied to perception tokens detected by entropy shifts under perturbed images. |
+| 2025-12 | [Learning When to Look: A Disentangled Curriculum for Strategic Perception in Multimodal Reasoning](https://arxiv.org/abs/2512.17227)<br>Siqi Yang et al. · `2512.17227` | CVPR 2026 Findings | [GitHub](https://github.com/gaozilve-max/learning-when-to-look) | **Learning When to Look**: Disentangled SFT curriculum, then RL with a Pivotal Perception Reward teaching when to look. |
+| 2025-12 | [Boosting RL-Based Visual Reasoning with Selective Adversarial Entropy Intervention](https://arxiv.org/abs/2512.10414)<br>Yang Yu et al. · `2512.10414` | arXiv | - | **SaEI**: Entropy-guided adversarial perturbation of visual inputs during RL sampling to enlarge the explored answer space. |
+| 2025-09 | [More Thought, Less Accuracy? On the Dual Nature of Reasoning in Vision-Language Models](https://arxiv.org/abs/2509.25848)<br>Xinyu Tian et al. · `2509.25848` | ICLR 2026 | [GitHub](https://github.com/xytian1008/VAPO) | **VAPO**: Counters visual forgetting in long reasoning by explicitly steering the policy toward visually grounded trajectories. |
+| 2025-09 | [VTPerception-R1: Enhancing Multimodal Reasoning via Explicit Visual and Textual Perceptual Grounding](https://arxiv.org/abs/2509.24776)<br>Yizhuo Ding et al. · `2509.24776` | arXiv | - | **VTPerception-R1**: Perception-augmented SFT, then RL with visual, textual and consistency perception rewards. |
+| 2025-09 | [Perception-Consistency Multimodal Large Language Models Reasoning via Caption-Regularized Policy Optimization](https://arxiv.org/abs/2509.21854)<br>Songjun Tu et al. · `2509.21854` | arXiv | - | **CapPO**: Caption-based consistency regularization between image- and caption-conditioned responses, plus KL-weighted advantage estimation. |
+| 2025-09 | [Perception Before Reasoning: Two-Stage Reinforcement Learning for Visual Reasoning in Vision-Language Models](https://arxiv.org/abs/2509.13031)<br>Yan Chen et al. · `2509.13031` | arXiv | [GitHub](https://github.com/cythu/PeBR-R1) | **PeBR-R1**: Two-stage RL: first perception (coarse and fine visual understanding), then reasoning, with dataset-level sampling. |
+| 2025-08 | [Self-Rewarding Vision-Language Model via Reasoning Decomposition](https://arxiv.org/abs/2508.19652)<br>Zongxia Li et al. · `2508.19652` | arXiv | [GitHub](https://github.com/zli12321/Vision-SR1) | **Vision-SR1**: Self-reward checks that generated visual descriptions suffice to answer without the image; decoupled visual and answer advantages. |
+| 2025-08 | [COPO: Causal-Oriented Policy Optimization for Hallucinations of MLLMs](https://arxiv.org/abs/2508.04182)<br>Peizheng Guo et al. · `2508.04182` | CVPR 2026 | - | **COPO**: Token-level causal-completeness reward (sufficiency/necessity) builds causally informed GRPO advantages to reduce hallucination. |
+| 2025-07 | [Look-Back: Implicit Visual Re-focusing in MLLM Reasoning](https://arxiv.org/abs/2507.03019)<br>Shuo Yang et al. · `2507.03019` | arXiv | [GitHub](https://github.com/PKU-YuanGroup/Look-Back) | **Look-Back**: SFT then RL teach MLLMs to autonomously re-focus on visual inputs late in reasoning, without image re-injection. |
+| 2025-06 | [ViCrit: A Verifiable Reinforcement Learning Proxy Task for Visual Perception in VLMs](https://arxiv.org/abs/2506.10128)<br>Xiyao Wang et al. · `2506.10128` | NeurIPS 2025 | [GitHub](https://github.com/si0wang/ViCrit) | **ViCrit**: RL proxy task: localize one injected visual hallucination in a human-written caption; exact-match verifiable reward. |
+| 2025-06 | [Revisiting Visual Understanding in Multimodal Reasoning through a Lens of Image Perturbation](https://arxiv.org/abs/2506.09736)<br>Yuting Li et al. · `2506.09736` | arXiv | [GitHub](https://github.com/YutingLi0606/Vision-Matters) | **Vision-Matters**: Distractor concatenation, dominance-preserving mixup and random rotation perturbations plugged into SFT, DPO or GRPO. |
+| 2025-06 | [Perception-R1: Advancing Multimodal Reasoning Capabilities of MLLMs via Visual Perception Reward](https://arxiv.org/abs/2506.07218)<br>Tong Xiao et al. · `2506.07218` | ICLR 2026 | [GitHub](https://github.com/tongxiao2002/Perception-R1) | **Perception-R1 (Xiao et al.)**: Judging LLM scores consistency between responses and visual annotations as a visual perception reward in RLVR. |
+| 2025-05 | [Visionary-R1: Mitigating Shortcuts in Visual Reasoning with Reinforcement Learning](https://arxiv.org/abs/2505.14677)<br>Jiaer Xia et al. · `2505.14677` | TMLR | [GitHub](https://github.com/maifoundations/Visionary-R1) | **Visionary-R1**: Caption-reason-answer output format trained with pure RL to mitigate shortcut learning. |
+| 2025-04 | [NoisyRollout: Reinforcing Visual Reasoning with Data Augmentation](https://arxiv.org/abs/2504.13055)<br>Xiangyan Liu et al. · `2504.13055` | NeurIPS 2025 | [GitHub](https://github.com/real-absolute-AI/NoisyRollout) | **NoisyRollout**: Mixes rollouts from clean and moderately distorted images with noise annealing in GRPO; RL objective unchanged. |
+
+#### Grounded reasoning and thinking with images
+
+| Date | Paper | Venue | Code | Key idea |
+|---|---|---|---|---|
+| 2026-07 | [Perceive-to-Reason: Decoupling Perception and Reasoning for Fine-Grained Visual Reasoning](https://arxiv.org/abs/2607.01191)<br>Hongxing Li et al. · `2607.01191` | arXiv | [GitHub](https://github.com/ZJU-REAL/Perceive-to-Reason) | **P2R**: Perceiver localizes evidence, Reasoner answers from annotated image and crops; alternating perception/reasoning GRPO. |
+| 2026-06 | [Thinking with Visual Grounding](https://arxiv.org/abs/2606.16122)<br>Junkai Zhang et al. · `2606.16122` | arXiv | [GitHub](https://github.com/Jun-Kai-Zhang/visually_grounded_thinking) | **Visually grounded thinking**: Interleaves thoughts with point/box groundings; grounding-aware RL adds dense grounding rewards to answer rewards. |
+| 2026-05 | [iVGR: Internalizing Visually Grounded Reasoning for MLLMs with Reinforcement Learning](https://arxiv.org/abs/2605.31096)<br>Chang-Bin Zhang et al. · `2605.31096` | ICML 2026 | [GitHub](https://github.com/Visual-AI/iVGR) | **iVGR**: Dual-stream RL with a consistency reward internalizes localization into textual CoT; no explicit boxes needed at inference. |
+| 2026-02 | [What Does Vision Tool-Use Reinforcement Learning Really Learn? Disentangling Tool-Induced and Intrinsic Effects for Crop-and-Zoom](https://arxiv.org/abs/2602.01334)<br>Yan Ma et al. · `2602.01334` | ICML 2026 | [GitHub](https://github.com/GAIR-NLP/Med) | **MED**: Analysis of crop-and-zoom tool-use RL: gains are mostly intrinsic; RL mainly reduces tool-induced harm. |
+| 2025-12 | [Deep But Reliable: Advancing Multi-turn Reasoning for Thinking with Images](https://arxiv.org/abs/2512.17306)<br>Wenhao Yang et al. · `2512.17306` | arXiv | - | **DRIM**: Multi-turn tool-based thinking with images; redundancy-penalized policy optimization rewards self-reflection and multi-scale exploration. |
+| 2025-12 | [Thinking with Images via Self-Calling Agent](https://arxiv.org/abs/2512.08511)<br>Wenxi Yang et al. · `2512.08511` | arXiv | [GitHub](https://github.com/YWenxi/think-with-images-through-self-calling) | **sCoT**: Recasts interleaved multimodal CoT as language-only CoT that calls parameter-sharing subagents; optimized with GRPO. |
+| 2025-12 | [Thinking with Programming Vision: Towards a Unified View for Thinking with Images](https://arxiv.org/abs/2512.03746)<br>Zirun Guo et al. · `2512.03746` | CVPR 2026 | [GitHub](https://github.com/ByteDance-BandAI/CodeVision) | **CodeVision**: Code as a universal tool for image operations; SFT then RL with a dense process reward. |
+| 2025-11 | [CropVLM: Learning to Zoom for Fine-Grained Vision-Language Perception](https://arxiv.org/abs/2511.19820)<br>Miguel Carvalho et al. · `2511.19820` | CVPR 2026 Workshop (GRAIL-V) | [GitHub](https://github.com/miguelscarv/cropvlm) | **CropVLM**: RL-trained external cropping model (no box labels) that zooms into relevant regions for any target VLM. |
+| 2025-11 | [DeepEyesV2: Toward Agentic Multimodal Model](https://arxiv.org/abs/2511.05271)<br>Jack Hong et al. · `2511.05271` | ICLR 2026 | [GitHub](https://github.com/Visual-Agent/DeepEyesV2) | **DeepEyesV2**: Agentic MLLM invoking code execution and web search; cold-start SFT then RL; introduces RealX-Bench. |
+| 2025-09 | [Mixture-of-Visual-Thoughts: Exploring Context-Adaptive Reasoning Mode Selection for General Visual Reasoning](https://arxiv.org/abs/2509.22746)<br>Zejun Li et al. · `2509.22746` | ICLR 2026 | [GitHub](https://github.com/Future-Living-Lab/mixture-of-visual-thoughts) | **MoVT / AdaVaR**: Unifies multiple visual reasoning modes via SFT; AdaGRPO induces context-adaptive mode selection. |
+| 2025-09 | [DeFacto: Counterfactual Thinking with Images for Enforcing Evidence-Grounded and Faithful Reasoning](https://arxiv.org/abs/2509.20912)<br>Tianrun Xu et al. · `2509.20912` | ICML 2026 | [GitHub](https://github.com/tinnel123666888/defacto) | **DeFacto**: Positive, counterfactual (evidence masked) and random-masking training with GRPO rewards for evidence-answer consistency. |
+| 2025-09 | [Mini-o3: Scaling Up Reasoning Patterns and Interaction Turns for Visual Search](https://arxiv.org/abs/2509.07969)<br>Xin Lai et al. · `2509.07969` | ICLR 2026 | [GitHub](https://github.com/Mini-o3/Mini-o3) | **Mini-o3**: Deep multi-turn visual search: Visual Probe dataset, diverse cold-start trajectories, over-turn masking in RL. |
+| 2025-09 | [Reinforced Visual Perception with Tools](https://arxiv.org/abs/2509.01656)<br>Zetong Zhou et al. · `2509.01656` | arXiv | [GitHub](https://github.com/ls-kelvin/REVPT) | **ReVPT**: GRPO-based RL that teaches MLLMs to reason with a suite of four visual perception tools. |
+| 2025-08 | [Thyme: Think Beyond Images](https://arxiv.org/abs/2508.11630)<br>Yi-Fan Zhang et al. · `2508.11630` | ICLR 2026 | [GitHub](https://github.com/yfzhang114/Thyme) | **Thyme**: Generates and executes code for image manipulation and computation; SFT then RL with GRPO-ATS. |
+| 2025-07 | [Traceable Evidence Enhanced Visual Grounded Reasoning: Evaluation and Methodology](https://arxiv.org/abs/2507.07999)<br>Haochen Wang et al. · `2507.07999` | ICLR 2026 | [GitHub](https://github.com/Haochen-Wang409/TreeVGR) | **TreeVGR**: RL jointly supervising localization and reasoning for traceable evidence; introduces the TreeBench benchmark. |
+| 2025-07 | [High-Resolution Visual Reasoning via Multi-Turn Grounding-Based Reinforcement Learning](https://arxiv.org/abs/2507.05920)<br>Xinyu Huang et al. · `2507.05920` | ACL 2026 Findings | [GitHub](https://github.com/EvolvingLMMs-Lab/MGPO) | **MGPO**: Multi-turn RL cropping sub-images at model-predicted grounding coordinates, using only answer-correctness reward. |
+| 2025-06 | [Reinforcing Spatial Reasoning in Vision-Language Models with Interwoven Thinking and Visual Drawing](https://arxiv.org/abs/2506.09965)<br>Junfei Wu et al. · `2506.09965` | NeurIPS 2025 | [GitHub](https://github.com/AntResearchNLP/ViLaSR) | **ViLaSR**: Drawing to reason in space (boxes, auxiliary lines); cold start, reflective rejection sampling, then RL. |
+| 2025-06 | [Rex-Thinker: Grounded Object Referring via Chain-of-Thought Reasoning](https://arxiv.org/abs/2506.04034)<br>Qing Jiang et al. · `2506.04034` | ICLR 2026 | [GitHub](https://github.com/IDEA-Research/Rex-Thinker) | **Rex-Thinker**: Object referring as CoT over candidate instances; cold-start SFT then GRPO; learns to abstain when nothing matches. |
+| 2025-05 | [Grounded Reinforcement Learning for Visual Reasoning](https://arxiv.org/abs/2505.23678)<br>Gabriel Sarch et al. · `2505.23678` | NeurIPS 2025 | [GitHub](https://github.com/Gabesarch/grounded-rl) | **ViGoRL**: RL anchors each reasoning step to image coordinates; multi-turn variant zooms into predicted coordinates. |
+| 2025-05 | [ACTIVE-o3: Empowering MLLMs with Active Perception via Pure Reinforcement Learning](https://arxiv.org/abs/2505.21457)<br>Muzhi Zhu et al. · `2505.21457` | ICML 2026 | [GitHub](https://github.com/aim-uofa/Active-o3) | **ACTIVE-o3**: GRPO framework giving MLLMs active perception (region selection) with a dual-form reward, no region supervision. |
+| 2025-05 | [Ground-R1: Incentivizing Grounded Visual Reasoning via Reinforcement Learning](https://arxiv.org/abs/2505.20272)<br>Meng Cao et al. · `2505.20272` | arXiv | [GitHub](https://github.com/zzzhhzzz/Ground-R1) | **Ground-R1**: Thinking-with-images trained with Scale Relative Policy Optimization to de-bias reward learning across evidence-region sizes. |
+| 2025-05 | [Point-RFT: Improving Multimodal Reasoning with Visually Grounded Reinforcement Finetuning](https://arxiv.org/abs/2505.19702)<br>Minheng Ni et al. · `2505.19702` | NeurIPS 2025 | [GitHub](https://github.com/kodenii/Point-RFT) | **Point-RFT**: Format finetuning on 71K point-grounded rationales, then reinforcement finetuning for visual document understanding. |
+| 2025-05 | [VTool-R1: VLMs Learn to Think with Images via Reinforcement Learning on Multimodal Tool Use](https://arxiv.org/abs/2505.19255)<br>Mingyuan Wu et al. · `2505.19255` | ICLR 2026 | [GitHub](https://github.com/VTool-R1/VTool-R1) | **VTool-R1**: RL with Python visual-editing tools yields interleaved text-image CoT using only outcome rewards. |
+| 2025-05 | [VLM-R³: Region Recognition, Reasoning, and Refinement for Enhanced Multimodal Chain-of-Thought](https://arxiv.org/abs/2505.16192)<br>Chaoya Jiang et al. · `2505.16192` | NeurIPS 2025 | - | **VLM-R³**: Region-Conditioned RPO rewards choosing regions, crop/zoom transformations, and weaving sub-images into interleaved CoT. |
+| 2025-05 | [Pixel Reasoner: Incentivizing Pixel-Space Reasoning with Curiosity-Driven Reinforcement Learning](https://arxiv.org/abs/2505.15966)<br>Haozhe Wang et al. · `2505.15966` | NeurIPS 2025 | [GitHub](https://github.com/TIGER-AI-Lab/Pixel-Reasoner) | **Pixel Reasoner**: Pixel-space operations (zoom-in, select-frame); instruction tuning then curiosity-driven RL. |
+| 2025-05 | [Adaptive Chain-of-Focus Reasoning via Dynamic Visual Search and Zooming for Efficient VLMs](https://arxiv.org/abs/2505.15436)<br>Xintong Zhang et al. · `2505.15436` | arXiv | [GitHub](https://github.com/xtong-zhang/Chain-of-Focus) | **Chain-of-Focus**: Adaptive search-and-zoom on key regions; SFT on MM-CoF, then RL with outcome and format rewards. |
+| 2025-05 | [Visual Agentic Reinforcement Fine-Tuning](https://arxiv.org/abs/2505.14246)<br>Ziyu Liu et al. · `2505.14246` | arXiv | [GitHub](https://github.com/Liuziyu77/Visual-RFT/tree/main/Visual-ARFT) | **Visual-ARFT**: Agentic RFT for web search and code-based image manipulation (crop, rotate); introduces MAT benchmark. |
+| 2025-05 | [UniVG-R1: Reasoning Guided Universal Visual Grounding with Reinforcement Learning](https://arxiv.org/abs/2505.14231)<br>Sule Bai et al. · `2505.14231` | arXiv | [GitHub](https://github.com/AMAP-ML/UniVG-R1) | **UniVG-R1**: Universal visual grounding: CoT cold-start SFT then rule-based RL with difficulty-aware weight adjustment. |
+| 2025-05 | [OpenThinkIMG: Learning to Think with Images via Visual Tool Reinforcement Learning](https://arxiv.org/abs/2505.08617)<br>Zhaochen Su et al. · `2505.08617` | arXiv | [GitHub](https://github.com/zhaochen0110/OpenThinkIMG) | **OpenThinkIMG**: Open framework for tool-augmented LVLMs; V-ToolRL learns adaptive vision-tool invocation from task success. |
+| 2025-04 | [Perception-R1: Pioneering Perception Policy with Reinforcement Learning](https://arxiv.org/abs/2504.07954)<br>En Yu et al. · `2504.07954` | NeurIPS 2025 | [GitHub](https://github.com/linkangheng/PR1) | **Perception-R1 (Yu et al.)**: Rule-based GRPO for perception policies (grounding, counting, OCR, detection); studies perceptual complexity and reward design. |
+| 2025-04 | [VLM-R1: A Stable and Generalizable R1-style Large Vision-Language Model](https://arxiv.org/abs/2504.07615)<br>Haozhan Shen et al. · `2504.07615` | arXiv | [GitHub](https://github.com/om-ai-lab/VLM-R1) | **VLM-R1**: R1-style rule-based RL framework for VLMs on visual understanding tasks; better generalization than SFT. |
+| 2025-03 | [Visual-RFT: Visual Reinforcement Fine-Tuning](https://arxiv.org/abs/2503.01785)<br>Ziyu Liu et al. · `2503.01785` | ICCV 2025 | [GitHub](https://github.com/Liuziyu77/Visual-RFT) | **Visual-RFT**: GRPO with verifiable perception rewards (e.g., IoU) for detection, reasoning grounding and fine-grained classification. |
+
+#### Benchmarks and datasets
+
+| Date | Paper | Venue | Code | Key idea |
+|---|---|---|---|---|
+| 2025-04 | [VL-Rethinker: Incentivizing Self-Reflection of Vision-Language Models with Reinforcement Learning](https://arxiv.org/abs/2504.08837)<br>Haozhe Wang et al. · `2504.08837` | NeurIPS 2025 | [GitHub](https://github.com/TIGER-AI-Lab/VL-Rethinker) | **VL-Rethinker / ViRL39K**: GRPO with Selective Sample Replay and Forced Rethinking; releases the ViRL39K RL training set. |
+| 2025-03 | [MM-Eureka: Exploring the Frontiers of Multimodal Reasoning with Rule-based Reinforcement Learning](https://arxiv.org/abs/2503.07365)<br>Fanqing Meng et al. · `2503.07365` | arXiv | [GitHub](https://github.com/ModalMinds/MM-EUREKA) | **MM-Eureka / MMK12**: Introduces MMK12, a multimodal K12 math dataset with human-verified answers, plus rule-based RL models. |
+| 2024-10 | [DynaMath: A Dynamic Visual Benchmark for Evaluating Mathematical Reasoning Robustness of Vision Language Models](https://arxiv.org/abs/2411.00836)<br>Chengke Zou et al. · `2411.00836` | ICLR 2025 | [GitHub](https://github.com/DynaMath/DynaMath) | **DynaMath**: Dynamic visual math benchmark generating question variants to test reasoning robustness. |
+| 2024-09 | [MMMU-Pro: A More Robust Multi-discipline Multimodal Understanding Benchmark](https://arxiv.org/abs/2409.02813)<br>Xiang Yue et al. · `2409.02813` | ACL 2025 | [GitHub](https://github.com/MMMU-Benchmark/MMMU/tree/main/mmmu-pro) | **MMMU-Pro**: Harder MMMU: filters text-answerable questions, augments options, adds a vision-only (question-in-image) setting. |
+| 2024-08 | [Divide, Conquer and Combine: A Training-Free Framework for High-Resolution Image Perception in Multimodal Large Language Models](https://arxiv.org/abs/2408.15556)<br>Wenbin Wang et al. · `2408.15556` | AAAI 2025 | [GitHub](https://github.com/DreamMr/HR-Bench) | **HR-Bench**: Benchmark of 4K and 8K images for high-resolution perception; also proposes training-free DC². |
+| 2024-08 | [MME-RealWorld: Could Your Multimodal LLM Challenge High-Resolution Real-World Scenarios that are Difficult for Humans?](https://arxiv.org/abs/2408.13257)<br>Yi-Fan Zhang et al. · `2408.13257` | ICLR 2025 | [GitHub](https://github.com/MME-Benchmarks/MME-RealWorld) | **MME-RealWorld**: 29,429 human-annotated QA pairs over 43 subtasks on high-resolution real-world images. |
+| 2024-07 | [LogicVista: Multimodal LLM Logical Reasoning Benchmark in Visual Contexts](https://arxiv.org/abs/2407.04973)<br>Yijia Xiao et al. · `2407.04973` | arXiv | [GitHub](https://github.com/Yijia-Xiao/LogicVista) | **LogicVista**: 448 multiple-choice questions evaluating logical reasoning in visual contexts across 5 tasks. |
+| 2024-07 | [We-Math: Does Your Large Multimodal Model Achieve Human-like Mathematical Reasoning?](https://arxiv.org/abs/2407.01284)<br>Runqi Qiao et al. · `2407.01284` | ACL 2025 | [GitHub](https://github.com/We-Math/We-Math) | **We-Math**: 6.5K visual math problems over 67 knowledge concepts with a four-dimensional diagnostic metric. |
+| 2024-03 | [Are We on the Right Way for Evaluating Large Vision-Language Models?](https://arxiv.org/abs/2403.20330)<br>Lin Chen et al. · `2403.20330` | NeurIPS 2024 | [GitHub](https://github.com/MMStar-Benchmark/MMStar) | **MMStar**: 1,500 human-selected vision-indispensable samples minimizing visual-free answering and data leakage. |
+| 2024-03 | [MathVerse: Does Your Multi-modal LLM Truly See the Diagrams in Visual Math Problems?](https://arxiv.org/abs/2403.14624)<br>Renrui Zhang et al. · `2403.14624` | ECCV 2024 | [GitHub](https://github.com/ZrrSkywalker/MathVerse) | **MathVerse**: 2,612 diagram math problems, each in six versions varying text vs. diagram information (15K test samples). |
+| 2024-02 | [Measuring Multimodal Mathematical Reasoning with MATH-Vision Dataset](https://arxiv.org/abs/2402.14804)<br>Ke Wang et al. · `2402.14804` | NeurIPS 2024 (Datasets and Benchmarks) | [GitHub](https://github.com/mathllm/MATH-V) | **MATH-Vision**: 3,040 competition math problems with visual contexts across 16 disciplines and 5 difficulty levels. |
+| 2023-12 | [V\*: Guided Visual Search as a Core Mechanism in Multimodal LLMs](https://arxiv.org/abs/2312.14135)<br>Penghao Wu et al. · `2312.14135` | CVPR 2024 | [GitHub](https://github.com/penghao-wu/vstar) | **V\* / V\*Bench**: Introduces V\*Bench for fine visual detail search in high-resolution images, alongside the SEAL visual-search MLLM. |
+| 2023-11 | [MMMU: A Massive Multi-discipline Multimodal Understanding and Reasoning Benchmark for Expert AGI](https://arxiv.org/abs/2311.16502)<br>Xiang Yue et al. · `2311.16502` | CVPR 2024 | [GitHub](https://github.com/MMMU-Benchmark/MMMU) | **MMMU**: 11.5K college-level multimodal questions across 6 disciplines and 30 subjects. |
+| 2023-10 | [HallusionBench: An Advanced Diagnostic Suite for Entangled Language Hallucination and Visual Illusion in Large Vision-Language Models](https://arxiv.org/abs/2310.14566)<br>Tianrui Guan et al. · `2310.14566` | CVPR 2024 | [GitHub](https://github.com/tianyi-lab/HallusionBench) | **HallusionBench**: 346 images with 1,129 expert-written questions diagnosing language hallucination and visual illusion. |
+| 2023-10 | [MathVista: Evaluating Mathematical Reasoning of Foundation Models in Visual Contexts](https://arxiv.org/abs/2310.02255)<br>Pan Lu et al. · `2310.02255` | ICLR 2024 | [GitHub](https://github.com/lupantech/MathVista) | **MathVista**: 6,141 examples from 28 existing datasets plus three new ones (IQTest, FunctionQA, PaperQA). |
+| 2023-05 | [Evaluating Object Hallucination in Large Vision-Language Models](https://arxiv.org/abs/2305.10355)<br>Yifan Li et al. · `2305.10355` | EMNLP 2023 | [GitHub](https://github.com/RUCAIBox/POPE) | **POPE**: Polling-based object probing evaluation for object hallucination in LVLMs. |
+| 2021-05 | [Inter-GPS: Interpretable Geometry Problem Solving with Formal Language and Symbolic Reasoning](https://arxiv.org/abs/2105.04165)<br>Pan Lu et al. · `2105.04165` | ACL 2021 | [GitHub](https://github.com/lupantech/InterGPS) | **Inter-GPS / Geometry3K**: Introduces Geometry3K (3,002 geometry problems with formal-language annotations) and the Inter-GPS solver. |
+
+## Contributing
+
+Contributions are welcome:
+
+- **Add a paper** to the list: open a pull request that adds a row (newest first) with the arXiv
+  link, venue and code link.
+- **Add a method**: follow [docs/add_method.md](docs/add_method.md) and add a
+  `reproduction/<method>/` directory with a README and baseline scripts.
+- **Add a benchmark**: follow [eval/README.md](eval/README.md#adding-a-new-benchmark).
+- **Report reproduction results**: open an issue or a pull request with the command, the logs
+  and the evaluation summary.
+
+Please run `make quality` and `make test` before submitting code.
+
+## Citation
+
+If you find this repository useful, please cite CGPO and the papers of the methods you use:
+
+```bibtex
+@inproceedings{cgpo2026,
+  title     = {{CGPO}: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning},
+  author    = {TODO},
+  booktitle = {Proceedings of the ACM International Conference on Multimedia (ACM MM)},
+  year      = {2026}
+}
+```
+
+BibTeX entries of the reproduced methods are in their READMEs and in [docs/references.bib](docs/references.bib).
+
+## Acknowledgements
+
+This repository is built on [EasyR1](https://github.com/hiyouga/EasyR1) and
+[veRL](https://github.com/volcengine/verl), and uses [vLLM](https://github.com/vllm-project/vllm)
+for rollout and evaluation. We thank the authors of all reproduced methods for releasing their
+papers, code and data; PAPO, VPPO, GRIT and DeepEyes in particular for their public datasets and
+evaluation sets.
+
+## License
+
+Apache-2.0, see [LICENSE](LICENSE). Datasets and models downloaded by the scripts are subject to
+their own licenses.

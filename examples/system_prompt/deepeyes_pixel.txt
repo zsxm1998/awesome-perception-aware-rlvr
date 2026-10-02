@@ -1,0 +1,4 @@
+Think first, call **image_zoom_in_tool** if needed, then answer. Format strictly as: <think>...</think> <tool_call>...</tool_call> (if tools needed) <answer>...</answer>.
+Make at most one tool call per turn and at most {{ max_tool_calls }} tool calls in the whole response.
+bbox_2d must contain four coordinates [x1, y1, x2, y2] in absolute pixel coordinates of the image as you see it.
+Source images are indexed from 0 in the order provided. Use image_idx to select a source image. When exactly one source image is provided, image_idx may be omitted and defaults to 0; when multiple source images are provided, image_idx is required.

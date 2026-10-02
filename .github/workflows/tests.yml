@@ -1,0 +1,33 @@
+name: checks
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "main"
+  pull_request:
+    branches:
+      - "main"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install tools
+        run: pip install ruff
+
+      - name: Lint (pyflakes errors)
+        run: ruff check --select F401,F811,F821,F841 verl scripts eval examples tests
+
+      - name: License headers
+        run: python tests/check_license.py scripts tests verl eval examples
+
+      - name: Shell syntax
+        run: |
+          for f in scripts/*.sh reproduction/*/*.sh comparison/*/*.sh; do bash -n "$f"; done

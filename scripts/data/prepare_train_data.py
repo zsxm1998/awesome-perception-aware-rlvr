@@ -1,0 +1,244 @@
+# Copyright 2026 the Awesome-Perception-Aware-RLVR authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""Download training/validation data into ``<repo>/data`` as one parquet file per split.
+
+Every dataset is written to ``$DATA_ROOT/<name>/<split>.parquet`` with the columns the
+training scripts expect (``problem``, ``answer``, ``images`` and, for some datasets,
+extra columns). Run ``python scripts/data/prepare_train_data.py --list`` to see all names.
+"""
+
+import argparse
+import json
+import os
+import shutil
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Callable, Optional
+
+
+ROOT_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from converters import CONVERTERS  # noqa: E402
+
+
+@dataclass
+class TrainDataset:
+    name: str
+    repo_id: str
+    # split name in the output dir -> glob patterns of the source files in the HF repo
+    splits: dict[str, list[str]]
+    description: str
+    used_by: list[str]
+    converter: Optional[str] = None  # name in converters.CONVERTERS; None = plain shard merge
+    extra_patterns: list[str] = field(default_factory=list)
+
+
+DATASETS: dict[str, TrainDataset] = {
+    "virl39k": TrainDataset(
+        name="virl39k",
+        repo_id="PAPOGalaxy/PAPO_ViRL39K_train",
+        splits={"train": ["data/train-*.parquet"]},
+        description="ViRL39K (38,870 multimodal reasoning problems) as preprocessed by PAPO",
+        used_by=["papo", "vppo", "dvrp", "pgpo", "cfpo", "cgpo", "comparison"],
+    ),
+    "mmk12": TrainDataset(
+        name="mmk12",
+        repo_id="PAPOGalaxy/PAPO_MMK12_test",
+        splits={"test": ["data/train-*.parquet"]},
+        description="MMK12 test (2,000 problems), the validation set used by PAPO/VPPO",
+        used_by=["papo", "vppo", "dvrp", "pgpo", "cfpo", "cgpo", "comparison"],
+    ),
+    "geometry3k": TrainDataset(
+        name="geometry3k",
+        repo_id="hiyouga/geometry3k",
+        splits={
+            "train": ["data/train-*.parquet"],
+            "validation": ["data/validation-*.parquet"],
+            "test": ["data/test-*.parquet"],
+        },
+        description="Geometry3K (2,101 train / 300 val / 601 test)",
+        used_by=["tor", "pepo", "vepo"],
+    ),
+    "grit": TrainDataset(
+        name="grit",
+        repo_id="yfan1997/GRIT_data",
+        splits={"train": [], "test": []},
+        description="GRIT training data (VSR + TallyQA subsets with grounded answers)",
+        used_by=["grit"],
+        converter="grit",
+    ),
+    "deepeyes": TrainDataset(
+        name="deepeyes",
+        repo_id="ChenShawn/DeepEyes-Datasets-47k",
+        splits={"train": [], "val": []},
+        description="DeepEyes-Datasets-47k (fine-grained perception, chart, and reasoning subsets)",
+        used_by=["deepeyes"],
+        converter="deepeyes",
+    ),
+}
+
+METHOD_GROUPS: dict[str, list[str]] = {
+    "papo": ["virl39k", "mmk12"],
+    "vppo": ["virl39k", "mmk12"],
+    "dvrp": ["virl39k", "mmk12"],
+    "pgpo": ["virl39k", "mmk12"],
+    "cfpo": ["virl39k", "mmk12"],
+    "cgpo": ["virl39k", "mmk12"],
+    "comparison": ["virl39k", "mmk12"],
+    "tor": ["geometry3k"],
+    "pepo": ["geometry3k"],
+    "vepo": ["geometry3k"],
+    "grit": ["grit"],
+    "deepeyes": ["deepeyes"],
+}
+
+
+def _snapshot(repo_id: str, local_dir: Path, patterns: Optional[list[str]], retries: int = 4) -> Path:
+    """Download (a subset of) a dataset repo, retrying with less concurrency on network errors.
+
+    Mirrors such as https://hf-mirror.com sometimes reject many parallel requests; finished
+    files are kept between attempts, so a retry only fetches what is still missing.
+    """
+    import time
+
+    from huggingface_hub import snapshot_download
+
+    workers = int(os.environ.get("HF_DOWNLOAD_WORKERS", "8"))
+    for attempt in range(1, retries + 1):
+        try:
+            snapshot_download(
+                repo_id=repo_id,
+                repo_type="dataset",
+                local_dir=str(local_dir),
+                allow_patterns=patterns,
+                max_workers=workers,
+            )
+            return local_dir
+        except Exception as exc:  # network errors surface as several different exception types
+            if attempt == retries:
+                raise
+            workers = max(1, workers // 2)
+            print(f"[retry {attempt}/{retries - 1}] {type(exc).__name__}: {exc}; retrying with {workers} worker(s)")
+            time.sleep(5 * attempt)
+    return local_dir
+
+
+def _merge_parquet(files: list[Path], output: Path) -> int:
+    import pyarrow.parquet as pq
+
+    if not files:
+        raise FileNotFoundError("no source parquet files matched")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    tmp_output = output.with_suffix(".parquet.tmp")
+    writer = None
+    rows = 0
+    try:
+        for path in sorted(files):
+            table = pq.read_table(path)
+            if writer is None:
+                writer = pq.ParquetWriter(str(tmp_output), table.schema)
+            writer.write_table(table.cast(writer.schema) if table.schema != writer.schema else table)
+            rows += table.num_rows
+    finally:
+        if writer is not None:
+            writer.close()
+    os.replace(tmp_output, output)
+    return rows
+
+
+def prepare(dataset: TrainDataset, data_root: Path, keep_raw: bool, force: bool) -> None:
+    out_dir = data_root / dataset.name
+    expected = [out_dir / f"{split}.parquet" for split in dataset.splits]
+    if not force and all(path.exists() for path in expected):
+        print(f"[skip] {dataset.name}: already prepared at {out_dir}")
+        return
+
+    raw_dir = data_root / ".raw" / dataset.repo_id.replace("/", "__")
+    print(f"[download] {dataset.repo_id} -> {raw_dir}")
+    if dataset.converter is None:
+        patterns = sorted({p for globs in dataset.splits.values() for p in globs} | set(dataset.extra_patterns))
+        _snapshot(dataset.repo_id, raw_dir, patterns)
+        summary = {}
+        for split, globs in dataset.splits.items():
+            files = [path for pattern in globs for path in raw_dir.glob(pattern)]
+            rows = _merge_parquet(files, out_dir / f"{split}.parquet")
+            summary[split] = rows
+            print(f"[write] {out_dir / f'{split}.parquet'} ({rows} rows)")
+    else:
+        converter: Callable = CONVERTERS[dataset.converter]
+        summary = converter(
+            repo_id=dataset.repo_id,
+            raw_dir=raw_dir,
+            out_dir=out_dir,
+            snapshot=lambda patterns: _snapshot(dataset.repo_id, raw_dir, patterns),
+        )
+    (out_dir / "SOURCE.json").write_text(
+        json.dumps({"repo_id": dataset.repo_id, "rows": summary, "description": dataset.description}, indent=2)
+    )
+    if not keep_raw:
+        shutil.rmtree(raw_dir, ignore_errors=True)
+
+
+def _bypass_proxy_for_mirror() -> None:
+    """hf-mirror.com redirects to huggingface.co when it is reached through an HTTP proxy, which
+    makes downloads fail; talk to the mirror directly unless HF_MIRROR_BYPASS_PROXY=0."""
+    endpoint = os.environ.get("HF_ENDPOINT", "")
+    if "hf-mirror" not in endpoint or os.environ.get("HF_MIRROR_BYPASS_PROXY", "1") == "0":
+        return
+    hosts = ["hf-mirror.com", ".hf-mirror.com", ".hf.co"]
+    for key in ("NO_PROXY", "no_proxy"):
+        current = [item for item in os.environ.get(key, "").split(",") if item]
+        os.environ[key] = ",".join(current + [host for host in hosts if host not in current])
+
+
+def main() -> None:
+    _bypass_proxy_for_mirror()
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("targets", nargs="*", help="dataset names, method names (e.g. papo), or 'all'")
+    parser.add_argument("--data-root", default=os.environ.get("DATA_ROOT", str(ROOT_DIR / "data")))
+    parser.add_argument("--keep-raw", action="store_true", help="keep the raw HF snapshot under <data-root>/.raw")
+    parser.add_argument("--force", action="store_true", help="re-download even if the output exists")
+    parser.add_argument("--list", action="store_true", help="list datasets and method groups")
+    args = parser.parse_args()
+
+    if args.list or not args.targets:
+        print("Datasets:")
+        for ds in DATASETS.values():
+            print(f"  {ds.name:<12} {ds.repo_id:<36} used by: {', '.join(ds.used_by)}")
+            print(f"  {'':<12} {ds.description}")
+        print("Method groups:")
+        for method, names in METHOD_GROUPS.items():
+            print(f"  {method:<12} -> {', '.join(names)}")
+        return
+
+    names: list[str] = []
+    for target in args.targets:
+        if target == "all":
+            names.extend(DATASETS)
+        elif target in METHOD_GROUPS:
+            names.extend(METHOD_GROUPS[target])
+        elif target in DATASETS:
+            names.append(target)
+        else:
+            parser.error(f"unknown target {target!r}; run with --list")
+    data_root = Path(args.data_root).resolve()
+    for name in dict.fromkeys(names):
+        prepare(DATASETS[name], data_root, keep_raw=args.keep_raw, force=args.force)
+    print(f"Done. Data root: {data_root}")
+
+
+if __name__ == "__main__":
+    main()

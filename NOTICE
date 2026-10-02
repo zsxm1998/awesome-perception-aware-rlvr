@@ -1,0 +1,16 @@
+Awesome-Perception-Aware-RLVR
+Copyright 2026 the Awesome-Perception-Aware-RLVR authors.
+
+This product is derived from EasyR1 (https://github.com/hiyouga/EasyR1), licensed under the
+Apache License 2.0, which is itself a fork of veRL (https://github.com/volcengine/verl),
+Copyright 2024 Bytedance Ltd. and/or its affiliates, licensed under the Apache License 2.0.
+
+Modifications: implementations of perception-aware RLVR methods (verl/trainer/perception_reasoning_*.py,
+visual_sensitivity.py, grounding_consistency.py, verl/utils/perturbations/), the agentic zoom-in
+rollout (verl/workers/agent/), reproduction and comparison launchers, data preparation and the
+evaluation harness under eval/.
+
+The methods reproduced here (PAPO, VPPO, DVRP, ToR, PGPO, PEPO, CFPO, VEPO, GRIT, DeepEyes) are
+independent re-implementations based on the respective papers and, where available, their public
+code; see each reproduction/<method>/README.md for references. Datasets and model weights
+downloaded by the scripts are distributed by their owners under their own licenses.
