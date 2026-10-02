@@ -33,6 +33,7 @@ INSTALL_QWEN35_FASTPATH="${INSTALL_QWEN35_FASTPATH:-0}"
 FLA_VERSION="${FLA_VERSION:-0.4.2}"
 CAUSAL_CONV1D_REF="${CAUSAL_CONV1D_REF:-v1.6.2.post1}"
 INSTALL_CONDA_CUDA="${INSTALL_CONDA_CUDA:-1}"
+INSTALL_DEV_TOOLS="${INSTALL_DEV_TOOLS:-1}"
 CPP_RUNTIME_CHANNEL="${CPP_RUNTIME_CHANNEL:-conda-forge}"
 CPP_RUNTIME_REFRESHED=0
 RUNTIME_HOOKS_INSTALLED=0
@@ -81,6 +82,7 @@ Environment variables:
   CUDA_TOOLKIT_VERSION      Conda CUDA toolkit version. Default: ${CUDA_TOOLKIT_VERSION}
   CUDA_LABEL                NVIDIA conda CUDA label. Default: ${CUDA_LABEL}
   INSTALL_CONDA_CUDA        Install CUDA toolkit into conda env. Default: ${INSTALL_CONDA_CUDA}
+  INSTALL_DEV_TOOLS         Install pytest and ruff (tests, make quality). Default: ${INSTALL_DEV_TOOLS}
   VLLM_VERSION              vLLM version. Default: ${VLLM_VERSION}
   FLASH_ATTN_VERSION        flash-attn version. Default: ${FLASH_ATTN_VERSION}
   CPP_RUNTIME_CHANNEL       Channel for libstdcxx-ng/libgcc-ng. Default: ${CPP_RUNTIME_CHANNEL}
@@ -568,6 +570,12 @@ fi
 echo ""
 echo "Step 8/8: Installing EasyR1 in editable mode..."
 uv pip install --no-deps -e .
+if [[ "${INSTALL_DEV_TOOLS}" == "1" ]]; then
+    # unit tests (python -m pytest -q tests/) and make quality
+    uv pip install pytest ruff -c "${REPO_ROOT}/scripts/constraints.txt"
+else
+    echo "[WARN] Skipping pytest/ruff because INSTALL_DEV_TOOLS=${INSTALL_DEV_TOOLS}"
+fi
 
 echo ""
 echo "Verifying installation..."

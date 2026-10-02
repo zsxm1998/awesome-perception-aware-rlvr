@@ -18,7 +18,7 @@ reproduction results, bug reports and documentation fixes.
 ## Pull requests
 
 1. Fork the repository and create a branch from `main`.
-2. Install the environment (`bash scripts/install_env.sh`) and the dev tools (`pip install ruff pytest`).
+2. Install the environment (`bash scripts/install_env.sh`, which also installs pytest and ruff).
 3. Make your change, add tests, and run:
 
    ```bash
