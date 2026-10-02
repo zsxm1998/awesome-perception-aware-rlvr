@@ -13,18 +13,22 @@
 # limitations under the License.
 """Utils for tokenization."""
 
-from typing import Optional
+from typing import Any, Optional
 
 from transformers import AutoConfig, AutoProcessor, AutoTokenizer, PreTrainedTokenizer, ProcessorMixin
 
 from ..models.transformers.internvl import InternVLProcessorAdapter
 from ..models.transformers.qwen3_5 import register_qwen3_5
+from .plain_think import plain_think_tokenizer_path
 
 
-def get_tokenizer(model_path: str, override_chat_template: Optional[str] = None, **kwargs) -> PreTrainedTokenizer:
-    """Create a huggingface pretrained tokenizer."""
+def get_tokenizer(
+    model_path: str, override_chat_template: Optional[str] = None, plain_think_tokens: Any = "auto", **kwargs
+) -> PreTrainedTokenizer:
+    """Create a huggingface pretrained tokenizer (see verl/utils/plain_think.py for ``plain_think_tokens``)."""
     register_qwen3_5()
-    tokenizer = AutoTokenizer.from_pretrained(model_path, **kwargs)
+    source = plain_think_tokenizer_path(model_path, plain_think_tokens, **kwargs) or model_path
+    tokenizer = AutoTokenizer.from_pretrained(source, **kwargs)
     if override_chat_template is not None:
         with open(override_chat_template) as f:
             tokenizer.chat_template = f.read()
@@ -44,12 +48,15 @@ def get_tokenizer(model_path: str, override_chat_template: Optional[str] = None,
     return tokenizer
 
 
-def get_processor(model_path: str, override_chat_template: Optional[str] = None, **kwargs) -> Optional[ProcessorMixin]:
-    """Create a huggingface pretrained processor."""
+def get_processor(
+    model_path: str, override_chat_template: Optional[str] = None, plain_think_tokens: Any = "auto", **kwargs
+) -> Optional[ProcessorMixin]:
+    """Create a huggingface pretrained processor (see verl/utils/plain_think.py for ``plain_think_tokens``)."""
     register_qwen3_5()
     config = None
+    source = plain_think_tokenizer_path(model_path, plain_think_tokens, **kwargs) or model_path
     try:
-        processor = AutoProcessor.from_pretrained(model_path, **kwargs)
+        processor = AutoProcessor.from_pretrained(source, **kwargs)
     except Exception:
         config = AutoConfig.from_pretrained(model_path, **kwargs)
         if config.model_type != "internvl_chat":

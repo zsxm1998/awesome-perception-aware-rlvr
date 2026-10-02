@@ -198,9 +198,9 @@ advantage scaling, auxiliary losses and extra rewards. See
 the same data (ViRL39K / MMK12), the same GRPO hyper-parameters and the same evaluation; only the
 method-specific arguments differ. Results will be added here.
 
-| Method | GRPO | PAPO | VPPO | ToR | DVRP | PGPO | PEPO | CFPO | VEPO | GRIT | CGPO |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Avg. (comparison suite) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Method | GRPO | DAPO | PAPO | VPPO | ToR | DVRP | PGPO | PEPO | CFPO | VEPO | GRIT | CGPO |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Avg. (comparison suite) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 
 ### 📌 About the results
 
@@ -259,6 +259,19 @@ Environment variables understood by every training script:
 Any config key can be appended as `key=value` (see [examples/config.yaml](examples/config.yaml)
 and [verl/trainer/config.py](verl/trainer/config.py)). Set `USE_MODELSCOPE_HUB=1` to download models
 from ModelScope.
+
+**`<think>` in Qwen3-VL Instruct models.** These checkpoints ship `<think>` and `</think>` as added
+tokens that were never trained (only the Thinking checkpoints use them). A format prompt that asks
+for `<think> ... </think>` is then encoded with two untrained tokens and is not followed: on 256
+ViRL39K prompts the format reward of Qwen3-VL-4B-Instruct is 0.00 with the released tokenizer and
+0.47 when the tags are plain text, at the same accuracy. By default
+(`worker.actor.model.plain_think_tokens=auto`) such tokens are therefore tokenized as plain text:
+the tokenizer is loaded as usual (Hugging Face hub, ModelScope or a local path), saved with the two
+added tokens removed under `~/.cache/parlvr/tokenizers` (`PARLVR_CACHE_DIR`), and used by training,
+rollout and evaluation; checkpoints save this tokenizer. Models whose chat template uses the tokens
+(Qwen3-VL Thinking) or that do not have them (Qwen2.5-VL, InternVL) are not changed. Set
+`worker.actor.model.plain_think_tokens=false` (evaluation: `--plain-think-tokens false`) to keep the
+released tokenizer.
 
 ## 📚 Paper list
 

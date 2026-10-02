@@ -88,6 +88,7 @@ class AgenticVLLMBackend:
         force_vllm_feature_wrapper: bool = False,
         agent_bbox_format: str = "norm1000",
         chat_template: str | None = None,
+        plain_think_tokens: str = "auto",
     ):
         try:
             self.agent_runner = _AGENT_PROFILES[agent_profile]
@@ -130,6 +131,7 @@ class AgenticVLLMBackend:
             save_perturbation_samples=save_perturbation_samples,
             force_vllm_feature_wrapper=False,
             chat_template=chat_template,
+            plain_think_tokens=plain_think_tokens,
         )
         self.processor = self.base.processor
         self.tokenizer = self.processor.tokenizer

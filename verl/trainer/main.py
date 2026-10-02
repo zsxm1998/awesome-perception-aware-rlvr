@@ -40,12 +40,14 @@ class Runner:
         tokenizer = get_tokenizer(
             config.worker.actor.model.model_path,
             override_chat_template=config.data.override_chat_template,
+            plain_think_tokens=config.worker.actor.model.plain_think_tokens,
             trust_remote_code=config.worker.actor.model.trust_remote_code,
             use_fast=True,
         )
         processor = get_processor(
             config.worker.actor.model.model_path,
             override_chat_template=config.data.override_chat_template,
+            plain_think_tokens=config.worker.actor.model.plain_think_tokens,
             trust_remote_code=config.worker.actor.model.trust_remote_code,
             use_fast=True,
         )

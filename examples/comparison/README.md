@@ -11,7 +11,7 @@ define the method; everything else comes from [qwen3_vl_4b/common.sh](qwen3_vl_4
 
 | | `examples/comparison/qwen3_vl_4b/common.sh` |
 | --- | --- |
-| Model | Qwen3-VL-4B-Instruct |
+| Model | Qwen3-VL-4B-Instruct; `<think>` / `</think>` are tokenized as plain text, because they are untrained added tokens in the Instruct checkpoint (`worker.actor.model.plain_think_tokens=auto`, see the [README](../../README.md#-configuration)) |
 | Training data | ViRL39K as processed by PAPO (`PAPOGalaxy/PAPO_ViRL39K_train`, 38,870) |
 | Validation | MMK12 test (`PAPOGalaxy/PAPO_MMK12_test`, 2,000), every 5 steps, 8 samples at T=1.0, top-p 0.99 |
 | Prompt / reward | `<think>` + `\boxed{}` (`examples/format_prompt/math_perception.jinja`); 0.9 accuracy + 0.1 format (`examples/reward_function/math.py:compute_score`). `grit` and `cgpo` replace these with their grounded formats (see below) |
@@ -24,7 +24,9 @@ define the method; everything else comes from [qwen3_vl_4b/common.sh](qwen3_vl_4
 
 ## Methods
 
-Every method runs on the GRPO recipe above, also those whose papers build on DAPO. Where a paper
+Every method runs on the GRPO recipe above, also those whose papers build on DAPO, so that only the
+perception-aware component differs; DAPO is included as a second baseline (a stronger RL recipe
+without any perception-aware component). Where a paper
 perturbs the image, the perturbation is harmonized to blackening 16-px patches (Qwen3-VL's patch
 size) with probability 0.6, one mask per prompt (`algorithm.corrupt_image=random_patch`,
 `corrupt_image_kwargs={"patch_size":16,"black_prob":0.6}`, `corrupt_image_position=prompt`); the
@@ -34,6 +36,7 @@ size) with probability 0.6, one mask per prompt (`algorithm.corrupt_image=random
 | Script | Method | Auxiliary view | `ALGO_ARGS` (abridged) |
 | --- | --- | --- | --- |
 | `grpo.sh` | GRPO baseline | – | none |
+| `dapo.sh` | DAPO baseline | – | no KL (`algorithm.disable_kl=true`), clip-higher 0.2 / 0.28, dynamic sampling on accuracy in (0.01, 0.99); the shared entropy penalty is kept |
 | `papo.sh` | [PAPO](../reproduction/papo/README.md) | random patch (paper: the same) | KL_prcp maximized with `visual_sensitivity_loss_coef=0.01`, `visual_sensitivity_reference=current`; no Double Entropy terms beyond the shared entropy penalty |
 | `vppo.sh` | [VPPO](../reproduction/vppo/README.md) | random patch (paper: p=0.5) | TGF `top_perception_quantile=0.4` per response; TAS `response_advantage_scaling_method=vppo`, `vppo_response_scaling_min=0.9`; `visual_sensitivity_reference=old`; no 0.06 entropy penalty |
 | `tor.sh` | [ToR](../reproduction/tor/README.md) | random patch (paper: image removed) | `top_entropy_quantile=0.3` and `top_perception_quantile=0.3` (batch), `tor_use_token_weighting=true`, `tor_rsn_weight=1.0`, `tor_prcp_weight=0.5`; `visual_sensitivity_reference=old` |
@@ -82,6 +85,7 @@ training (as in PAPO and VPPO).
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Qwen3-VL-4B-Instruct (no RL) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | GRPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| DAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | PAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | VPPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | ToR | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |

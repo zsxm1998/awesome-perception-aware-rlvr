@@ -2,6 +2,10 @@
 
 This note only lists which `algorithm.*` parameters are used by each perception-reasoning block. Parameter semantics and validation rules live in [`verl/trainer/config.py`](../verl/trainer/config.py).
 
+## Tokenizer
+
+- `worker.actor.model.plain_think_tokens` (`auto` | `true` | `false`, default `auto`): tokenize `<think>` / `</think>` as plain text when they are untrained added tokens (Qwen3-VL Instruct); see [`verl/utils/plain_think.py`](../verl/utils/plain_think.py) and the README.
+
 ## Shared Entropy Controls
 
 Used by entropy logging, entropy masking, and entropy regularization paths shared across the comparison scripts.

@@ -218,9 +218,11 @@ class VLLMBackend:
         save_perturbation_samples: int = 0,
         force_vllm_feature_wrapper: bool = False,
         chat_template: str | None = None,
+        plain_think_tokens: str = "auto",
     ):
         from vllm import LLM
 
+        from verl.utils.plain_think import plain_think_tokenizer_path
         from verl.utils.tokenizer import get_processor, get_tokenizer
 
         self.perturbation = perturbation or PerturbationConfig()
@@ -263,6 +265,9 @@ class VLLMBackend:
 
         engine_kwargs = {
             "model": model,
+            # vLLM tokenizes the rendered prompts, so it must use the same tokenizer as the processor below
+            "tokenizer": plain_think_tokenizer_path(model, plain_think_tokens, trust_remote_code=trust_remote_code)
+            or model,
             "trust_remote_code": trust_remote_code,
             "tensor_parallel_size": tensor_parallel_size,
             "gpu_memory_utilization": gpu_memory_utilization,
@@ -279,9 +284,14 @@ class VLLMBackend:
                 Path(os.environ["EASYR1_VLLM_FEATURE_PERTURBATION_CONFIG_PATH"]), active_payload
             )
         self.processor = get_processor(
-            model, override_chat_template=chat_template, trust_remote_code=trust_remote_code
+            model,
+            override_chat_template=chat_template,
+            plain_think_tokens=plain_think_tokens,
+            trust_remote_code=trust_remote_code,
         )
-        self.tokenizer = get_tokenizer(model, trust_remote_code=trust_remote_code)
+        self.tokenizer = get_tokenizer(
+            model, plain_think_tokens=plain_think_tokens, trust_remote_code=trust_remote_code
+        )
         self.min_pixels = min_pixels
         self.max_pixels = max_pixels
         self.save_perturbation_samples = save_perturbation_samples
@@ -456,6 +466,7 @@ class TransformersBackend:
         output_dir: Path | str | None = None,
         save_perturbation_samples: int = 0,
         chat_template: str | None = None,
+        plain_think_tokens: str = "auto",
     ):
         import torch
         from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForImageTextToText
@@ -464,9 +475,14 @@ class TransformersBackend:
 
         model_config = AutoConfig.from_pretrained(model, trust_remote_code=trust_remote_code)
         self.processor = get_processor(
-            model, override_chat_template=chat_template, trust_remote_code=trust_remote_code
+            model,
+            override_chat_template=chat_template,
+            plain_think_tokens=plain_think_tokens,
+            trust_remote_code=trust_remote_code,
         )
-        self.tokenizer = get_tokenizer(model, trust_remote_code=trust_remote_code)
+        self.tokenizer = get_tokenizer(
+            model, plain_think_tokens=plain_think_tokens, trust_remote_code=trust_remote_code
+        )
         torch_dtype = torch.bfloat16 if dtype == "bfloat16" and torch.cuda.is_available() else torch.float16
         try:
             self.model = AutoModelForImageTextToText.from_pretrained(
@@ -668,6 +684,7 @@ def build_backend(name: str, model: str, **kwargs) -> Backend:
             "output_dir",
             "save_perturbation_samples",
             "chat_template",
+            "plain_think_tokens",
         }
         return TransformersBackend(model, **{key: value for key, value in kwargs.items() if key in allowed})
     raise ValueError(f"unknown backend: {name}")

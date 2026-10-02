@@ -48,10 +48,16 @@ class ModelConfig:
     trust_remote_code: bool = True
     freeze_vision_tower: bool = False
     lora: LoraConfig = field(default_factory=LoraConfig)
+    # auto | true | false: tokenize <think>/</think> as plain text when they are untrained added tokens
+    # (Qwen3-VL Instruct); see verl/utils/plain_think.py
+    plain_think_tokens: Any = "auto"
     # below are auto keys
     override_chat_template: Optional[str] = field(default=None, init=False)  # copied from data.override_chat_template
 
     def post_init(self):
+        from ...utils.plain_think import normalize_plain_think_tokens
+
+        self.plain_think_tokens = normalize_plain_think_tokens(self.plain_think_tokens)
         if self.tokenizer_path is None:
             self.tokenizer_path = self.model_path
 

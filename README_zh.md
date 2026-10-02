@@ -183,9 +183,9 @@ token 选择、优势缩放、辅助损失和额外奖励。所有开关见
 [`examples/comparison/qwen3_vl_4b`](examples/comparison/README.md) 在 Qwen3-VL-4B-Instruct 上训练所有方法，使用相同的
 数据（ViRL39K / MMK12）、相同的 GRPO 超参数和相同的评测，只有方法相关的参数不同。结果将补充到这里。
 
-| 方法 | GRPO | PAPO | VPPO | ToR | DVRP | PGPO | PEPO | CFPO | VEPO | GRIT | CGPO |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 平均（comparison 套件） | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| 方法 | GRPO | DAPO | PAPO | VPPO | ToR | DVRP | PGPO | PEPO | CFPO | VEPO | GRIT | CGPO |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 平均（comparison 套件） | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 
 ### 📌 关于结果的说明
 
@@ -235,6 +235,16 @@ MME-RealWorld-Lite）。每个基准都有下载脚本，每篇论文都有评�
 
 任何配置项都可以用 `key=value` 追加在命令后面（见 [examples/config.yaml](examples/config.yaml) 和
 [verl/trainer/config.py](verl/trainer/config.py)）。设置 `USE_MODELSCOPE_HUB=1` 可从 ModelScope 下载模型。
+
+**Qwen3-VL Instruct 模型中的 `<think>`。** 这些模型的分词器带有 `<think>`、`</think>` 两个附加 token，
+但它们从未被训练（只有 Thinking 版会用到）。格式提示词要求写 `<think> ... </think>` 时，这两个标签会被编码成
+未训练的 token，模型不会照做：在 256 道 ViRL39K 题上，Qwen3-VL-4B-Instruct 用原版分词器的格式奖励为 0.00，
+把标签当普通文字时为 0.47，准确率相同。因此默认（`worker.actor.model.plain_think_tokens=auto`）把这类
+token 当普通文字处理：分词器照常加载（Hugging Face、ModelScope 或本地路径均可），删掉这两个附加 token 后
+保存在 `~/.cache/parlvr/tokenizers`（可用 `PARLVR_CACHE_DIR` 修改），训练、rollout 和评测都使用它，检查点
+也保存这份分词器。对话模板会用到这两个 token 的模型（Qwen3-VL Thinking）或本来没有它们的模型（Qwen2.5-VL、
+InternVL）不受影响。设置 `worker.actor.model.plain_think_tokens=false`（评测：`--plain-think-tokens false`）
+可保留原版分词器。
 
 ## 📚 论文清单
 

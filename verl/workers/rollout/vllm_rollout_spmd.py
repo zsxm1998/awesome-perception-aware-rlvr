@@ -146,6 +146,7 @@ class vLLMRollout(BaseRollout):
         config: RolloutConfig,
         tokenizer: PreTrainedTokenizer,
         processor: Optional[ProcessorMixin],
+        tokenizer_path: Optional[str] = None,
         **kwargs,
     ):
         """A vLLM rollout. It requires the module is supported by the vllm.
@@ -185,6 +186,8 @@ class vLLMRollout(BaseRollout):
 
         self.inference_engine = LLM(
             model=model_path,
+            # the tokenizer the trainer uses (e.g. with <think>/</think> as plain text, see verl/utils/plain_think.py)
+            tokenizer=tokenizer_path or model_path,
             skip_tokenizer_init=False,
             trust_remote_code=config.trust_remote_code,
             load_format="dummy" if not self.lora_kwargs else "safetensors",

@@ -243,6 +243,9 @@ Loaders return the bare question; the runner renders it the way training does:
   `--format-prompt none` sends the bare question.
 - `--system-prompt FILE` (same as `data.system_prompt`; `none` for no system prompt) and
   `--prompt-mode chat` (default: the model's chat template) or `raw`.
+- `--plain-think-tokens auto|true|false` (default `auto`) tokenizes `<think>` / `</think>` as plain
+  text for models in which they are untrained added tokens (Qwen3-VL Instruct), as training does
+  (`worker.actor.model.plain_think_tokens`); evaluate a checkpoint with the setting it was trained with.
 - `--chat-template FILE` replaces the processor's chat template (same as
   `data.override_chat_template`); recorded in `summary.csv`.
 

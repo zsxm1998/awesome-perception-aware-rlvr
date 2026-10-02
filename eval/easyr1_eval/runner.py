@@ -89,6 +89,8 @@ def main(argv: list[str] | None = None) -> None:
         print(f"[info] agent system prompt: {args.system_prompt}", flush=True)
     if getattr(args, "chat_template", None):
         print(f"[info] chat template: {args.chat_template}", flush=True)
+    if getattr(args, "plain_think_tokens", "auto") != "auto":
+        print(f"[info] plain_think_tokens: {args.plain_think_tokens}", flush=True)
     if args.dry_run:
         print_dry_run(specs, args)
         return
@@ -254,6 +256,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Jinja chat template that replaces the processor's (data.override_chat_template in training). "
         "Agentic runs of Qwen2-VL / Qwen2.5-VL default to examples/chat_template/qwen2_5_vl_tool_call.jinja, "
         "because the stock template ignores tool definitions; 'none' keeps the model's template.",
+    )
+    parser.add_argument(
+        "--plain-think-tokens",
+        choices=["auto", "true", "false"],
+        default="auto",
+        help="Tokenize <think>/</think> as plain text (worker.actor.model.plain_think_tokens in training). auto "
+        "(default) applies to models whose tokenizer has them as added tokens that the chat template never uses, "
+        "i.e. Qwen3-VL Instruct; evaluate a checkpoint with the setting it was trained with.",
     )
     parser.add_argument(
         "--prompt-mode",
@@ -643,6 +653,7 @@ def write_run_summaries(results, args: argparse.Namespace, run_id: str) -> None:
         "format_prompt": args.format_prompt or "",
         "system_prompt": args.system_prompt or "",
         "chat_template": getattr(args, "chat_template", None) or "",
+        "plain_think_tokens": getattr(args, "plain_think_tokens", "auto"),
         "prompt_mode": args.prompt_mode,
         "box_format": getattr(args, "box_format", "norm1000"),
         "interaction_mode": getattr(args, "interaction_mode", "one_shot"),
@@ -693,6 +704,8 @@ def metric_metadata_for(spec: BenchmarkSpec, args: argparse.Namespace) -> dict[s
     metadata = {"max_model_len": args.max_model_len, "box_format": getattr(args, "box_format", "norm1000")}
     if getattr(args, "chat_template", None):
         metadata["chat_template"] = args.chat_template
+    if getattr(args, "plain_think_tokens", "auto") != "auto":
+        metadata["plain_think_tokens"] = args.plain_think_tokens
     if getattr(args, "interaction_mode", "one_shot") == "agentic":
         metadata.update(_agent_fingerprint_fields(args))
     metadata.update(perturbation_metadata(args.perturbation, args.perturbation_seed))
@@ -1161,6 +1174,7 @@ def build_eval_backend(args: argparse.Namespace):
         ),
         agent_bbox_format=getattr(args, "box_format", "norm1000"),
         chat_template=getattr(args, "chat_template", None),
+        plain_think_tokens=getattr(args, "plain_think_tokens", "auto"),
     )
 
 
@@ -1202,6 +1216,11 @@ def task_fingerprint(
             **(
                 {"chat_template": _file_fingerprint(args.chat_template)}
                 if getattr(args, "chat_template", None)
+                else {}
+            ),
+            **(
+                {"plain_think_tokens": args.plain_think_tokens}
+                if getattr(args, "plain_think_tokens", "auto") != "auto"
                 else {}
             ),
             "prompt_mode": args.prompt_mode,

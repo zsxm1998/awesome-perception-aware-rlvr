@@ -178,12 +178,14 @@ class FSDPWorker(Worker):
             self.tokenizer = get_tokenizer(
                 model_config.tokenizer_path,
                 override_chat_template=model_config.override_chat_template,
+                plain_think_tokens=model_config.plain_think_tokens,
                 trust_remote_code=model_config.trust_remote_code,
                 use_fast=True,
             )
             self.processor = get_processor(
                 model_config.tokenizer_path,
                 override_chat_template=model_config.override_chat_template,
+                plain_think_tokens=model_config.plain_think_tokens,
                 trust_remote_code=model_config.trust_remote_code,
                 use_fast=True,
             )
@@ -411,6 +413,7 @@ class FSDPWorker(Worker):
             model_path=self.config.actor.model.model_path,
             config=self.config.rollout,
             tokenizer=self.tokenizer,
+            tokenizer_path=self.tokenizer.name_or_path,
             processor=self.processor,
             **lora_kwargs,
         )
