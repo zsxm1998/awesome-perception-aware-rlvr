@@ -4,14 +4,14 @@
 
 **A curated list and a unified, reproducible codebase for perception-aware reinforcement learning with verifiable rewards (RLVR) for vision-language models.**
 
-🌟 **Official repository of [CGPO](#-cgpo-acm-mm-2026) (ACM MM 2026)** 🌟
+🌟 **Official repository of [CGPO](#-cgpo-acm-mm-2026-oral) (ACM MM 2026 Oral)** 🌟
 
 [English](README.md) | [简体中文](README_zh.md)
 
 [![Awesome](https://awesome.re/badge.svg)](https://github.com/sindresorhus/awesome)
 [![Papers](https://img.shields.io/badge/Papers-91-blue)](#-paper-list)
 [![Reproduced](https://img.shields.io/badge/Reproduced-11-brightgreen)](#-reproduced-methods)
-[![CGPO](https://img.shields.io/badge/CGPO-ACM%20MM%202026-8A2BE2)](https://doi.org/10.1145/3767308.3835969)
+[![CGPO](https://img.shields.io/badge/CGPO-ACM%20MM%202026%20Oral-8A2BE2)](https://doi.org/10.1145/3767308.3835969)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Built on EasyR1](https://img.shields.io/badge/built%20on-EasyR1-orange)](https://github.com/hiyouga/EasyR1)
 
@@ -26,7 +26,7 @@ reasons.
 
 This repository provides
 
-- the **official implementation of [CGPO](#-cgpo-acm-mm-2026)** (ACM MM 2026);
+- the **official implementation of [CGPO](#-cgpo-acm-mm-2026-oral)** (ACM MM 2026 Oral);
 - **[Paper list](#-paper-list)**: perception-aware policy optimization, grounded reasoning /
   thinking with images, and the benchmarks used in this line of work;
 - **[Reproductions](#-reproduced-methods)** of 10 methods (PAPO, VPPO, DVRP, ToR, PGPO, PEPO, CFPO,
@@ -49,7 +49,7 @@ so they can be combined, compared and extended with a few configuration switches
 ## 📖 Contents
 
 - [News](#-news)
-- [CGPO (ACM MM 2026)](#-cgpo-acm-mm-2026)
+- [CGPO (ACM MM 2026 Oral)](#-cgpo-acm-mm-2026-oral)
 - [Reproduced methods](#-reproduced-methods)
 - [Quick start](#-quick-start)
 - [Repository layout](#-repository-layout)
@@ -63,17 +63,17 @@ so they can be combined, compared and extended with a few configuration switches
 
 ## 🔥 News
 
-- **2026-10**: 🎉 First release: the official implementation of [CGPO](#-cgpo-acm-mm-2026) (ACM MM
-  2026), 10 reproduced methods, a controlled comparison on Qwen3-VL-4B, and one-click evaluation.
+- **2026-10**: 🎉 First release: the official implementation of [CGPO](#-cgpo-acm-mm-2026-oral) (ACM MM
+  2026 Oral), 10 reproduced methods, a controlled comparison on Qwen3-VL-4B, and one-click evaluation.
   Reproduction results are being collected with this codebase and will be added to the tables below.
 
-## 🌟 CGPO (ACM MM 2026)
+## 🌟 CGPO (ACM MM 2026 Oral)
 
 This repository is the official code release of
 
 > **CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning**<br>
 > Shengxuming Zhang, Linyun Zhou, Hengrui Lou, Zhenyang Wang, Xiuming Zhang, Zunlei Feng<br>
-> *Proceedings of the 34th ACM International Conference on Multimedia (MM '26)*, Rio de Janeiro, Brazil, 2026<br>
+> *Proceedings of the 34th ACM International Conference on Multimedia (MM '26)*, Rio de Janeiro, Brazil, 2026 · **Oral presentation**<br>
 > [[Paper]](https://doi.org/10.1145/3767308.3835969) · [[Code and scripts]](examples/reproduction/cgpo/README.md) · [[BibTeX]](#-citation)
 
 CGPO teaches a vision-language model *evidence-sensitive reasoning*: key reasoning steps ground the
@@ -101,7 +101,7 @@ bash scripts/eval.sh checkpoints/CGPO-Reproduce/qwen3_vl_8b_cgpo --suite cgpo
 
 | Method | Paper | Venue | Official code | Scripts | Main setting |
 | --- | --- | --- | --- | --- | --- |
-| **CGPO** (ours) | [Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](https://doi.org/10.1145/3767308.3835969) | ACM MM 2026 | this repo | [examples/reproduction/cgpo](examples/reproduction/cgpo) | Qwen2.5-VL-7B / Qwen3-VL-8B, ViRL39K (natural-image reproduction) |
+| **CGPO** (ours) | [Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](https://doi.org/10.1145/3767308.3835969) | ACM MM 2026 (Oral) | this repo | [examples/reproduction/cgpo](examples/reproduction/cgpo) | Qwen2.5-VL-7B / Qwen3-VL-8B, ViRL39K (natural-image reproduction) |
 | PAPO | [Perception-Aware Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2507.06448) | ICLR 2026 | [GitHub](https://github.com/MikeWangWZHL/PAPO) | [examples/reproduction/papo](examples/reproduction/papo) | Qwen2.5-VL-3B/7B, ViRL39K |
 | VPPO | [Spotlight on Token Perception for Multimodal Reinforcement Learning](https://arxiv.org/abs/2510.09285) | ICLR 2026 | [GitHub](https://github.com/huaixuheqing/VPPO-RL) | [examples/reproduction/vppo](examples/reproduction/vppo) | Qwen2.5-VL-7B / Qwen3-VL-8B, ViRL39K |
 | DVRP | [Thinking with Deltas: Incentivizing Reinforcement Learning via Differential Visual Reasoning Policy](https://arxiv.org/abs/2601.06801) | arXiv | - | [examples/reproduction/dvrp](examples/reproduction/dvrp) | Qwen2.5-VL-3B/7B, ViRL39K |
@@ -262,7 +262,7 @@ Verified on 2026-10-01 against arXiv, OpenReview and the official repositories; 
 
 Each method below can be trained with the scripts in `examples/reproduction/<method>` (paper setting) and `examples/comparison/` (shared setting). Except for CGPO these are unofficial re-implementations; see each README for the differences from the official code.
 
-- **CGPO** (ours) · [CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](https://doi.org/10.1145/3767308.3835969) · Shengxuming Zhang et al. · ACM MM 2026 · official code: this repository<br>
+- **CGPO** (ours) · [CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](https://doi.org/10.1145/3767308.3835969) · Shengxuming Zhang et al. · ACM MM 2026 (Oral) · official code: this repository<br>
   The policy grounds its evidence inline in the chain of thought; the grounded regions are masked to form a counterfactual image, and the KL between the policy on the original and on the counterfactual image measures how much each token depends on that evidence. Responses that depend more on their evidence get larger advantages on perception-critical tokens, and a grounding-consistency reward (the policy re-detects every grounded entity) keeps the boxes from being inflated. Scripts cover the natural-image setting; the pathology setting of the paper is described in the README. Scripts and setting: [examples/reproduction/cgpo](examples/reproduction/cgpo/README.md).
 - **PAPO** · [Perception-Aware Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2507.06448) · Zhenhailong Wang et al. · ICLR 2026 · [code](https://github.com/MikeWangWZHL/PAPO)<br>
   Adds an *Implicit Perception Loss* to GRPO/DAPO that maximizes the KL between the policy on the original image and on a randomly patch-masked copy, so the outputs have to depend on the image. A *Double Entropy Loss* on both views keeps the policy from inflating this KL term in degenerate ways. Scripts and setting: [examples/reproduction/papo](examples/reproduction/papo/README.md).

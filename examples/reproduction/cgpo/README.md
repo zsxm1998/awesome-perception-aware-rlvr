@@ -3,7 +3,7 @@
 **CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology
 Vision-Language Reasoning**<br>
 Shengxuming Zhang, Linyun Zhou, Hengrui Lou, Zhenyang Wang, Xiuming Zhang, Zunlei Feng<br>
-ACM MM 2026 (Proceedings of the 34th ACM International Conference on Multimedia, Rio de Janeiro,
+ACM MM 2026 **Oral** (Proceedings of the 34th ACM International Conference on Multimedia, Rio de Janeiro,
 Brazil) · [Paper](https://doi.org/10.1145/3767308.3835969) · [BibTeX](#citation) · **This directory is the official implementation.**
 
 ## Method
