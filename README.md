@@ -225,7 +225,8 @@ advantage scaling, auxiliary losses and extra rewards. See
 
 [`examples/comparison/qwen3_vl_4b`](examples/comparison/README.md) trains every method on Qwen3-VL-4B-Instruct with
 the same data (ViRL39K / MMK12), the same GRPO hyper-parameters and the same evaluation; only the
-method-specific arguments differ. Results will be added here.
+method-specific arguments differ, and each method keeps the image perturbation of its paper. Results
+will be added here.
 
 | Method | GRPO | DAPO | PAPO | VPPO | ToR | DVRP | PGPO | PEPO | CFPO | VEPO | GRIT | CGPO |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |

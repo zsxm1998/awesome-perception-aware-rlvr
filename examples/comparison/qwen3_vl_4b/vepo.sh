@@ -6,8 +6,8 @@ source "$THIS_DIR/common.sh"
 
 pr_default EXPERIMENT_NAME "vepo"
 ALGO_ARGS=(
-    "algorithm.corrupt_image=random_patch"
-    "algorithm.corrupt_image_kwargs={\"patch_size\":16,\"black_prob\":0.6}"
+    "algorithm.corrupt_image=gaussian_noise"
+    "algorithm.corrupt_image_kwargs={\"std\":2.0}"
     "algorithm.corrupt_image_position=prompt"
     "algorithm.visual_sensitivity_metric=vepo"
     "algorithm.visual_sensitivity_jsd_weight=0.7"

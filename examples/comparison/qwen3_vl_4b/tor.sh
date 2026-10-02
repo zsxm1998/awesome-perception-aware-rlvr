@@ -6,9 +6,7 @@ source "$THIS_DIR/common.sh"
 
 pr_default EXPERIMENT_NAME "tor"
 ALGO_ARGS=(
-    "algorithm.corrupt_image=random_patch"
-    "algorithm.corrupt_image_kwargs={\"patch_size\":16,\"black_prob\":0.6}"
-    "algorithm.corrupt_image_position=prompt"
+    "algorithm.corrupt_image=no_image"
     "algorithm.tor_use_token_weighting=true"
     "algorithm.tor_rsn_weight=1.0"
     "algorithm.top_entropy_quantile=0.3"

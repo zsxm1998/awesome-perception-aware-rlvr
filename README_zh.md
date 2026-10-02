@@ -206,7 +206,8 @@ token 选择、优势缩放、辅助损失和额外奖励。所有开关见
 ## 📊 统一设定对比
 
 [`examples/comparison/qwen3_vl_4b`](examples/comparison/README.md) 在 Qwen3-VL-4B-Instruct 上训练所有方法，使用相同的
-数据（ViRL39K / MMK12）、相同的 GRPO 超参数和相同的评测，只有方法相关的参数不同。结果将补充到这里。
+数据（ViRL39K / MMK12）、相同的 GRPO 超参数和相同的评测，只有方法相关的参数不同，各方法沿用其论文中的
+图像扰动方式。结果将补充到这里。
 
 | 方法 | GRPO | DAPO | PAPO | VPPO | ToR | DVRP | PGPO | PEPO | CFPO | VEPO | GRIT | CGPO |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |

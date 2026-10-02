@@ -6,8 +6,7 @@ source "$THIS_DIR/common.sh"
 
 pr_default EXPERIMENT_NAME "pgpo"
 ALGO_ARGS=(
-    "algorithm.corrupt_image=random_patch"
-    "algorithm.corrupt_image_kwargs={\"patch_size\":16,\"black_prob\":0.6}"
+    "algorithm.corrupt_image=mask_visual_attention"
     "algorithm.corrupt_image_position=prompt"
     "algorithm.visual_sensitivity_reference=old"
     "algorithm.visual_sensitivity_metric=sampled_low_var_kl"

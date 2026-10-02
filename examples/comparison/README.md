@@ -26,32 +26,38 @@ define the method; everything else comes from [qwen3_vl_4b/common.sh](qwen3_vl_4
 
 Every method runs on the GRPO recipe above, also those whose papers build on DAPO, so that only the
 perception-aware component differs; DAPO is included as a second baseline (a stronger RL recipe
-without any perception-aware component). Where a paper
-perturbs the image, the perturbation is harmonized to blackening 16-px patches (Qwen3-VL's patch
-size) with probability 0.6, one mask per prompt (`algorithm.corrupt_image=random_patch`,
-`corrupt_image_kwargs={"patch_size":16,"black_prob":0.6}`, `corrupt_image_position=prompt`); the
-"Auxiliary view" column says where this replaces the paper's own perturbation. Parameter names are listed in
+without any perception-aware component). Each method keeps the image perturbation of its paper
+(column "Auxiliary view"), because its thresholds and coefficients were tuned for that
+perturbation; patch masking uses Qwen3-VL's 16-px patches. Parameter names are listed in
 [docs/algorithm_parameters.md](../../docs/algorithm_parameters.md).
 
 | Script | Method | Auxiliary view | `ALGO_ARGS` (abridged) |
 | --- | --- | --- | --- |
 | `grpo.sh` | GRPO baseline | – | none |
 | `dapo.sh` | DAPO baseline | – | no KL (`algorithm.disable_kl=true`), clip-higher 0.2 / 0.28, dynamic sampling on accuracy in (0.01, 0.99); the shared entropy penalty is kept |
-| `papo.sh` | [PAPO](../reproduction/papo/README.md) | random patch (paper: the same) | KL_prcp maximized with `visual_sensitivity_loss_coef=0.01`, `visual_sensitivity_reference=current`; no Double Entropy terms beyond the shared entropy penalty |
-| `vppo.sh` | [VPPO](../reproduction/vppo/README.md) | random patch (paper: p=0.5) | TGF `top_perception_quantile=0.4` per response; TAS `response_advantage_scaling_method=vppo`, `vppo_response_scaling_min=0.9`; `visual_sensitivity_reference=old`; no 0.06 entropy penalty |
-| `tor.sh` | [ToR](../reproduction/tor/README.md) | random patch (paper: image removed) | `top_entropy_quantile=0.3` and `top_perception_quantile=0.3` (batch), `tor_use_token_weighting=true`, `tor_rsn_weight=1.0`, `tor_prcp_weight=0.5`; `visual_sensitivity_reference=old` |
-| `dvrp.sh` | [DVRP](../reproduction/dvrp/README.md) | random patch + `vp_diffusion` noise (paper: the same) | `visual_sensitivity_loss_coef=0.01` (λ_nec), `visual_robustness_loss_coef=0.01` (λ_rob), `noise_t_init=500`, `noise_gamma=10`, `noise_t_max=1000`; no view-entropy terms |
-| `pgpo.sh` | [PGPO](../reproduction/pgpo/README.md) | random patch (paper: attention to visual tokens masked) | `advantage_scaling_method=pgpo`, `pgpo_token_scaling_threshold=0.4`, `pgpo_token_scaling_boost=2.0`, `visual_sensitivity_metric=sampled_low_var_kl`, `visual_sensitivity_reference=old` |
+| `papo.sh` | [PAPO](../reproduction/papo/README.md) | random 16-px patches blackened with p=0.6, one mask per prompt | KL_prcp maximized with `visual_sensitivity_loss_coef=0.01`, `visual_sensitivity_reference=current`; no Double Entropy terms beyond the shared entropy penalty |
+| `vppo.sh` | [VPPO](../reproduction/vppo/README.md) | random 16-px patches blackened with p=0.5, one mask per response | TGF `top_perception_quantile=0.4` per response; TAS `response_advantage_scaling_method=vppo`, `vppo_response_scaling_min=0.9`; `visual_sensitivity_reference=old`; no 0.06 entropy penalty |
+| `tor.sh` | [ToR](../reproduction/tor/README.md) | image removed (`no_image`) | `top_entropy_quantile=0.3` and `top_perception_quantile=0.3` (batch), `tor_use_token_weighting=true`, `tor_rsn_weight=1.0`, `tor_prcp_weight=0.5`; `visual_sensitivity_reference=old` |
+| `dvrp.sh` | [DVRP](../reproduction/dvrp/README.md) | random patches (p=0.6) and `vp_diffusion` noise | `visual_sensitivity_loss_coef=0.01` (λ_nec), `visual_robustness_loss_coef=0.01` (λ_rob), `noise_t_init=500`, `noise_gamma=10`, `noise_t_max=1000`; no view-entropy terms |
+| `pgpo.sh` | [PGPO](../reproduction/pgpo/README.md) | attention to the visual tokens masked (`mask_visual_attention`) | `advantage_scaling_method=pgpo`, `pgpo_token_scaling_threshold=0.4`, `pgpo_token_scaling_boost=2.0`, `visual_sensitivity_metric=sampled_low_var_kl`, `visual_sensitivity_reference=old` |
 | `pepo.sh` | [PEPO](../reproduction/pepo/README.md) | none (single forward) | `visual_sensitivity_metric=hidden_state_similarity` (cosine), `advantage_scaling_method=pepo`, `advantage_scaling_schedule=linear`, `pepo_gate_alpha=0.05`, `pepo_gate_temperature=1.8` |
-| `cfpo.sh` | [CFPO](../reproduction/cfpo/README.md) | in-model attention-value counterfactual (paper: the same) | `corrupt_image=cross_modal_attention_value_mean` (λ=2), `visual_sensitivity_loss_coef=0.02`, `visual_sensitivity_reference=current` |
-| `vepo.sh` | [VEPO](../reproduction/vepo/README.md) | random patch (paper: Gaussian noise) | `visual_sensitivity_metric=vepo`, `visual_sensitivity_jsd_weight=0.7`, `visual_sensitivity_entropy_gate=normal_entropy`, `top_perception_quantile=0.2` per response, `normalize_pg_loss_by_selected_tokens=true` |
+| `cfpo.sh` | [CFPO](../reproduction/cfpo/README.md) | in-model attention-value counterfactual | `corrupt_image=cross_modal_attention_value_mean` (λ=2), `visual_sensitivity_loss_coef=0.02`, `visual_sensitivity_reference=current` |
+| `vepo.sh` | [VEPO](../reproduction/vepo/README.md) | Gaussian noise, std 2.0 (`gaussian_noise`) | `visual_sensitivity_metric=vepo`, `visual_sensitivity_jsd_weight=0.7`, `visual_sensitivity_entropy_gate=normal_entropy`, `top_perception_quantile=0.2` per response, `normalize_pg_loss_by_selected_tokens=true` |
 | `grit.sh` | [GRIT](../reproduction/grit/README.md) | – | think / rethink / answer format with inline JSON evidence boxes (`examples/system_prompt/grit_GR.txt`, no format prompt) and `grit.py:compute_score` (format, box format, rule-based answer, 0.1·BLEU-1); trained on ViRL39K instead of GRIT's 20 samples |
 | `cgpo.sh` | CGPO ([examples/reproduction/cgpo](../reproduction/cgpo/README.md)) | evidence regions flattened to their local mean (`cgpo_flat`, one per response) | `<region>` evidence format (`xml_grounded_reasoning.jinja` and reward, format weight 0.1); `top_entropy_quantile=0.3`, `top_perception_quantile=0.3` (batch), `include_region_tokens_in_perception_mask=true`; `advantage_scaling_method=cgpo`, `cgpo_response_scaling_coef=0.1`; grounding-consistency reward weight 0.1; `visual_sensitivity_reference=old` |
 
-Because the recipe is shared, method-specific settings that the papers tune together with their
-base algorithm (DAPO dynamic sampling and clip-higher, VPPO's entropy penalty, PAPO's and DVRP's
-view-entropy terms, VEPO's frozen vision tower) are not used here. The per-paper settings are in
-[examples/reproduction/](../reproduction/).
+Settings that belong to a paper's base recipe rather than to its method are replaced by the shared
+recipe. The methods that their papers run on DAPO (VPPO and PGPO; PAPO, ToR and DVRP report both
+GRPO and DAPO) run on GRPO here, without DAPO's dynamic sampling and clip-higher; the DAPO baseline
+keeps both. VPPO's entropy penalty (which the paper applies to its baseline as well) and VEPO's
+frozen vision tower are not used either. The shared entropy penalty of 0.005 keeps
+Qwen3-VL-4B training stable; several methods collapse without it. Of PAPO's Double Entropy loss
+only the term on the original image carries gradient, and the shared penalty takes its place. The
+entropy terms on PAPO's masked view and on DVRP's two auxiliary views carry no gradient, because
+those views are scored once before the update (as in PAPO's official default), so they are left out
+without changing training; the PAPO authors confirmed this and found that recomputing the masked
+view with gradient does not help ([PAPO issue #20](https://github.com/MikeWangWZHL/PAPO/issues/20)).
+The per-paper settings are in [examples/reproduction/](../reproduction/).
 
 ## Running
 
