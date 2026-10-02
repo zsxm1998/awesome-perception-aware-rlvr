@@ -2,7 +2,9 @@
 
 # Awesome Perception-Aware RLVR
 
-**视觉感知导向的可验证奖励强化学习（Perception-Aware RLVR）的论文清单与统一、可复现的代码库**
+**视觉感知导向的可验证奖励强化学习（Perception-Aware RLVR）：统一复现、公平对比与一键评测，并附论文清单**
+
+PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · GRIT · DeepEyes · CGPO，统一的 EasyR1 代码库，25+ 个评测基准
 
 🌟 **[CGPO](#-cgpo-acm-mm-2026-oral)（ACM MM 2026 Oral）官方代码仓库** 🌟
 
@@ -21,6 +23,10 @@
 依赖语言先验而不是图像本身。**Perception-Aware RLVR** 一类方法把视觉感知重新放回优化目标中，例如
 在图像的反事实视图上对比策略输出、把信用分配给真正依赖图像的 token，或者让模型在推理过程中定位、
 放大视觉证据。
+
+<p align="center">
+  <img src="docs/assets/taxonomy_zh.svg" width="100%" alt="按视觉信号进入训练的位置对感知导向 RLVR 方法分类：基于定位的推理（GRIT、DeepEyes）、反事实视图（PAPO、DVRP、CFPO）、token 级视觉信用分配（VPPO、ToR、PGPO、PEPO、VEPO）；CGPO 在推理中内联定位证据，遮挡证据得到反事实图像，并用证据依赖缩放 token 优势。">
+</p>
 
 本仓库提供：
 
@@ -162,7 +168,7 @@ bash scripts/eval.sh Qwen/Qwen2.5-VL-7B-Instruct --suite papo         # 基座�
 ├── eval/                    # 一键评测（注册表、loader、scorer、prepare/）
 ├── scripts/                 # install_env.sh、prepare_data.sh、prepare_eval_data.sh、eval.sh、launcher.sh
 ├── verl/                    # 训练框架（EasyR1 分支），包含所有方法的实现
-├── docs/                    # 算法参数说明、新增方法教程、BibTeX
+├── docs/                    # 算法参数说明、新增方法教程、BibTeX、插图（assets/）
 ├── data/                    # 下载的数据（不纳入 git）
 └── tests/                   # 单元测试
 ```

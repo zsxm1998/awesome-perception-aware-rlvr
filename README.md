@@ -2,7 +2,9 @@
 
 # Awesome Perception-Aware RLVR
 
-**A curated list and a unified, reproducible codebase for perception-aware reinforcement learning with verifiable rewards (RLVR) for vision-language models.**
+**Unified reproductions, controlled comparison and one-click evaluation for perception-aware reinforcement learning with verifiable rewards (RLVR) in vision-language models, plus a curated paper list.**
+
+PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · GRIT · DeepEyes · CGPO, in one EasyR1 codebase with 25+ benchmarks
 
 🌟 **Official repository of [CGPO](#-cgpo-acm-mm-2026-oral) (ACM MM 2026 Oral)** 🌟
 
@@ -23,6 +25,10 @@ the image. **Perception-aware RLVR** methods put visual perception back into the
 contrasting the policy on counterfactual views of the image, by giving credit to the tokens that
 actually depend on the image, or by letting the model ground or zoom into visual evidence while it
 reasons.
+
+<p align="center">
+  <img src="docs/assets/taxonomy.svg" width="100%" alt="Perception-aware RLVR methods grouped by where the visual signal enters training: grounded reasoning (GRIT, DeepEyes), counterfactual views (PAPO, DVRP, CFPO) and token-level visual credit (VPPO, ToR, PGPO, PEPO, VEPO). CGPO grounds the evidence inline, masks it into a counterfactual image and lets the evidence dependence scale token advantages.">
+</p>
 
 This repository provides
 
@@ -175,7 +181,7 @@ with vLLM on all visible GPUs and writes a summary table. See [eval/README.md](e
 ├── eval/                    # one-click evaluation (registry, loaders, scorers, prepare/)
 ├── scripts/                 # install_env.sh, prepare_data.sh, prepare_eval_data.sh, eval.sh, launcher.sh
 ├── verl/                    # training framework (EasyR1 fork) with all method implementations
-├── docs/                    # algorithm parameters, adding a method, BibTeX
+├── docs/                    # algorithm parameters, adding a method, BibTeX, figures (assets/)
 ├── data/                    # downloaded data (git-ignored)
 └── tests/                   # unit tests
 ```

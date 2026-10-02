@@ -18,7 +18,8 @@
 
 Checks: the "Papers" / "Reproduced" badges match the lists, README.md and README_zh.md list the
 same papers, every table of "Other papers" is sorted newest first without duplicates, and every
-relative Markdown link points to an existing file (and, with ``#anchor``, to an existing heading).
+relative Markdown link or image points to an existing file (and, with ``#anchor``, to an existing
+heading).
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ ROW = re.compile(r"^\| (\d{4}(?:-\d{2})?) \|")
 ARXIV_ID = re.compile(r"`(\d{4}\.\d{4,5})`|arxiv\.org/abs/(\d{4}\.\d{4,5})")
 BADGE = re.compile(r"(img\.shields\.io/badge/{name}-)(\d+)(-)")
 LINK = re.compile(r"\]\(([^)\s]*?)#([^)\s]+)\)")
-FILE_LINK = re.compile(r"\]\(([^)\s#]+)(?:#[^)\s]*)?\)")
+FILE_LINK = re.compile(r"\]\(([^)\s#]+)(?:#[^)\s]*)?\)|<img[^>]*\ssrc=\"([^\"]+)\"")
 
 
 def section(text: str, level: int, title: str) -> str:
@@ -134,7 +135,8 @@ def check_links() -> list[str]:
     for relative in tracked.stdout.split():
         source = ROOT / relative
         text = source.read_text(encoding="utf-8")
-        for target in FILE_LINK.findall(text):
+        for link, image in FILE_LINK.findall(text):
+            target = link or image
             if re.match(r"^[a-z][a-z0-9+.-]*:", target) or target.startswith("<"):
                 continue
             if not (source.parent / target).exists():
