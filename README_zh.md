@@ -51,6 +51,7 @@ PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · GRIT · DeepEyes 
 ## 📖 目录
 
 - [更新](#-更新)
+- [计划](#-计划)
 - [CGPO (ACM MM 2026 Oral)](#-cgpo-acm-mm-2026-oral)
 - [已复现方法](#-已复现方法)
 - [快速开始](#-快速开始)
@@ -67,6 +68,17 @@ PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · GRIT · DeepEyes 
 
 - **2026-10**：🎉 首次发布：[CGPO](#-cgpo-acm-mm-2026-oral)（ACM MM 2026 Oral）官方实现、10 个复现方法、
   Qwen3-VL-4B 上的统一对比、一键评测。复现结果正在用本代码库重新跑，完成后补充到下面的表格中。
+
+## 🚧 计划
+
+- [ ] 统一对比和各方法复现的结果（正在跑）。
+- [ ] 在线策略蒸馏（on-policy distillation, OPD）：作为 GRPO、DAPO 之外的第三种基础训练方式（教师模型 +
+  逐 token 反向 KL 目标），再在其上实现感知相关的 OPD 方法，如 [Vision-OPD](https://arxiv.org/abs/2605.18740)
+  （以局部裁剪图为输入的同一模型作教师做自蒸馏）和 [VA-OPD](https://arxiv.org/abs/2605.21924)（按视觉优势加权蒸馏）。
+- [ ] 更多 DeepEyes 方向的"用图像思考"方法，如 MGPO、Chain-of-Focus、Pixel Reasoner。
+- [ ] 更多 GRIT 方向的定位推理方法，如 TreeVGR、DeFacto、ViGoRL。
+
+欢迎提建议：可以开 issue 提议要加入的方法，或参见[贡献](#-贡献)。
 
 ## 🌟 CGPO (ACM MM 2026 Oral)
 

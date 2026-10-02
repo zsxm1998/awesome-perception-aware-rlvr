@@ -55,6 +55,7 @@ so they can be combined, compared and extended with a few configuration switches
 ## 📖 Contents
 
 - [News](#-news)
+- [Roadmap](#-roadmap)
 - [CGPO (ACM MM 2026 Oral)](#-cgpo-acm-mm-2026-oral)
 - [Reproduced methods](#-reproduced-methods)
 - [Quick start](#-quick-start)
@@ -72,6 +73,19 @@ so they can be combined, compared and extended with a few configuration switches
 - **2026-10**: 🎉 First release: the official implementation of [CGPO](#-cgpo-acm-mm-2026-oral) (ACM MM
   2026 Oral), 10 reproduced methods, a controlled comparison on Qwen3-VL-4B, and one-click evaluation.
   Reproduction results are being collected with this codebase and will be added to the tables below.
+
+## 🚧 Roadmap
+
+- [ ] Results of the controlled comparison and of the reproductions (runs in progress).
+- [ ] On-policy distillation (OPD) as a third base recipe next to GRPO and DAPO (a teacher model and a
+  per-token reverse-KL objective), then perception-aware OPD methods such as
+  [Vision-OPD](https://arxiv.org/abs/2605.18740) (self-distillation from a crop-conditioned teacher)
+  and [VA-OPD](https://arxiv.org/abs/2605.21924) (distillation weighted by visual advantage).
+- [ ] More thinking-with-images methods in the line of DeepEyes, e.g. MGPO, Chain-of-Focus and
+  Pixel Reasoner.
+- [ ] More grounded-reasoning methods in the line of GRIT, e.g. TreeVGR, DeFacto and ViGoRL.
+
+Suggestions are welcome: open an issue to propose a method, or see [Contributing](#-contributing).
 
 ## 🌟 CGPO (ACM MM 2026 Oral)
 
