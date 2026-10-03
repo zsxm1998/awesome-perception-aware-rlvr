@@ -242,6 +242,10 @@ class TestSystemPrompt:
         assert ds[0]["raw_prompt"][0] == {"role": "system", "content": "You solve math problems."}
         assert [message["role"] for message in ds._build_messages(ds.dataset[1])] == ["user"]
 
+        # data prepared before the column existed must not fall back to data.system_prompt silently
+        with pytest.raises(ValueError, match="no column 'official_system_prompt'"):
+            RLHFDataset(**{**kwargs, "system_prompt_key": "official_system_prompt"})
+
 
 if __name__ == "__main__":
     test_image_dataset()

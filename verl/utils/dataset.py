@@ -171,6 +171,11 @@ class RLHFDataset(Dataset):
                 self.format_prompt = f.read()
 
         self.system_prompt_key = system_prompt_key
+        if system_prompt_key and system_prompt_key not in self.dataset.column_names:
+            raise ValueError(
+                f"{data_path} has no column {system_prompt_key!r} (data.system_prompt_key); it was probably prepared "
+                "by an older version of scripts/prepare_data.sh: run it again for this dataset."
+            )
         self.system_prompt = None
         if system_prompt:
             with open(system_prompt, encoding="utf-8") as f:
