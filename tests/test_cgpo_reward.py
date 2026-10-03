@@ -311,6 +311,30 @@ class _DummyRewardManager(BatchFunctionRewardManagerMixin):
         self.reward_fn = reward_fn
 
 
+def test_response_ids_reach_only_the_reward_functions_that_ask_for_them(tmp_path):
+    """REWARD_INPUT_RESPONSE_IDS = True in the reward module (GRIT) adds the response token ids."""
+    from verl.workers.reward.config import RewardConfig
+    from verl.workers.reward.function import AutoRewardManager
+
+    root = Path(__file__).resolve().parents[1] / "examples" / "reward_function"
+    for name, expected in (("grit.py", True), ("math.py", False)):
+        config = RewardConfig(reward_function=f"{root / name}:compute_score")
+        config.post_init()
+        assert AutoRewardManager(config, _DummyTokenizer()).add_response_ids is expected
+
+    manager = _DummyRewardManager()
+    manager.add_response_ids = True
+    data = DataProto.from_dict(
+        tensors={
+            "responses": torch.tensor([[97, 98, 99, 0]], dtype=torch.long),
+            "response_mask": torch.tensor([[1, 1, 1, 0]], dtype=torch.long),
+        },
+        non_tensors={"ground_truth": ["abc"]},
+    )
+    manager.compute_reward_batch(data)
+    assert manager.captured_inputs[0]["response_ids"] == [97, 98, 99]
+
+
 def test_reward_manager_passes_num_images_to_reward_function():
     manager = _DummyRewardManager()
     data = DataProto.from_dict(
@@ -328,7 +352,6 @@ def test_reward_manager_passes_num_images_to_reward_function():
         {
             "response": "abc",
             "response_length": 3,
-            "response_ids": [97, 98, 99],
             "ground_truth": "abc",
             "num_images": 3,
         }
@@ -352,7 +375,6 @@ def test_reward_manager_passes_grounding_consistency_to_reward_function():
         {
             "response": "abc",
             "response_length": 3,
-            "response_ids": [97, 98, 99],
             "ground_truth": "abc",
             "grounding_consistency": 0.25,
         }
@@ -377,7 +399,6 @@ def test_reward_manager_forwards_raw_grounding_keys():
         {
             "response": "abc",
             "response_length": 3,
-            "response_ids": [97, 98, 99],
             "ground_truth": "abc",
             "grounding_consistency": 0.1,
             "grounding_consistency_raw": 1.0,
@@ -407,7 +428,6 @@ def test_reward_manager_canonicalizes_qwen35_prefilled_think_response():
         {
             "response": "<think>\nreasoning</think>\\boxed{A}",
             "response_length": len(response_ids),
-            "response_ids": response_ids,
             "ground_truth": "A",
         }
     ]

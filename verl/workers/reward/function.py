@@ -201,6 +201,7 @@ def _attach_agent_reward_fields(
 
 class SequentialFunctionRewardManagerMixin:
     reward_fn: SequentialRewardFunction
+    add_response_ids: bool = False
 
     def compute_reward_sequential(self, data: DataProto) -> Tuple[torch.Tensor, dict[str, list[float]]]:
         reward_tensor = torch.zeros_like(data.batch["responses"], dtype=torch.float32)
@@ -219,7 +220,8 @@ class SequentialFunctionRewardManagerMixin:
             }
             _attach_agent_reward_fields(reward_input, data, i)
             _add_dataset_fields(reward_input, data, i)
-            _add_response_ids(reward_input, data, i)
+            if self.add_response_ids:
+                _add_response_ids(reward_input, data, i)
             num_images = _get_num_images(data, i)
             if num_images is not None:
                 reward_input["num_images"] = num_images
@@ -239,6 +241,7 @@ class SequentialFunctionRewardManagerMixin:
 
 class BatchFunctionRewardManagerMixin:
     reward_fn: BatchRewardFunction
+    add_response_ids: bool = False
 
     def compute_reward_batch(self, data: DataProto) -> Tuple[torch.Tensor, dict[str, list[float]]]:
         reward_inputs = []
@@ -257,7 +260,8 @@ class BatchFunctionRewardManagerMixin:
             }
             _attach_agent_reward_fields(reward_input, data, i)
             _add_dataset_fields(reward_input, data, i)
-            _add_response_ids(reward_input, data, i)
+            if self.add_response_ids:
+                _add_response_ids(reward_input, data, i)
             num_images = _get_num_images(data, i)
             if num_images is not None:
                 reward_input["num_images"] = num_images
@@ -305,6 +309,8 @@ class AutoRewardManager(BatchFunctionRewardManagerMixin, SequentialFunctionRewar
         reward_fn = getattr(module, config.reward_function_name)
         reward_name = getattr(module, "REWARD_NAME", "unknown")
         reward_type = getattr(module, "REWARD_TYPE", "batch")
+        # the response token ids, only for reward functions that ask for them (a list per response is costly)
+        self.add_response_ids = bool(getattr(module, "REWARD_INPUT_RESPONSE_IDS", False))
         print(f"Using reward function `{config.reward_function_name}` from `{config.reward_function}`.")
         print(f"Reward name: {reward_name}, reward type: {reward_type}.")
         self.reward_fn = partial(reward_fn, **config.reward_function_kwargs)

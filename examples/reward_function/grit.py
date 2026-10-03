@@ -24,6 +24,7 @@ from verl.trainer.perception_reasoning_data import parse_json_grounding_regions
 
 REWARD_NAME = "grit"
 REWARD_TYPE = "batch"
+REWARD_INPUT_RESPONSE_IDS = True  # the repetition reward counts token ids, as GRIT's code
 
 _THINK_OPEN = "<think>"
 _THINK_CLOSE = "</think>"
