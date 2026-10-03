@@ -141,7 +141,7 @@ class AlgorithmConfig:
     corrupt_image: Optional[str] = None
     """auxiliary visual corruption. `random_patch` is used by PAPO/VPPO/DVRP, `no_image` by ToR, `cgpo_flat|cgpo_hierarchical` by CGPO, `mask_visual_attention` by PGPO, `pixelation` removes fine image details while preserving image size, and `cross_modal_attention_value_mean` applies a scoped model-level intervention."""
     corrupt_image_kwargs: Any = None
-    """JSON/mapping kwargs passed to the selected `corrupt_image` transform, e.g. patch size, black probability, pixelation ratio, CGPO fill type, or saliency threshold multiplier."""
+    """JSON/mapping kwargs passed to the selected `corrupt_image` transform, e.g. patch size, black probability, pixelation ratio, CGPO fill type, or saliency threshold multiplier. `random_patch` takes `patch_size`, `black_prob` and `mask_before_resize` (default false: mask the resized image, so the patches line up with the vision encoder's; true: mask the original image, then resize it, as PAPO's code)."""
     corrupt_image_position: str = "prompt"
     """Whether corruption is built from the prompt side or from the generated response side. VPPO/CGPO mostly use response; PAPO/DVRP uses prompt."""
     visual_sensitivity_loss_coef: float = 0.0
@@ -271,6 +271,13 @@ class AlgorithmConfig:
             self.visual_sensitivity_metric,
             sampled_sensitivity_metrics | full_vocab_sensitivity_metrics | {"hidden_state_similarity"},
         )
+        if self.corrupt_image == "random_patch":
+            corruption_kwargs = self.corrupt_image_kwargs or {}
+            unknown_kwargs = set(corruption_kwargs) - {"patch_size", "black_prob", "mask_before_resize"}
+            if unknown_kwargs:
+                raise ValueError(f"random_patch received unsupported corrupt_image_kwargs: {sorted(unknown_kwargs)}.")
+            if not isinstance(corruption_kwargs.get("mask_before_resize", False), bool):
+                raise ValueError("corrupt_image_kwargs.mask_before_resize must be true or false.")
         if self.corrupt_image == "pixelation":
             corruption_kwargs = self.corrupt_image_kwargs or {}
             unknown_kwargs = set(corruption_kwargs) - {"ratio"}

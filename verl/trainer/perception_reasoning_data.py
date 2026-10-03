@@ -1148,7 +1148,20 @@ class PerceptionReasoningCorruptionBuilder:
         if transform_name == "random_patch":
             random_patch_kwargs = dict(transform_kwargs or {})
             random_patch_kwargs.setdefault("patch_size", self.image_patch_size)
+            # mask_before_resize (PAPO's code): mask the image at its original resolution, then resize it like the
+            # clean view, so both views keep the same image tokens. By default the patches are masked after
+            # resizing, aligned with the vision encoder's patches.
+            mask_before_resize = bool(random_patch_kwargs.pop("mask_before_resize", False))
             cache_descriptor = self._cache_descriptor(transform_name, random_patch_kwargs, global_step)
+            if mask_before_resize:
+                cache_descriptor += ":mask_before_resize"
+
+            def mask(image: Any, seed: int | None) -> Image.Image:
+                if not mask_before_resize:
+                    return random_patch_blackening(self._load_image(image), seed=seed, **random_patch_kwargs)
+                masked = random_patch_blackening(process_image(image, None, None), seed=seed, **random_patch_kwargs)
+                return masked if isinstance(image, ProcessedImageInput) else self._load_image(masked)
+
             if transform_position == "prompt":
                 cache_key = (corruption_group_key, cache_descriptor)
                 if cache_key in self._prompt_cache:
@@ -1157,21 +1170,12 @@ class PerceptionReasoningCorruptionBuilder:
 
                 seed_base = _stable_prompt_seed(cache_descriptor + ":" + corruption_group_key)
                 transformed["images"] = self._mark_processed_images(
-                    [
-                        random_patch_blackening(
-                            self._load_image(image),
-                            seed=seed_base + image_idx,
-                            **random_patch_kwargs,
-                        )
-                        for image_idx, image in enumerate(raw_images)
-                    ]
+                    [mask(image, seed_base + image_idx) for image_idx, image in enumerate(raw_images)]
                 )
                 self._prompt_cache[cache_key] = CachedAuxiliaryMedia(multi_modal_data=deepcopy(transformed), stats={})
                 return transformed, {}
 
-            transformed["images"] = self._mark_processed_images(
-                [random_patch_blackening(self._load_image(image), **random_patch_kwargs) for image in raw_images]
-            )
+            transformed["images"] = self._mark_processed_images([mask(image, None) for image in raw_images])
             return transformed, {}
 
         if transform_name == "gaussian_noise":
