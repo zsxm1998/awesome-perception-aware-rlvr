@@ -11,10 +11,12 @@ ALGO_ARGS=(
     "algorithm.tor_rsn_weight=1.0"
     "algorithm.top_entropy_quantile=0.3"
     "algorithm.entropy_thr_granularity=batch"
+    "algorithm.entropy_top_p=0.95"
     "algorithm.tor_prcp_weight=0.5"
     "algorithm.top_perception_quantile=0.3"
     "algorithm.perception_thr_granularity=batch"
     "algorithm.visual_sensitivity_reference=old"
+    "algorithm.visual_sensitivity_metric=sampled_abs_log_ratio"
 )
 EXTRA_ARGS=()
 
