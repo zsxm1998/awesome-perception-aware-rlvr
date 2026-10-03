@@ -44,6 +44,9 @@ class TrainDataset:
     used_by: list[str]
     converter: Optional[str] = None  # name in converters.CONVERTERS; None = plain shard merge
     extra_patterns: list[str] = field(default_factory=list)
+    # columns the current converter writes and the scripts read; existing output without them was written by an
+    # older version and is prepared again
+    required_columns: tuple[str, ...] = ()
 
 
 DATASETS: dict[str, TrainDataset] = {
@@ -103,6 +106,7 @@ DATASETS: dict[str, TrainDataset] = {
         description="DeepEyes-Datasets-47k (fine-grained perception, chart, and reasoning subsets)",
         used_by=["deepeyes"],
         converter="deepeyes",
+        required_columns=("env_name", "official_system_prompt", "official_prompt", "row_system_prompt"),
     ),
 }
 
@@ -175,12 +179,23 @@ def _merge_parquet(files: list[Path], output: Path) -> int:
     return rows
 
 
+def _missing_columns(path: Path, columns: tuple[str, ...]) -> list[str]:
+    import pyarrow.parquet as pq
+
+    names = set(pq.read_schema(path).names)
+    return [column for column in columns if column not in names]
+
+
 def prepare(dataset: TrainDataset, data_root: Path, keep_raw: bool, force: bool) -> None:
     out_dir = data_root / dataset.name
     expected = [out_dir / f"{split}.parquet" for split in dataset.splits]
     if not force and all(path.exists() for path in expected):
-        print(f"[skip] {dataset.name}: already prepared at {out_dir}")
-        return
+        stale = {path.name: _missing_columns(path, dataset.required_columns) for path in expected}
+        stale = {name: columns for name, columns in stale.items() if columns}
+        if not stale:
+            print(f"[skip] {dataset.name}: already prepared at {out_dir}")
+            return
+        print(f"[rebuild] {dataset.name}: {stale} lack columns of the current version; preparing again")
 
     raw_dir = data_root / ".raw" / dataset.repo_id.replace("/", "__")
     print(f"[download] {dataset.repo_id} -> {raw_dir}")
