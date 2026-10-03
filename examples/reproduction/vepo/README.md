@@ -21,11 +21,11 @@ sequence-level advantage is unchanged.
 | Base model | Qwen2.5-VL-7B-Instruct |
 | Training data | Geometry3K train (`hiyouga/geometry3k`, 2,101) + `xyliu6/k12-freeform` mini_train (2,100), 4,201 problems — `bash scripts/prepare_data.sh vepo` |
 | Validation | `xyliu6/k12-freeform` test (808), every 20 steps, 8 samples at T=1.0, top-p 0.9 |
-| Prompt / reward | `<think>` + `\boxed{}` (`math_perception.jinja`); binary accuracy (`math.py:compute_score_wo_format`) |
+| Prompt / reward | the official system prompt (`examples/system_prompt/vepo.txt`: `<think>` + `\boxed{}`), the problem as the user message; 0.9 accuracy + 0.1 format (`math.py:compute_score`) |
 | Rollout | 512 prompts x 12 rollouts per step, T=1.0, top-p 1.0; update batch 256 prompts (2 updates per step); vLLM tensor parallel 4 |
-| RL | GRPO; low-var KL loss 0.01; clip 0.2 / 0.3 (EasyR1 defaults); token-level loss |
+| RL | GRPO without KL; clip 0.2 / 0.2; entropy bonus 1e-3 on the full-vocabulary entropy of all response tokens (`algorithm.invariant_entropy_coef=-0.001`, `algorithm.entropy_loss_type=full`); token-level loss; data seed 42 |
 | Optimization | AdamW (bf16), lr 1e-6 constant, vision tower frozen, 20 epochs (160 steps) |
-| Lengths / pixels | max prompt 8,192, max response 4,096; 200,704-1,003,520 pixels |
+| Lengths / pixels | max prompt 2,048, max response 2,048; 262,144-1,000,000 pixels |
 | GPUs | 8 |
 | Perturbed view | `algorithm.corrupt_image=gaussian_noise`, `algorithm.corrupt_image_kwargs={"std":6.928}` (on the normalized pixel values, see below), `algorithm.corrupt_image_position=prompt` (one noisy image per prompt) |
 | Token score | `algorithm.visual_sensitivity_metric=vepo`, `algorithm.visual_sensitivity_jsd_weight=0.7` (α), `algorithm.visual_sensitivity_entropy_gate=normal_entropy` |
@@ -61,11 +61,10 @@ command (e.g. `algorithm.disable_kl=true`) and set `N_GPUS_PER_NODE`, `MODEL_PAT
   base VEPO builds on), 4,201 problems in total; this composition is our reading of the paper, not
   confirmed by the authors. Validation uses `xyliu6/k12-freeform` test (808), as the official
   script.
-- **RL recipe.** The official recipe is GRPO without KL, symmetric clip 0.2, max response 2,048,
-  reward 0.9 accuracy + 0.1 format, and an entropy bonus of 1e-3 that the paper does not mention.
-  Our scripts use a low-var KL loss 0.01, clip 0.2 / 0.3, max response 4,096, an accuracy-only
-  reward and no entropy bonus. As the official `total_episodes=20`, we train for 20 epochs (160
-  steps).
+- **RL recipe.** We follow the official script: GRPO without KL, symmetric clip 0.2, max response
+  2,048, reward 0.9 accuracy + 0.1 format, its system prompt, data seed 42, and an entropy bonus of
+  1e-3 that the paper does not mention; all three scripts use it. As the official
+  `total_episodes=20`, we train for 20 epochs (160 steps).
 - **Update batch.** The paper (Table 5) lists a global batch size of 128. The official script sets
   128 together with `worker.actor.is_noisy=true`, a NoisyRollout option that doubles it, so every
   update uses 256 prompts and each step updates twice. We follow the official code; set

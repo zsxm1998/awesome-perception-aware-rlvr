@@ -64,6 +64,9 @@ suites:
   vepo:
     description: VEPO Table 1 (2 in-domain + 5 out-of-domain benchmarks)
     benchmarks: [geo3k, mmk12, hallusionbench, mathvista, wemath, mathverse, mathvision]
+    defaults:  # the training prompt of examples/reproduction/vepo (VEPO's system prompt)
+      format_prompt: none
+      system_prompt: examples/system_prompt/vepo.txt
     notes: >-
       VEPO evaluates with greedy decoding and a gpt-4o-mini judge for MathVista, MathVerse,
       MathVision and We-Math; we use the rule-based PAPO-Eval protocol (avg@8, T=1.0). Add
