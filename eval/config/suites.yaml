@@ -30,7 +30,7 @@ suites:
     benchmarks: [mathverse, dynamath, mmk12, geo3k, mathvision, wemath, logicvista, mmmu_pro]
     notes: >-
       DynaMath and MathVision come from chamber111/VPPO-Eval (filtered to verifiable
-      answers); the other six are byte-identical to the PAPO-Eval splits. VPPO uses 4096
+      answers); the other six have the same items as the PAPO-Eval splits. VPPO uses 4096
       new tokens for its 32B model; pass --max-new-tokens 4096 to match.
 
   dvrp:

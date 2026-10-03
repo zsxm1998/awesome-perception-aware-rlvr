@@ -15,7 +15,7 @@
 
 The repository is a LLaMA-Factory ``data/`` folder: ``data/vppo/<name>.json`` (list of
 ``{messages, images}``) and loose images under ``data/images/<name>/``. The other six VPPO
-columns are byte-identical to PAPO-Eval splits and are prepared from there. Layout::
+columns have the same items as the PAPO-Eval splits and are prepared from there. Layout::
 
     <data_root>/<key>/test.json
     <data_root>/<key>/images/<name>/<file>.png
