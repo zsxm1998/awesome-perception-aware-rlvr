@@ -276,7 +276,8 @@ Evaluate a model with the prompt it was trained with:
 | CGPO | `--format-prompt examples/format_prompt/xml_grounded_reasoning.jinja` (suite `cgpo`) |
 | GRIT (`examples/reproduction/grit`) | `--format-prompt examples/format_prompt/grit.jinja --system-prompt none --min-pixels 3136 --max-pixels 200704` (suite `grit`) |
 | GRIT in the comparison (`examples/comparison/qwen3_vl_4b/grit.sh`) | `--format-prompt none --system-prompt examples/system_prompt/grit_GR.txt`; on the GRIT sets with `--benchmarks grit_vsr,grit_tallyqa,grit_gqa,ovdeval_position`, not `--suite grit` |
-| DeepEyes | `--interaction-mode agentic --system-prompt examples/system_prompt/deepeyes.txt` (suite `deepeyes`; `deepeyes_pixel.txt` for Qwen2-VL / Qwen2.5-VL) |
+| DeepEyes, Qwen2.5-VL (`qwen2_5_vl_7b_grpo_deepeyes.sh`, DeepEyes' own prompts) | `--interaction-mode agentic --agent-prompt-style official` (suite `deepeyes` plus `--agent-prompt-style official`) |
+| DeepEyes, rewritten prompt (Qwen3-VL and `*_native.sh`) | `--interaction-mode agentic --system-prompt examples/system_prompt/deepeyes.txt` (suite `deepeyes`; `deepeyes_pixel.txt` is picked for Qwen2-VL / Qwen2.5-VL) |
 
 ## LLM judge
 
@@ -332,6 +333,9 @@ Common runner options:
 | `--min-pixels`, `--max-pixels` | image resizing (default: the suite's, else 200704 to 1003520 pixels, as in training; `pepo_geometry` uses 3136 to 12845056, PEPO's training range) |
 | `--max-dynamic-patch N` | InternVL only: at most N tiles per image (default: the model config's), as `worker.actor.model.max_dynamic_patch` in training |
 | `--box-format auto\|norm1000\|pixel` | how predicted boxes are read (see [Scoring protocols](#scoring-protocols)) |
+| `--grounding-instruction append\|none` | whether the box instruction is appended to the questions of the grounding sets (default `append`; the `grit` suite asks the bare question, as GRIT) |
+| `--answer-protocol default\|pepo` | `pepo`: MathVista, LogicVista and MathVerse are asked and LogicVista is read as in PEPO's evaluation scripts (suite `pepo_geometry`) |
+| `--agent-prompt-style native\|official`, `--agent-observation-min-pixels N` | agentic runs: DeepEyes' own prompts instead of the rewritten one; the lower pixel bound of tool crops (default `--min-pixels`; the image processor's own lower bound still applies) |
 | `--batch-size`, `--max-batch-images` | request batching per engine |
 | `--data-root`, `--skip-missing-data` | data location / tolerate unprepared benchmarks |
 | `--resume` / `--no-resume`, `--score-only`, `--summary-only` | reuse or rebuild results |
