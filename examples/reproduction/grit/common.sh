@@ -44,6 +44,7 @@ launch_grit() {
         "worker.actor.global_batch_size=20"
         "worker.actor.clip_ratio_low=0.28"
         "worker.actor.clip_ratio_high=0.28"
+        "worker.actor.loss_avg_mode=seq"
         "worker.actor.micro_batch_size_per_device_for_update=2"
         "worker.actor.micro_batch_size_per_device_for_experience=8"
         "worker.actor.fsdp.torch_dtype=bf16"
