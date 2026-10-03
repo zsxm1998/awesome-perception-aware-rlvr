@@ -273,6 +273,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "i.e. Qwen3-VL Instruct; evaluate a checkpoint with the setting it was trained with.",
     )
     parser.add_argument(
+        "--grounding-instruction",
+        choices=["append", "none"],
+        default=None,
+        help="append (default): the GRIT sets and OVDEval ask for 0-1000 boxes after the question; none: the "
+        "question only, for models trained to answer it as is (the grit suite's default).",
+    )
+    parser.add_argument(
         "--prompt-mode",
         choices=["raw", "chat"],
         default="chat",
@@ -414,6 +421,8 @@ def apply_prompt_defaults(args: argparse.Namespace) -> None:
             setattr(args, key, value)
             applied[key] = value
     args.suite_defaults_applied = applied
+    if getattr(args, "grounding_instruction", None) is None:
+        args.grounding_instruction = "append"
     if getattr(args, "min_pixels", None) is None:
         args.min_pixels = DEFAULT_MIN_PIXELS
     if getattr(args, "max_pixels", None) is None:
@@ -656,6 +665,11 @@ def write_run_summaries(results, args: argparse.Namespace, run_id: str) -> None:
         "temperature": args.temperature if args.temperature is not None else "per_benchmark",
         "num_samples": args.num_samples if args.num_samples is not None else "per_benchmark",
         **({"top_k": args.top_k} if getattr(args, "top_k", None) is not None else {}),
+        **(
+            {"grounding_instruction": args.grounding_instruction}
+            if getattr(args, "grounding_instruction", "append") != "append"
+            else {}
+        ),
         "batch_size": args.batch_size,
         "max_batch_images": args.max_batch_images,
         "max_model_len": args.max_model_len,
@@ -952,6 +966,7 @@ def infer_benchmark_shard(
     # --limit keeps the first N samples of the benchmark (in total), which are then sharded.
     samples = shard_samples(load_samples(spec, args.data_root, limit=args.limit), shard_index, num_shards)
     samples = apply_interaction_prompt_contract(samples, args)
+    samples = apply_grounding_instruction(samples, args)
     samples = apply_box_format_to_prompts(samples, getattr(args, "box_format", "norm1000"))
     samples = apply_prompt_config(samples, prompt_config_from_args(args))
     output = shard_prediction_path(args.output_dir, spec, shard_index)
@@ -1025,6 +1040,16 @@ def apply_interaction_prompt_contract(
         return samples
     return [
         (replace(sample, prompt=sample.native_agentic_prompt) if sample.native_agentic_prompt is not None else sample)
+        for sample in samples
+    ]
+
+
+def apply_grounding_instruction(samples: list[EvalSample], args: argparse.Namespace) -> list[EvalSample]:
+    """With --grounding-instruction none, ask the bare question where a loader appended a box instruction."""
+    if getattr(args, "grounding_instruction", "append") != "none":
+        return samples
+    return [
+        replace(sample, prompt=sample.question_only_prompt) if sample.question_only_prompt is not None else sample
         for sample in samples
     ]
 
@@ -1242,6 +1267,12 @@ def task_fingerprint(
                 else {}
             ),
             "prompt_mode": args.prompt_mode,
+            # only when set, so runs with the default keep their fingerprints
+            **(
+                {"grounding_instruction": args.grounding_instruction}
+                if getattr(args, "grounding_instruction", "append") != "append"
+                else {}
+            ),
             "box_format": getattr(args, "box_format", "norm1000"),
             "shard_index": shard_index,
             "num_shards": num_shards,

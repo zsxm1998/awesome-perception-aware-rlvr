@@ -99,7 +99,7 @@ also set prompt defaults (see [Prompts](#prompts)); explicit flags always win.
 | `vepo` | geo3k, mmk12, hallusionbench, mathvista, wemath, mathverse, mathvision | VEPO Table 1; the paper uses greedy decoding and a gpt-4o-mini judge for 4 benchmarks, we use rule-based avg@8 |
 | `tor` | mathverse, mathvision, mathvista, wemath, hallusionbench | ToR Table 4; the paper follows NoisyRollout (greedy + Gemini answer parsing), we use rule-based avg@8 |
 | `cfpo` | cvqa_real, mars_bench, pope, textvqa, mmmu_pro, geo3k, wemath, mmk12, mathverse, logicvista | CFPO Table 1; CFPO reports POPE as pooled accuracy with avg@8 (same 9,000 questions; our primary is greedy macro F1, pooled accuracy in the details); CFPO's LogicVista file has 448 items, PAPO-Eval's 447 |
-| `grit` | grit_vsr, grit_tallyqa, grit_gqa, ovdeval_position | GRIT Table 1 (GRIT judges answers with GPT-4o, we use relaxed exact match); default prompt: `grit_GR.txt` |
+| `grit` | grit_vsr, grit_tallyqa, grit_gqa, ovdeval_position | GRIT Table 1 (GRIT judges answers with GPT-4o, we use relaxed exact match); default prompt: `grit_GR.txt` and the bare question (`--grounding-instruction none`; other suites append a box instruction to these sets) |
 | `deepeyes` | vstar, hrbench_4k, hrbench_8k, mme_realworld_lite, pope | DeepEyes Tables 1-3; default: agentic DeepEyes inference (see [Agentic evaluation](#agentic-evaluation-deepeyes)) |
 | `cgpo` | = `papo` | CGPO natural-image reproduction (trained on ViRL39K); default prompt `xml_grounded_reasoning.jinja` |
 | `comparison` | `papo` + `vppo` + pope, hallusionbench | the benchmark set used by `examples/comparison/` |

@@ -79,6 +79,9 @@ class EvalSample:
     # grounded-reasoning models. Native visual agents instead expose evidence
     # through tool actions, so retain the unmodified question explicitly.
     native_agentic_prompt: str | None = None
+    # The question without the grounding instruction a loader appends (GRIT sets, OVDEval); used with
+    # --grounding-instruction none, for models trained to answer the bare question (GRIT).
+    question_only_prompt: str | None = None
 
 
 @dataclass(frozen=True)

@@ -31,6 +31,7 @@ SUITE_DEFAULT_KEYS = (
     "agent_profile",
     "min_pixels",
     "max_pixels",
+    "grounding_instruction",
 )
 
 

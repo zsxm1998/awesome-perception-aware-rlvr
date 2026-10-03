@@ -680,3 +680,22 @@ def test_image_size_defaults_follow_the_suite(monkeypatch, extra, expected):
     monkeypatch.setattr(sys, "argv", ["run_all_benchmarks.py", "--model", "model", *extra])
     args = runner.parse_args()
     assert (args.min_pixels, args.max_pixels) == expected
+
+
+def test_grit_suite_asks_the_bare_question(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["run_all_benchmarks.py", "--model", "model", "--suite", "grit"])
+    grit_args = runner.parse_args()
+    monkeypatch.setattr(sys, "argv", ["run_all_benchmarks.py", "--model", "model", "--suite", "cgpo"])
+    cgpo_args = runner.parse_args()
+    assert grit_args.grounding_instruction == "none" and cgpo_args.grounding_instruction == "append"
+
+    sample = EvalSample(
+        benchmark="grit_vsr",
+        sample_id="grit_vsr:0",
+        prompt="Is the cat left of the dog?\nProvide a concise final answer and ground every image region ...",
+        target="yes",
+        question_only_prompt="Is the cat left of the dog?",
+    )
+    (bare,) = runner.apply_grounding_instruction([sample], grit_args)
+    (kept,) = runner.apply_grounding_instruction([sample], cgpo_args)
+    assert bare.prompt == "Is the cat left of the dog?" and kept.prompt == sample.prompt

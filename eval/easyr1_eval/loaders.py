@@ -639,6 +639,7 @@ def load_grit_jsonl(spec: BenchmarkSpec, data_root: Path, limit: int | None = No
                 target=target if isinstance(target, (list, dict)) else str(target),
                 images=[_required_image(image_root, str(row["image"]))],
                 native_agentic_prompt=native_agentic_prompt,
+                question_only_prompt=base_prompt,
                 extra_info={
                     "bboxs": row.get("bboxs") or [],
                     "bboxs_normalized": boxes,

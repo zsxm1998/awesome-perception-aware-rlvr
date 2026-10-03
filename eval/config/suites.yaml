@@ -8,8 +8,8 @@
 #   include:    other suites whose benchmarks are prepended (order preserved, no duplicates)
 #   defaults:   runner options applied only when the flag is NOT given on the command line
 #               (format_prompt, system_prompt, interaction_mode, agent_profile, min_pixels,
-#               max_pixels). Paths are relative to the repository root; `none` disables the
-#               format prompt.
+#               max_pixels, grounding_instruction). Paths are relative to the repository root;
+#               `none` disables the format prompt.
 #   notes:      where our protocol differs from the paper's own evaluation
 #
 # Every reasoning benchmark is scored with the PAPO-Eval protocol (rule-based exact match on
@@ -102,6 +102,7 @@ suites:
     defaults:
       format_prompt: none
       system_prompt: examples/system_prompt/grit_GR.txt
+      grounding_instruction: none  # the question only, as the GRIT models are trained
     notes: >-
       GRIT judges answers with GPT-4o; we use rule-based relaxed exact match. The GRIT-paper
       grounding IoU is reported as grounding/grit_iou in the metric details.
