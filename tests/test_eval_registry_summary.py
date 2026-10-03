@@ -188,6 +188,16 @@ def test_summary_csv_adds_group_and_overall_rows(tmp_path):
     assert lookup["overall_average"]["normalized_score_0_100"] == str((50 + 100 + 25) / 3)
 
 
+def test_summary_csv_records_the_run_options_that_were_set(tmp_path):
+    import csv
+
+    result = MetricResult("geo3k", "Reasoning", "mean_acc_at_k", 50.0, 50.0, 2)
+    path = tmp_path / "summary.csv"
+    write_summary_csv(path, [result], run_metadata={"run_id": "r", "top_k": 50, "answer_protocol": "pepo"})
+    (row, *_) = list(csv.DictReader(path.open()))
+    assert (row["top_k"], row["answer_protocol"], row["grounding_instruction"]) == ("50", "pepo", "")
+
+
 def test_summary_csv_preserves_flat_agent_configuration(tmp_path):
     path = tmp_path / "summary.csv"
     global_path = tmp_path / "global.csv"

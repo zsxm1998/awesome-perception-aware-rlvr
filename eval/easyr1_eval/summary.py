@@ -31,6 +31,16 @@ AUXILIARY_COLUMNS = {
 }
 
 
+# run options recorded only when set (the defaults leave them empty)
+OPTIONAL_RUN_FIELDNAMES = [
+    "top_k",
+    "grounding_instruction",
+    "answer_protocol",
+    "max_dynamic_patch",
+    "agent_prompt_style",
+    "agent_observation_min_pixels",
+]
+
 SUMMARY_FIELDNAMES = [
     "run_id",
     "output_dir",
@@ -50,6 +60,7 @@ SUMMARY_FIELDNAMES = [
     "plain_think_tokens",
     "prompt_mode",
     "box_format",
+    *OPTIONAL_RUN_FIELDNAMES,
     "interaction_mode",
     "agent_profile",
     "agent_output_contract",
@@ -386,6 +397,7 @@ def _base_metadata(run_metadata: dict[str, Any]) -> dict[str, Any]:
         "perturbation_summary": run_metadata.get("perturbation_summary", ""),
         "perturbation_seed": run_metadata.get("perturbation_seed", ""),
         "perturbation_params": run_metadata.get("perturbation_params", ""),
+        **{key: run_metadata.get(key, "") for key in OPTIONAL_RUN_FIELDNAMES},
     }
 
 

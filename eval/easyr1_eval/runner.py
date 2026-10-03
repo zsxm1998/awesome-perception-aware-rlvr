@@ -722,6 +722,11 @@ def write_run_summaries(results, args: argparse.Namespace, run_id: str) -> None:
             if getattr(args, "answer_protocol", "default") != "default"
             else {}
         ),
+        **(
+            {"max_dynamic_patch": args.max_dynamic_patch}
+            if getattr(args, "max_dynamic_patch", None) is not None
+            else {}
+        ),
         "batch_size": args.batch_size,
         "max_batch_images": args.max_batch_images,
         "max_model_len": args.max_model_len,
