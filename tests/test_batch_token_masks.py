@@ -86,6 +86,45 @@ def test_batch_masks_are_taken_over_the_whole_rollout_batch():
     assert metrics["algo/token_selection/entropy_fraction"] == pytest.approx(0.3, abs=0.05)
 
 
+def test_tokens_tied_at_the_threshold_are_drawn_at_random():
+    """With top-p entropies most values are exactly 0; the tied tokens must not come in runs of responses."""
+    generator = torch.Generator().manual_seed(0)
+    rows, length = 64, 256
+    positive = torch.rand(rows, length, generator=generator) < 0.2
+    entropies = torch.where(positive, torch.rand(rows, length, generator=generator) + 0.01, torch.zeros(rows, length))
+    batch = {"response_mask": torch.ones(rows, length), "old_entropies": entropies}
+    loss_config = build_perception_reasoning_loss_config(_tor_config(top_perception_quantile=1.0))
+    keep = math.ceil(rows * length * 0.3)
+
+    in_order, _ = build_batch_token_masks(loss_config, batch)
+    drawn, metrics = build_batch_token_masks(loss_config, batch, tie_break_seed=7)
+    for masks in (in_order, drawn):
+        mask = masks["batch_entropy_mask"]
+        assert int(mask.sum()) == keep and bool(mask[positive].all())  # exactly 30%, every positive entropy
+    assert metrics["algo/token_selection/entropy_threshold"] == 0.0
+
+    tied_per_response = (drawn["batch_entropy_mask"] & ~positive).sum(dim=1).float()
+    expected = (keep - int(positive.sum())) * (~positive).sum(dim=1).float() / int((~positive).sum())
+    assert int(((in_order["batch_entropy_mask"] & ~positive).sum(dim=1) > 0).sum()) < rows // 2  # sort order: runs
+    assert bool((tied_per_response > 0).all())
+    # binomial-sized spread around each response's share of the tied tokens (about 26 per response here)
+    assert float((tied_per_response - expected).abs().max()) < 5 * float(expected.mean()) ** 0.5
+
+    again, _ = build_batch_token_masks(loss_config, batch, tie_break_seed=7)
+    other, _ = build_batch_token_masks(loss_config, batch, tie_break_seed=8)
+    assert torch.equal(again["batch_entropy_mask"], drawn["batch_entropy_mask"])
+    assert not torch.equal(other["batch_entropy_mask"], drawn["batch_entropy_mask"])
+
+
+def test_the_tie_break_seed_does_not_change_masks_without_ties():
+    batch = _batch(seed=2)
+    loss_config = build_perception_reasoning_loss_config(_tor_config())
+    masks, _ = build_batch_token_masks(loss_config, batch)
+    seeded, _ = build_batch_token_masks(loss_config, batch, tie_break_seed=3)
+    for key in ("batch_entropy_mask", "batch_perception_mask"):
+        assert torch.equal(masks[key], seeded[key])
+
+
 def test_batch_masks_do_not_depend_on_the_micro_batch_split():
     """The loss uses the driver masks as they are, whichever micro-batch a response lands in."""
     batch = _batch(seed=1)

@@ -1402,7 +1402,11 @@ class RayPPOTrainer:
                     if shaping_context is not None:
                         batch.meta_info["advantage_shaping_context"] = shaping_context
                     # top-quantile masks over the whole rollout batch (*_thr_granularity=batch)
-                    batch_masks, mask_metrics = build_batch_token_masks(perception_reasoning_config, batch)
+                    batch_masks, mask_metrics = build_batch_token_masks(
+                        perception_reasoning_config,
+                        batch,
+                        tie_break_seed=int(self.config.data.seed) * 1_000_003 + int(self.global_step),
+                    )
                     for key, mask in batch_masks.items():
                         batch.batch[key] = mask
                     metrics.update(mask_metrics)

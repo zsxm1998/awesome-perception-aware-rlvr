@@ -73,7 +73,11 @@ keeps the top fraction of tokens; `*_thr_granularity` decides among which tokens
   renormalized top-p distribution. ToR uses it with top-p 0.95 (paper Eq. 5-9).
 - `response`: within each response (VPPO, VEPO).
 
-The selection keeps exactly the top fraction; tokens tied at the threshold are taken in sort order.
+The selection keeps exactly the top fraction. With `batch`, the tokens tied at the threshold are
+drawn uniformly at random (seeded by `data.seed` and the step): with top-p 0.95 most tokens have a
+truncated entropy of exactly 0, and taking them in sort order would select them in runs of
+consecutive responses. With `micro_batch` and `response` the scores are continuous, and tied
+tokens are taken in sort order.
 
 ## Noise on normalized pixel values
 

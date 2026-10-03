@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any
+from typing import Any, Optional
 
 import torch
 
@@ -120,17 +120,21 @@ def _mask_granularity(granularity: str) -> str:
 def build_batch_token_masks(
     loss_config: dict[str, Any] | None,
     data: DataProto | dict[str, torch.Tensor] | Any,
+    tie_break_seed: Optional[int] = None,
 ) -> tuple[dict[str, torch.Tensor], dict[str, float]]:
     """Top-quantile token masks over every response token of the rollout batch (``*_thr_granularity=batch``).
 
     Runs on the driver before the update, so the thresholds do not depend on how the batch is split into
     micro-batches. The entropy comes from the rollout (old) policy (``old_entropies``); perception scores are the
     precomputed ``per_token_sensitivity_scores`` or the sampled metric between ``old_log_probs`` and
-    ``decremental_old_log_probs``.
+    ``decremental_old_log_probs``. Exactly the top fraction is kept; with ``tie_break_seed`` the tokens tied at the
+    threshold (e.g. the many zero entropies of a top-p truncated distribution) are drawn uniformly at random
+    instead of in sort order, which would take them in runs of consecutive responses.
     """
     masks: dict[str, torch.Tensor] = {}
     metrics: dict[str, float] = {}
     batch = data.batch if isinstance(data, DataProto) else data
+    generator = None if tie_break_seed is None else torch.Generator().manual_seed(int(tie_break_seed))
     if uses_batch_entropy_mask(loss_config):
         if "old_entropies" not in batch:
             raise ValueError("entropy_thr_granularity=batch requires old_entropies from the rollout policy.")
@@ -139,6 +143,7 @@ def build_batch_token_masks(
             response_mask=batch["response_mask"],
             quantile=loss_config["top_entropy_quantile"],
             granularity="batch",
+            generator=generator,
         )
         masks["batch_entropy_mask"] = entropy_mask
         metrics["algo/token_selection/entropy_threshold"] = to_float(threshold)
@@ -166,6 +171,7 @@ def build_batch_token_masks(
             response_mask=batch["response_mask"],
             quantile=loss_config["top_perception_quantile"],
             granularity="batch",
+            generator=generator,
         )
         masks["batch_perception_mask"] = perception_mask
         metrics["algo/token_selection/perception_threshold"] = to_float(threshold)
@@ -642,6 +648,7 @@ def _compute_top_quantile_mask(
     response_mask: torch.Tensor,
     quantile: float,
     granularity: str,
+    generator: Optional[torch.Generator] = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     valid_mask = response_mask.to(torch.bool)
     if granularity == "batch":
@@ -649,7 +656,12 @@ def _compute_top_quantile_mask(
         topk = int(torch.ceil(valid_values.new_tensor(valid_values.numel() * quantile)).item())
         if topk > 0:
             valid_positions = valid_mask.nonzero(as_tuple=False)
-            sorted_vals, sorted_order = torch.sort(valid_values.float(), descending=True)
+            if generator is None:
+                sorted_vals, sorted_order = torch.sort(valid_values.float(), descending=True)
+            else:  # a stable sort of a random permutation orders tied values uniformly at random
+                permutation = torch.randperm(valid_values.numel(), generator=generator).to(valid_values.device)
+                sorted_vals, order = torch.sort(valid_values[permutation].float(), descending=True, stable=True)
+                sorted_order = permutation[order]
             selected_positions = valid_positions[sorted_order[:topk]]
             mask = torch.zeros_like(valid_mask)
             mask[selected_positions[:, 0], selected_positions[:, 1]] = True

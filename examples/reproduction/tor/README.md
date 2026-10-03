@@ -66,7 +66,10 @@ validation split) and set `N_GPUS_PER_NODE`, `MODEL_PATH`, `DATA_ROOT`, `LOGGER`
 - Both thresholds are taken over every response token of the rollout batch, before the update
   (Eq. 6, 7, 9), with the entropy and the perception score of the rollout policy. The entropy of
   the top-p 0.95 set is that of the renormalized distribution top-p sampling draws from; the paper
-  does not say whether it renormalizes.
+  does not say whether it renormalizes. Most tokens have a truncated entropy of exactly 0, so the
+  threshold is often 0: we keep exactly 30% (the paper's text), drawing the tokens tied at the
+  threshold uniformly at random, while Eq. 7 read literally (entropy at least the 70th
+  percentile) would keep every token.
 - The ToR-DAPO run on ViRL-39K and the 3B runs are not scripted.
 - Evaluation (suite `tor`) uses the PAPO-Eval protocol (rule-based `\boxed{}` match, avg@8, T=1.0)
   instead of NoisyRollout's greedy decoding with a Gemini-2.0-Flash judge. MathVerse is the
