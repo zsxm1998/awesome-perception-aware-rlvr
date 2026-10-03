@@ -591,6 +591,12 @@ class PPOConfig:
         self.worker.actor.kl_penalty = self.algorithm.kl_penalty
         self.worker.actor.kl_coef = self.algorithm.kl_coef
         self._validate_batch_sizes()
+        rollout = self.worker.rollout
+        if rollout.max_num_batched_tokens < rollout.prompt_length + rollout.response_length:
+            raise ValueError(  # checked again when the vLLM rollout starts
+                f"worker.rollout.max_num_batched_tokens ({rollout.max_num_batched_tokens}) must be at least "
+                f"data.max_prompt_length + data.max_response_length ({rollout.prompt_length + rollout.response_length})."
+            )
         if (
             self.algorithm.online_filtering
             and self.algorithm.online_filtering_fallback == "first_round"
