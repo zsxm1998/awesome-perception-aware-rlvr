@@ -46,6 +46,8 @@ bash scripts/prepare_data.sh vepo
 bash examples/reproduction/vepo/qwen2_5_vl_7b_grpo_vepo.sh
 bash scripts/prepare_eval_data.sh vepo
 bash scripts/eval.sh checkpoints/VEPO-Reproduce/qwen2_5_vl_7b_grpo_vepo --suite vepo
+# greedy decoding, as the paper (which also uses a gpt-4o-mini judge for four benchmarks)
+bash scripts/eval.sh checkpoints/VEPO-Reproduce/qwen2_5_vl_7b_grpo_vepo --suite vepo --temperature 0 --num-samples 1
 ```
 
 Checkpoints go to `checkpoints/VEPO-Reproduce/<script name>`. Append `key=value` overrides to the
