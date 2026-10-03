@@ -47,6 +47,11 @@ bash scripts/eval.sh checkpoints/GRIT-Reproduce/qwen2_5_vl_3b_grpo_grit --suite 
 # InternVL3-2B: images at their resolution, at most 2 tiles, as in training
 bash scripts/eval.sh checkpoints/GRIT-Reproduce/internvl3_2b_grpo_grit --suite grit \
     --max-pixels 12845056 --max-dynamic-patch 2
+# the relabeled TallyQA set (not in the suite), with the same protocol
+bash scripts/prepare_eval_data.sh tallyqa_relabeled
+bash scripts/eval.sh checkpoints/GRIT-Reproduce/qwen2_5_vl_3b_grpo_grit --benchmarks tallyqa_relabeled \
+    --format-prompt examples/format_prompt/grit.jinja --system-prompt none --grounding-instruction none \
+    --min-pixels 3136 --max-pixels 200704
 ```
 
 The `grit` suite follows GRIT's evaluation: the official GRIT prompt (`examples/format_prompt/grit.jinja`,
