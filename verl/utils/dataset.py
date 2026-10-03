@@ -130,6 +130,7 @@ class RLHFDataset(Dataset):
         truncation: str = "error",
         format_prompt: Optional[str] = None,
         system_prompt: Optional[str] = None,
+        system_prompt_key: Optional[str] = None,
         min_pixels: Optional[int] = None,
         max_pixels: Optional[int] = None,
         filter_overlong_prompts: bool = True,
@@ -169,6 +170,7 @@ class RLHFDataset(Dataset):
             with open(format_prompt, encoding="utf-8") as f:
                 self.format_prompt = f.read()
 
+        self.system_prompt_key = system_prompt_key
         self.system_prompt = None
         if system_prompt:
             with open(system_prompt, encoding="utf-8") as f:
@@ -200,8 +202,11 @@ class RLHFDataset(Dataset):
             prompt_str = format_prompt.render(content=prompt_str)
 
         messages: list[dict[str, Any]] = []
-        if self.system_prompt:
-            messages.append({"role": "system", "content": self.system_prompt})
+        system_prompt = self.system_prompt
+        if self.system_prompt_key and example.get(self.system_prompt_key):
+            system_prompt = str(example[self.system_prompt_key]).strip()
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
 
         if self.image_key in example:
             # https://huggingface.co/docs/transformers/en/tasks/image_text_to_text

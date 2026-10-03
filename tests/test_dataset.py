@@ -215,6 +215,33 @@ class TestSystemPrompt:
         decoded = tokenizer.decode(item["raw_prompt_ids"], skip_special_tokens=False)
         assert "visual reasoning assistant" in decoded
 
+    def test_per_row_system_prompt(self, sys_prompt_file, tmp_path: Path):
+        """data.system_prompt_key: a non-empty value replaces data.system_prompt for that row."""
+        rows = [
+            {"question": "What is 2+2?", "answer": "4", "row_system": "  You solve math problems.\n"},
+            {"question": "What is 3+3?", "answer": "6", "row_system": ""},
+        ]
+        data_file = tmp_path / "rows.json"
+        data_file.write_text(json.dumps(rows))
+        tokenizer = get_tokenizer("Qwen/Qwen2.5-VL-7B-Instruct")
+        kwargs = dict(
+            data_path=str(data_file),
+            tokenizer=tokenizer,
+            processor=None,
+            prompt_key="question",
+            answer_key="answer",
+            max_prompt_length=512,
+            truncation="right",
+            system_prompt_key="row_system",
+            filter_overlong_prompts=False,
+        )
+        ds = RLHFDataset(system_prompt=sys_prompt_file, **kwargs)
+        assert ds._build_messages(ds.dataset[0])[0] == {"role": "system", "content": "You solve math problems."}
+        assert ds._build_messages(ds.dataset[1])[0] == {"role": "system", "content": self.SYSTEM_TEXT}
+        ds = RLHFDataset(**kwargs)
+        assert ds[0]["raw_prompt"][0] == {"role": "system", "content": "You solve math problems."}
+        assert [message["role"] for message in ds._build_messages(ds.dataset[1])] == ["user"]
+
 
 if __name__ == "__main__":
     test_image_dataset()

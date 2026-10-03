@@ -121,9 +121,13 @@ def convert_grit(repo_id: str, raw_dir: Path, out_dir: Path, snapshot) -> dict[s
 
 # ---------------------------------------------------------------------------
 # DeepEyes (ChenShawn/DeepEyes-Datasets-47k): verl-format parquet files whose prompts embed
-# the original tool system prompt. We keep the user question (with its <image> placeholders
-# and, for charts, the answer options) and let examples/system_prompt/deepeyes.txt provide
-# the tool protocol through the model's native chat template.
+# the original tool system prompt. `problem` keeps the user question (with its <image>
+# placeholders and, for charts, the answer options) for the native prompt style, where
+# examples/system_prompt/deepeyes*.txt provide the tool protocol through the model's chat
+# template; `official_system_prompt` / `official_prompt` keep the official messages verbatim
+# for the official style. Rows with an empty `env_name` (ThinkLite) get no tool in the
+# official environment; they keep the official prompts in both styles (`problem` is the
+# official user text and `row_system_prompt` the official system prompt, empty for tool rows).
 # ---------------------------------------------------------------------------
 
 _DEEPEYES_FILES = (
@@ -134,14 +138,14 @@ _DEEPEYES_FILES = (
 _DEEPEYES_TOOL_SUFFIX = "\nThink first, call **image_zoom_in_tool** if needed"
 
 
+def _deepeyes_message(prompt: list[dict], role: str) -> str:
+    return next((message["content"] for message in prompt if message["role"] == role), "")
+
+
 def _deepeyes_question(prompt: list[dict]) -> str:
-    user = next(message["content"] for message in prompt if message["role"] == "user")
+    user = _deepeyes_message(prompt, "user")
     if _DEEPEYES_TOOL_SUFFIX in user:
         return user.split(_DEEPEYES_TOOL_SUFFIX, 1)[0].strip()
-    if "Question:\n" in user:  # ThinkLite: "<image>\n<instructions>\nQuestion:\n<question>"
-        head, question = user.split("Question:\n", 1)
-        placeholders = "".join("<image>\n" for _ in range(head.count("<image>")))
-        return placeholders + question.strip()
     return user.strip()
 
 
@@ -161,6 +165,10 @@ def convert_deepeyes(repo_id: str, raw_dir: Path, out_dir: Path, snapshot) -> di
             ("images", pa.list_(pa.struct([("bytes", pa.binary()), ("path", pa.string())]))),
             ("data_source", pa.string()),
             ("question", pa.string()),
+            ("env_name", pa.string()),
+            ("official_system_prompt", pa.string()),
+            ("official_prompt", pa.string()),
+            ("row_system_prompt", pa.string()),
         ]
     )
     rows = 0
@@ -169,18 +177,30 @@ def convert_deepeyes(repo_id: str, raw_dir: Path, out_dir: Path, snapshot) -> di
             parquet = pq.ParquetFile(raw_dir / name)
             for group in range(parquet.num_row_groups):
                 table = parquet.read_row_group(
-                    group, columns=["prompt", "images", "reward_model", "extra_info", "data_source"]
+                    group, columns=["prompt", "images", "reward_model", "extra_info", "data_source", "env_name"]
                 )
                 prompts = table.column("prompt").to_pylist()
                 rewards = table.column("reward_model").to_pylist()
                 extras = table.column("extra_info").to_pylist()
+                env_names = [str(env_name or "") for env_name in table.column("env_name").to_pylist()]
+                systems = [_deepeyes_message(prompt, "system") for prompt in prompts]
+                users = [_deepeyes_message(prompt, "user") for prompt in prompts]
                 batch = pa.table(
                     {
-                        "problem": [_deepeyes_question(prompt) for prompt in prompts],
+                        "problem": [
+                            _deepeyes_question(prompt) if env_name else user.strip()
+                            for prompt, user, env_name in zip(prompts, users, env_names)
+                        ],
                         "answer": [str(reward["ground_truth"]) for reward in rewards],
                         "images": table.column("images"),
                         "data_source": table.column("data_source"),
                         "question": [str(extra.get("question") or "") for extra in extras],
+                        "env_name": env_names,
+                        "official_system_prompt": systems,
+                        "official_prompt": users,
+                        "row_system_prompt": [
+                            "" if env_name else system for system, env_name in zip(systems, env_names)
+                        ],
                     },
                     schema=schema,
                 )

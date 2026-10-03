@@ -76,6 +76,9 @@ class DataConfig:
     val_batch_size: int = -1
     format_prompt: Optional[str] = None
     system_prompt: Optional[str] = None
+    system_prompt_key: Optional[str] = None
+    """column holding a per-row system prompt; a row with a non-empty value uses it instead of `system_prompt`
+    (DeepEyes: the official ThinkLite prompt, or every row's official prompt)."""
     override_chat_template: Optional[str] = None
     shuffle: bool = True
     seed: int = 1
