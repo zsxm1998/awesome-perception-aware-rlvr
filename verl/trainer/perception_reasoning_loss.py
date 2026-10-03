@@ -227,6 +227,13 @@ def compute_perception_reasoning_policy_loss(
                     reference_mode=sensitivity_reference_mode,
                     boxcox_alpha=boxcox_alpha,
                 )
+            elif sampled_metric == "sampled_abs_log_ratio":
+                per_token_sampled_sensitivity = compute_sampled_sensitivity_scores(
+                    metric=sampled_metric,
+                    corrupted_log_probs=decremental_old_log_probs,
+                    reference_log_probs=sensitivity_reference,
+                    reference_mode=sensitivity_reference_mode,
+                )
             else:
                 per_token_sampled_sensitivity = compute_sampled_low_var_kl(
                     decremental_old_log_probs,

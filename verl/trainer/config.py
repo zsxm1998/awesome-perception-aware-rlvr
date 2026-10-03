@@ -138,7 +138,7 @@ class AlgorithmConfig:
     visual_sensitivity_reference: str = "current"
     """which branch is compared against decremental log-probs when computing visual sensitivity / KL_prcp. CGPO and VPPO/ToR use `old`; PAPO and DVRP use `current`."""
     visual_sensitivity_metric: str = "sampled_low_var_kl"
-    """token-level visual sensitivity signal. `sampled_low_var_kl` preserves existing PAPO/VPPO/ToR/CGPO behavior; `sampled_boxcox` is the bounded Box-Cox power gap (p^α - q^α)/α (PowerOPD-style); `full_vocab_*` are generic distribution measures between the original and corrupted views; `vepo` is VEPO's fused recipe (JSD ⊕ abs entropy gap via soft-or)."""
+    """token-level visual sensitivity signal. `sampled_low_var_kl` preserves existing PAPO/VPPO/ToR/CGPO behavior; `sampled_boxcox` is the bounded Box-Cox power gap (p^α - q^α)/α (PowerOPD-style); `sampled_abs_log_ratio` is |log p - log q| (ToR); `full_vocab_*` are generic distribution measures between the original and corrupted views; `vepo` is VEPO's fused recipe (JSD ⊕ abs entropy gap via soft-or)."""
     visual_sensitivity_boxcox_alpha: float = 1.0
     """Box-Cox α for `visual_sensitivity_metric='sampled_boxcox'`. Scores are bounded to [-1/α, 1/α]; α→0 approaches the sampled log-ratio. The 1/α denominator is kept so scores stay comparable across α sweeps."""
     visual_sensitivity_log_metrics: Any = None
@@ -243,7 +243,7 @@ class AlgorithmConfig:
         _validate_choice("visual_sensitivity_reference", self.visual_sensitivity_reference, {"current", "old"})
         # Kept as literals so config parsing stays torch-free; a test asserts they match
         # the constants in visual_sensitivity.py.
-        sampled_sensitivity_metrics = {"sampled_low_var_kl", "sampled_boxcox"}
+        sampled_sensitivity_metrics = {"sampled_low_var_kl", "sampled_boxcox", "sampled_abs_log_ratio"}
         full_vocab_sensitivity_metrics = {
             "full_vocab_jsd",
             "full_vocab_kl",

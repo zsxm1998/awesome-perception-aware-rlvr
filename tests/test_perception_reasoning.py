@@ -4562,3 +4562,12 @@ def test_gcr_image_content_key_includes_dtype():
     uint8_key = scorer._image_content_key(np.zeros((4,), dtype=np.uint8))
     int8_key = scorer._image_content_key(np.zeros((4,), dtype=np.int8))
     assert uint8_key != int8_key
+
+
+def test_abs_log_ratio_is_symmetric():
+    reference = torch.tensor([[-1.0, -2.0, -0.5]])
+    corrupted = torch.tensor([[-2.0, -1.0, -0.5]])
+    scores = vs_module.compute_sampled_sensitivity_scores(
+        "sampled_abs_log_ratio", corrupted, reference, reference_mode="old"
+    )
+    assert torch.allclose(scores, torch.tensor([[1.0, 1.0, 0.0]]))

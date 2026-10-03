@@ -31,6 +31,8 @@ Metric families
       Natively bounded to ``[-1/α, 1/α]`` and sign-consistent with the log-ratio:
       positive iff the normal view makes the token more likely. ``α → 0`` recovers the
       sampled log-ratio ``log p - log q``.
+    * ``sampled_abs_log_ratio``: ``|log p - log q|`` (ToR's perception score, Eq. 8 of the
+      paper). Symmetric in the sign of the log-ratio and not clamped.
 - Full-vocab metrics (``FULL_VOCAB_SENSITIVITY_METRICS``) compare the whole output
   distributions of the two views (JSD/KL/Hellinger/entropy gap); they require response
   logits from both views. ``vepo`` is VEPO's method-specific recipe: JSD and the absolute
@@ -87,7 +89,7 @@ import torch
 import torch.nn.functional as F
 
 
-SAMPLED_SENSITIVITY_METRICS = ("sampled_low_var_kl", "sampled_boxcox")
+SAMPLED_SENSITIVITY_METRICS = ("sampled_low_var_kl", "sampled_boxcox", "sampled_abs_log_ratio")
 FULL_VOCAB_SENSITIVITY_METRICS = (
     "full_vocab_jsd",
     "full_vocab_kl",
@@ -161,6 +163,15 @@ def compute_sampled_boxcox(
     return ((reference_powers - corrupted_powers) / alpha).contiguous()
 
 
+def compute_sampled_abs_log_ratio(
+    corrupted_log_probs: torch.Tensor,
+    reference_log_probs: torch.Tensor,
+) -> torch.Tensor:
+    """``|log p - log q|`` at the sampled tokens (ToR, Eq. 8): how much removing or corrupting the
+    image changes the log-probability of the token, in either direction."""
+    return (reference_log_probs.float() - corrupted_log_probs.float()).abs().contiguous()
+
+
 def compute_sampled_sensitivity_scores(
     metric: str,
     corrupted_log_probs: torch.Tensor,
@@ -180,6 +191,11 @@ def compute_sampled_sensitivity_scores(
             corrupted_log_probs=corrupted_log_probs,
             reference_log_probs=reference_log_probs,
             alpha=boxcox_alpha,
+        )
+    if metric == "sampled_abs_log_ratio":
+        return compute_sampled_abs_log_ratio(
+            corrupted_log_probs=corrupted_log_probs,
+            reference_log_probs=reference_log_probs,
         )
     raise ValueError(f"Unsupported sampled visual_sensitivity_metric: {metric}")
 
