@@ -23,6 +23,7 @@ EXTRA_ARGS=(
     "algorithm.filter_key=accuracy"
     "algorithm.filter_low=0.01"
     "algorithm.filter_high=0.99"
+    "algorithm.online_filtering_fallback=keep_round"
 )
 
 launch_papo_matrix "$@"

@@ -25,7 +25,7 @@ GRPO) and PAPO-D (on DAPO).
 | Optimization | AdamW (bf16), lr 1e-6 constant, weight decay 1e-2, token-level loss averaging, vision tower trainable, 2 epochs |
 | Lengths / pixels | max prompt 4,096, max response 2,048; 200,704-1,003,520 pixels per image |
 | GRPO arms | low-var KL loss 0.01; clip 0.2 / 0.3 |
-| DAPO arms | no KL; clip 0.2 / 0.28; online filtering on accuracy in (0.01, 0.99), `data.mini_rollout_batch_size=128`, at most 20 generation rounds |
+| DAPO arms | no KL; clip 0.2 / 0.28; online filtering on accuracy in (0.01, 0.99), `data.mini_rollout_batch_size=128`, at most 20 generation rounds; a round that keeps no group is kept whole, as PAPO's code (`algorithm.online_filtering_fallback=keep_round`) |
 | GPUs | 2 (3B), 4 (7B) |
 | Masked view | `algorithm.corrupt_image=random_patch`, `algorithm.corrupt_image_kwargs={"patch_size":14,"black_prob":0.6,"mask_before_resize":true}`, `algorithm.corrupt_image_position=prompt` |
 | γ (KL_prcp) | `algorithm.visual_sensitivity_loss_coef`: 0.02 (PAPO-G), 0.01 (PAPO-D and no-KL-ref) |
