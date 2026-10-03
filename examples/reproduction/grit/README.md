@@ -26,7 +26,7 @@ image-question-answer triplets without box or reasoning annotations.
 | Rollout | all 20 prompts x 4 rollouts per step (80 rollouts), T=0.9, top-p 1.0; update batch 20 prompts |
 | RL | GRPO; low-var KL loss 0.01; symmetric clip 0.28 |
 | Optimization | AdamW (bf16), lr 2e-6 with cosine schedule, vision tower trainable, 200 steps (`trainer.max_steps=200`) |
-| Lengths / pixels | max prompt 1,024, max response 1,024; 3,136-200,704 pixels (256·28·28) |
+| Lengths / pixels | max prompt 1,024, max response 1,024; 3,136-200,704 pixels (256·28·28). InternVL: images at their resolution cut into at most 2 tiles of 448 px plus a thumbnail (`worker.actor.model.max_dynamic_patch=2`), max prompt 1,500 |
 | GPUs | 8 |
 
 GRIT changes only the output format and the reward; no `algorithm.*` switch is used. See
@@ -63,8 +63,9 @@ environment. Evaluation is described in [eval/README.md](../../../eval/README.md
   0.5, extra answer-format and repetition terms).
 - **Batch.** Each step uses all 20 training prompts (80 rollouts). The paper states a total batch of
   128; the released Qwen script uses 1 sample per device without gradient accumulation on 8 GPUs.
-  The InternVL run uses the same settings as the Qwen run (the official InternVL script uses 448-px
-  images and a maximum prompt length of 1,500).
+  The InternVL run uses the same settings as the Qwen run except for the image tiles and the
+  maximum prompt length, which follow the official InternVL script (with InternVL3-2B's default
+  of up to 12 tiles, every training prompt exceeds 1,500 tokens).
 - **Framework.** EasyR1 with vLLM rollouts instead of the official TRL trainer (no vLLM); maximum
   response 1,024 tokens instead of 1,000.
 - **Validation** runs on the VSR and TallyQA test sets only (the official scripts validate on all six
