@@ -71,6 +71,8 @@ class RolloutConfig:
             raise ValueError("rollout.interaction_mode must be 'one_shot' or 'agentic'")
         if self.agent_prompt_style not in {"native", "official"}:
             raise ValueError("rollout.agent_prompt_style must be 'native' or 'official'")
+        if self.agent_observation_min_pixels is not None and self.agent_observation_min_pixels <= 0:
+            raise ValueError("rollout.agent_observation_min_pixels must be positive when set")
         if self.mm_processor_cache_gb < 0:
             raise ValueError("mm_processor_cache_gb must be non-negative")
         if self.agent_max_tool_calls < 0:

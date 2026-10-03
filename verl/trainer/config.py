@@ -595,6 +595,15 @@ class PPOConfig:
         self.worker.actor.kl_coef = self.algorithm.kl_coef
         self._validate_batch_sizes()
         rollout = self.worker.rollout
+        if (
+            rollout.agent_observation_min_pixels is not None
+            and self.data.max_pixels is not None
+            and rollout.agent_observation_min_pixels > self.data.max_pixels
+        ):
+            raise ValueError(
+                f"worker.rollout.agent_observation_min_pixels ({rollout.agent_observation_min_pixels}) cannot exceed "
+                f"data.max_pixels ({self.data.max_pixels})."
+            )
         if rollout.max_num_batched_tokens < rollout.prompt_length + rollout.response_length:
             raise ValueError(  # checked again when the vLLM rollout starts
                 f"worker.rollout.max_num_batched_tokens ({rollout.max_num_batched_tokens}) must be at least "

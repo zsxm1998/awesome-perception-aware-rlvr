@@ -1094,6 +1094,20 @@ def test_agentic_training_rejects_one_shot_grounding_interventions(field, value)
         config.post_init()
 
 
+def test_observation_min_pixels_is_checked_with_the_configuration():
+    with pytest.raises(ValueError, match="must be positive"):
+        RolloutConfig(interaction_mode="agentic", agent_observation_min_pixels=0).post_init()
+    config = PPOConfig()
+    config.trainer.n_gpus_per_node = 1
+    config.data.rollout_batch_size = config.worker.actor.global_batch_size = 2
+    config.worker.actor.micro_batch_size_per_device_for_update = 1
+    config.worker.actor.micro_batch_size_per_device_for_experience = 1
+    config.data.max_pixels = 1003520
+    config.worker.rollout.agent_observation_min_pixels = 2000000
+    with pytest.raises(ValueError, match="cannot exceed data.max_pixels"):
+        config.post_init()
+
+
 def test_agent_rollout_config_rejects_inconsistent_turn_budget():
     config = RolloutConfig(
         interaction_mode="agentic",
