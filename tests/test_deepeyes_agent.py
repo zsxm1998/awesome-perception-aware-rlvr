@@ -1735,6 +1735,14 @@ def test_official_chat_adapter_needs_deepeyes_own_system_prompt(qwen2_5_vl_proce
         adapter.encode_initial_prompt([user])
 
 
+def test_official_chat_adapter_refuses_several_source_images(qwen2_5_vl_processor):
+    """DeepEyes' tool schema has no image_idx, so a second image could never be cropped."""
+    from verl.workers.agent.chat import OfficialDeepEyesChatAdapter
+
+    with pytest.raises(ValueError, match="one source image"):
+        OfficialDeepEyesChatAdapter(qwen2_5_vl_processor, ToolRegistry([ImageZoomInTool()]), 2, max_tool_calls=6)
+
+
 def test_official_chat_adapter_keeps_text_only_crops_successful(qwen2_5_vl_processor):
     """tool_image_mode=text_skipped: the crop succeeded and only its text marker comes back, not an error."""
     from verl.workers.agent.chat import OfficialDeepEyesChatAdapter

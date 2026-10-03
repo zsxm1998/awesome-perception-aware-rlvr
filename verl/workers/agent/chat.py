@@ -370,6 +370,9 @@ class OfficialDeepEyesChatAdapter(NativeToolChatAdapter):
 
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
+        if self.num_source_images > 1:
+            # DeepEyes' schema has no image_idx and its prompts label no images: use the native style
+            raise ValueError("the official prompt style supports one source image per sample; use the native style")
         self.tools = None  # the schema is part of the system prompt text
         self.assistant_termination_token_ids = self._derive_assistant_termination_token_ids()
 
