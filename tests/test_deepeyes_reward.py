@@ -383,7 +383,7 @@ def test_thinklite_reward_matches_the_official_compute_score_math(monkeypatch):
     scores = deepeyes_reward.compute_score_official([_math_input(*case) for case in _MATH_CASES])
 
     def no_judge(ground_truth, model_answer):  # the rule that stands in for the judge
-        return deepeyes_reward._rule_match(model_answer, ground_truth, "Find x.")
+        return deepeyes_reward._math_rule_fallback(model_answer, ground_truth, "Find x.")
 
     expected = [_official_compute_score_math(*case, judge=no_judge) for case in _MATH_CASES]
     assert [score["overall"] for score in scores] == pytest.approx(expected)
@@ -392,6 +392,22 @@ def test_thinklite_reward_matches_the_official_compute_score_math(monkeypatch):
         -1.0,
     }
     assert all(score["tool"] == 0.0 for score in scores)
+
+
+def test_thinklite_rule_fallback_keeps_signs_and_order_of_numbers(monkeypatch):
+    """Without a judge, word references use the keyword rule; numeric ones must not (it ignores -, . and order)."""
+    monkeypatch.delenv("DEEPEYES_JUDGE_BASE_URL", raising=False)
+    cases = [
+        ("<think>a</think>\\boxed{2}", "-2"),
+        ("<think>a</think>\\boxed{2/1}", "1/2"),
+        ("<think>a</think>\\boxed{5.12}", "12.5"),
+        ("<think>a</think>\\boxed{-2}", "-2"),
+        ("<think>a</think>\\boxed{brick}", "brick"),
+        ("<think>a</think>\\boxed{the underground lake}", "underground lake"),
+        ("<think>a</think>\\boxed{stone}", "brick"),
+    ]
+    scores = deepeyes_reward.compute_score_official([_math_input(*case) for case in cases])
+    assert [score["accuracy"] for score in scores] == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0]
 
 
 def test_thinklite_answers_with_nested_braces_are_read_whole(monkeypatch):
