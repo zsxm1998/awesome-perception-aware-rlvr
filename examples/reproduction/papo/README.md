@@ -27,7 +27,7 @@ GRPO) and PAPO-D (on DAPO).
 | GRPO arms | low-var KL loss 0.01; clip 0.2 / 0.3 |
 | DAPO arms | no KL; clip 0.2 / 0.28; online filtering on accuracy in (0.01, 0.99), `data.mini_rollout_batch_size=128`, at most 20 generation rounds |
 | GPUs | 2 (3B), 4 (7B) |
-| Masked view | `algorithm.corrupt_image=random_patch`, `algorithm.corrupt_image_kwargs={"patch_size":14,"black_prob":0.6}`, `algorithm.corrupt_image_position=prompt` |
+| Masked view | `algorithm.corrupt_image=random_patch`, `algorithm.corrupt_image_kwargs={"patch_size":14,"black_prob":0.6,"mask_before_resize":true}`, `algorithm.corrupt_image_position=prompt` |
 | γ (KL_prcp) | `algorithm.visual_sensitivity_loss_coef`: 0.02 (PAPO-G), 0.01 (PAPO-D and no-KL-ref) |
 | η (Double Entropy) | `algorithm.invariant_entropy_coef` = `algorithm.decremental_entropy_coef`: 0.05 (PAPO-G-7B), 0.03 (PAPO-D, no-KL-ref), off (PAPO-G-3B); `algorithm.entropy_loss_type=sampled` |
 
@@ -70,6 +70,10 @@ Evaluation is described in [eval/README.md](../../../eval/README.md).
   computed once before the update and are not recomputed with gradient. Losses are averaged per
   token (EasyR1 default, also what the official configs use; the paper's Eq. 2 is written per
   sequence).
+- As PAPO's code, the 14-pixel patches are blackened on the image at its original resolution, which
+  is then resized like the clean image (`mask_before_resize`), so in the model input a patch spans
+  more or fewer than 14 pixels. Elsewhere in this repository, including the controlled comparison,
+  `random_patch` blackens the resized image, so the patches line up with the vision encoder's.
 - The Qwen3-VL-2B-Thinking setting (official branch `main_qwen3`) is not included.
 - Evaluation uses this repository's harness with the PAPO-Eval data (`PAPO-Galaxy/PAPO_eval`) and
   protocol (rule-based match on the last `\boxed{}`, avg@8 at T=1.0, top-p 1.0, 2,048 new
