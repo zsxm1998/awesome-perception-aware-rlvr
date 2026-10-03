@@ -7,6 +7,8 @@
 #     http://www.apache.org/licenses/LICENSE-2.0
 
 import importlib.util
+import re
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -309,3 +311,120 @@ def test_judge_call_follows_deepeyes():
     assert messages[0] == {"role": "system", "content": "You are a helpful assistant."}
     assert calls[0]["temperature"] == 0.3 and messages[1]["content"].count("Judgement: ") == 7
     assert deepeyes_reward._parse_judgement(" 1 ") and not deepeyes_reward._parse_judgement("yes")
+
+
+def _official_compute_score_math(predict_str, ground_truth, judge=lambda ground_truth, model_answer: False):
+    """DeepEyes verl/utils/reward_score/vl_agent.py compute_score_math and rule_math_verify, verbatim apart from the
+    debug print; generative_verify is replaced by ``judge``."""
+    from math_verify import parse, verify
+
+    def rule_math_verify(ground_truth, model_answer):
+        gold = parse(ground_truth)
+        answer = parse(model_answer)
+        return verify(gold, answer)
+
+    is_format_error = False
+    count_think_1 = predict_str.count("<think>")
+    count_think_2 = predict_str.count("</think>")
+    if count_think_1 != count_think_2:
+        is_format_error = True
+
+    model_answer = ""
+    predict_no_think = predict_str.split("</think>")[-1].strip()
+    answer_pattern = r"\\boxed{([^}]+)}"
+    answer_list = re.findall(answer_pattern, predict_no_think, flags=re.DOTALL)
+    if len(answer_list) == 0:
+        acc_reward = 0.0
+        is_format_error = True
+    else:
+        if len(answer_list) > 1:
+            is_format_error = True
+
+        model_answer = answer_list[-1]
+        if rule_math_verify(ground_truth, model_answer):
+            acc_reward = 1.0
+        else:
+            acc_reward = 1.0 if judge(ground_truth, model_answer) else 0.0
+
+    format_reward = -1.0 if is_format_error else 0.0
+    return 1.2 * acc_reward + 0.4 * format_reward
+
+
+_MATH_CASES = [
+    ("<think>a</think>The answer is \\boxed{-4}", "-4"),
+    ("<think>a</think><answer>\\boxed{10}</answer>", "10"),
+    ("<think>a</think><answer>10</answer>", "10"),  # no boxed answer
+    ("<think>a</think>\\boxed{3} or \\boxed{4}", "4"),  # two boxed answers: the last one, wrong format
+    ("<think>a</think>\\boxed{5}", "4"),
+    ("<think>a \\boxed{4}</think>so it is four", "4"),  # boxed only inside the reasoning
+    ("<think>a</think><think>b \\boxed{4}", "4"),  # unbalanced think tags
+    ("\\boxed{0.5}", "\\frac{1}{2}"),
+    ("\\boxed{\\frac{1}{2}}", "\\frac{1}{2}"),  # nested braces end the answer at the first "}"
+    ("<think>a</think>\\boxed{B}", "B"),
+    ("<think>a</think>\\boxed{x = 3}", "3"),
+    ("<think>a</think>\\boxed{12\\%}", "12"),
+    ("<think>a</think>\\boxed{brick}", "brick"),  # word answers: math_verify rejects them
+    ("<think>a</think>\\boxed{stone}", "brick"),
+]
+
+
+def _math_input(response, ground_truth):
+    return {
+        "response": response,
+        "final_answer": None,
+        "ground_truth": ground_truth,
+        "data_source": "thinklite_eureka",
+        "question": "Find x.",
+        "tool_call_successes": 0,
+    }
+
+
+def test_thinklite_reward_matches_the_official_compute_score_math(monkeypatch):
+    monkeypatch.delenv("DEEPEYES_JUDGE_BASE_URL", raising=False)
+    scores = deepeyes_reward.compute_score_official([_math_input(*case) for case in _MATH_CASES])
+
+    def no_judge(ground_truth, model_answer):  # the rule that stands in for the judge
+        return deepeyes_reward._rule_match(model_answer, ground_truth, "Find x.")
+
+    expected = [_official_compute_score_math(*case, judge=no_judge) for case in _MATH_CASES]
+    assert [score["overall"] for score in scores] == pytest.approx(expected)
+    assert {score["accuracy"] for score in scores} == {0.0, 1.0} and {score["format"] for score in scores} == {
+        0.0,
+        -1.0,
+    }
+    assert all(score["tool"] == 0.0 for score in scores)
+
+
+def test_thinklite_reward_asks_the_math_judge_only_when_math_verify_fails(monkeypatch):
+    calls = []
+
+    class _Completions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            reply = "## Equivalence Judgement\nTRUE" if kwargs["messages"][0]["content"].endswith("\n6") else "FALSE"
+            return type("R", (), {"choices": [type("C", (), {"message": type("M", (), {"content": reply})()})()]})()
+
+    client = type("Client", (), {"chat": type("Chat", (), {"completions": _Completions()})()})()
+    monkeypatch.setattr(deepeyes_reward, "_judge_client", lambda: client)
+    cases = [("<think>a</think>\\boxed{4}", "4"), ("<think>a</think>\\boxed{6}", "4"), ("\\boxed{5}", "4"), ("x", "4")]
+    scores = deepeyes_reward.compute_score_official([_math_input(*case) for case in cases])
+
+    def judge(ground_truth, model_answer):
+        return model_answer == "6"
+
+    assert [score["overall"] for score in scores] == pytest.approx(
+        [_official_compute_score_math(*case, judge=judge) for case in cases]
+    )
+    assert len(calls) == 2  # math_verify accepted the first answer, the last has no boxed answer
+    (message,) = calls[0]["messages"]
+    assert message["role"] == "user" and calls[0]["temperature"] == 0.0
+    assert message["content"].startswith("# CONTEXT #\nI am a teacher")
+    assert "**Question**:\nFind x.\n\n**Reference Answer**\n4\n\n## Student Final Answer\n" in message["content"]
+
+
+def test_math_verify_runs_outside_the_main_thread():
+    results = []
+    thread = threading.Thread(target=lambda: results.append(deepeyes_reward._math_verify("\\frac{1}{2}", "0.5")))
+    thread.start()
+    thread.join()
+    assert results == [True]

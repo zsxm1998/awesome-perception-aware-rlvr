@@ -5,6 +5,8 @@ einops
 flash-attn>=2.4.3
 liger-kernel
 mathruler
+# DeepEyes' ThinkLite reward; the extra keeps antlr4 at 4.9.3, which omegaconf needs
+math-verify[antlr4_9_3]
 nltk==3.9.4
 numpy
 omegaconf

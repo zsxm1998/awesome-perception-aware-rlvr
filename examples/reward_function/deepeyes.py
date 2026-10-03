@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -119,9 +120,13 @@ def compute_score(
 # Released DeepEyes code (verl/utils/reward_score/vl_agent.py) routes by data source:
 #   vstar / chart:     0.8 * acc + 0.2 * format(0 / -1) + 1.2 * tool   (tool only if correct)
 #   thinklite_eureka:  1.2 * acc + 0.4 * format(0 / -1)                (no tool bonus)
-# where acc is decided by a Qwen2.5-72B-Instruct judge. Set DEEPEYES_JUDGE_BASE_URL
-# (OpenAI-compatible, e.g. a vLLM server), DEEPEYES_JUDGE_MODEL and optionally
-# DEEPEYES_JUDGE_API_KEY to use a judge; otherwise a rule-based matcher is used.
+# where acc is decided by a Qwen2.5-72B-Instruct judge; ThinkLite rows (compute_score_math) take
+# the last \boxed{} after </think>, check it with math_verify and ask the judge (with its math
+# prompt) only when that fails, and their format is wrong unless the think tags balance and there
+# is exactly one boxed answer. Set DEEPEYES_JUDGE_BASE_URL (OpenAI-compatible, e.g. a vLLM
+# server), DEEPEYES_JUDGE_MODEL and optionally DEEPEYES_JUDGE_API_KEY to use a judge; otherwise a
+# rule-based matcher (_rule_match) takes the judge's place, also for ThinkLite answers that
+# math_verify rejects (about half of the ThinkLite references are words, such as "brick").
 # ---------------------------------------------------------------------------
 
 
@@ -248,36 +253,117 @@ def _judge_match(client, question: str, prediction: str, reference: str) -> bool
     return _rule_match(prediction, reference, question)
 
 
-def _math_format_reward(response: str, final_answer: str | None) -> float:
+# DeepEyes' math judge prompt (verl/utils/reward_score/vl_agent.py: MATH_VERIFY_PROMPT)
+_MATH_VERIFY_PROMPT = """# CONTEXT #
+I am a teacher, and I have some high-level math problems. I am tasked with evaluating the correctness of a student's answer. \n\
+Below, I am provided with a problem and a reference answer. Additionally, a student's answer is provided. My job is to assess whether the student's answer captures the same meaning as the reference answer, even when expressed with different wording or format.
+
+# OBJECTIVE #
+I need you to judge whether the student's answer is correct given the ground truth answer.
+
+Your tasks include:
+1. Identify Mathematical or Notational Equivalence: Pay special attention to any LaTeX expressions in both answers. Confirm that the mathematical relationships, variables, and operations conveyed are equivalent.
+
+# TONE #
+Professional, scientific.
+
+# RESPONSE: MARKDOWN REPORT #
+## Equivalence Judgement
+[Whether the student's answer share the same meaning with the reference answer. (TRUE or FALSE)]
+
+# ATTENTION #
+ - The reference answer is ALWAYS correct. You should carefully judge whether the student gives the same answer as reference answer.
+ - The Equivalence Judgement is only TRUE or FALSE. The answer is FALSE even if the student's final answer almost correct with a minor mistakes.
+ - Don't give extra explanation.
+
+**Question**:
+{query}
+
+**Reference Answer**
+{gold_ans}
+
+## Student Final Answer
+{pred_ans}"""  # noqa: E501
+_BOXED_ANSWER = re.compile(r"\\boxed{([^}]+)}", re.DOTALL)
+
+
+def _math_answer(response: str) -> tuple[str | None, bool]:
+    """DeepEyes' compute_score_math parsing: the last \\boxed{...} (up to the first "}") after the last </think>;
+    returns it and whether the format is wrong (unbalanced think tags, or not exactly one boxed answer)."""
     is_format_error = response.count("<think>") != response.count("</think>")
-    if final_answer is None or len(final_answer) >= _MAX_ANSWER_CHARS:
+    answers = _BOXED_ANSWER.findall(response.split("</think>")[-1].strip())
+    if len(answers) != 1:
         is_format_error = True
-    return -1.0 if is_format_error else 0.0
+    return (answers[-1] if answers else None), is_format_error
+
+
+def _math_verify(reference: str, answer: str) -> bool:
+    """math_verify's parse/verify, as DeepEyes' rule_math_verify. Their timeouts use SIGALRM, which only the main
+    thread can set; elsewhere they run without a timeout."""
+    from math_verify import parse, verify
+
+    main_thread = threading.current_thread() is threading.main_thread()
+    parse_kwargs = {} if main_thread else {"parsing_timeout": None}
+    return bool(
+        verify(
+            parse(reference, **parse_kwargs),
+            parse(answer, **parse_kwargs),
+            **({} if main_thread else {"timeout_seconds": None}),
+        )
+    )
+
+
+def _judge_math(client, question: str, reference: str, answer: str) -> bool:
+    """DeepEyes' generative_verify: MATH_VERIFY_PROMPT as the only (user) message, temperature 0."""
+    model = os.environ.get("DEEPEYES_JUDGE_MODEL", "judge")
+    prompt = _MATH_VERIFY_PROMPT.format(query=question, gold_ans=reference, pred_ans=answer)
+    for _ in range(8):
+        try:
+            completion = client.chat.completions.create(
+                model=model, messages=[{"role": "user", "content": prompt}], temperature=0.0
+            )
+            reply = (completion.choices[0].message.content or "").strip()
+            break
+        except Exception:
+            continue
+    else:
+        return False
+    judgement = reply.split("## Equivalence Judgement")[-1].lower()
+    return "true" in judgement and "false" not in judgement
 
 
 def compute_score_official(reward_inputs: list[dict[str, Any]]) -> list[dict[str, float]]:
     client = _judge_client()
     finals = [_validated_final_answer(reward_input["final_answer"]) for reward_input in reward_inputs]
+    # ThinkLite: the boxed answer of the response, whether or not it is inside <answer> tags (official
+    # compute_score_math); math_verify runs here, in the calling thread, because of its signal-based timeouts
+    math_answers = {
+        index: _math_answer(reward_input["response"])
+        for index, reward_input in enumerate(reward_inputs)
+        if reward_input.get("data_source", "") == "thinklite_eureka"
+    }
+    math_rule = {
+        index: answer is not None and _math_verify(str(reward_inputs[index]["ground_truth"]), answer)
+        for index, (answer, _) in math_answers.items()
+    }
 
     def decide(index: int) -> float:
-        reward_input, final_answer = reward_inputs[index], finals[index]
+        reward_input = reward_inputs[index]
+        reference = str(reward_input["ground_truth"])
+        if index in math_answers:
+            answer = math_answers[index][0]
+            if math_rule[index]:
+                return 1.0
+            if answer is None:
+                return 0.0
+            if client is None:  # about half of the ThinkLite answers are words, which math_verify cannot check
+                return 1.0 if _rule_match(answer, reference, reward_input.get("question", "")) else 0.0
+            return 1.0 if _judge_math(client, reward_input.get("question", ""), reference, answer) else 0.0
+        final_answer = finals[index]
         if final_answer is None:
             return 0.0
-        reference = str(reward_input["ground_truth"])
-        is_math = reward_input.get("data_source", "") == "thinklite_eureka"
-        if is_math or client is None:
-            if is_math:
-                boxed = extract_boxed_content(final_answer)
-                candidate = boxed if boxed and boxed != "None" else final_answer
-                try:
-                    if grade_answer(candidate, reference):
-                        return 1.0
-                except Exception:
-                    pass
-                if client is None:
-                    return 0.0
-            else:
-                return 1.0 if _rule_match(final_answer, reference, reward_input.get("question", "")) else 0.0
+        if client is None:
+            return 1.0 if _rule_match(final_answer, reference, reward_input.get("question", "")) else 0.0
         return 1.0 if _judge_match(client, reward_input.get("question", ""), final_answer, reference) else 0.0
 
     workers = int(os.environ.get("DEEPEYES_JUDGE_WORKERS", "32")) if client is not None else 1
@@ -286,10 +372,12 @@ def compute_score_official(reward_inputs: list[dict[str, Any]]) -> list[dict[str
 
     base_scores = compute_score(reward_inputs)
     scores = []
-    for reward_input, final_answer, accuracy, base in zip(reward_inputs, finals, accuracies, base_scores):
+    for index, (reward_input, final_answer, accuracy, base) in enumerate(
+        zip(reward_inputs, finals, accuracies, base_scores)
+    ):
         response = reward_input["response"]
-        if reward_input.get("data_source", "") == "thinklite_eureka":
-            format_score = _math_format_reward(response, final_answer)
+        if index in math_answers:
+            format_score = -1.0 if math_answers[index][1] else 0.0
             overall = 1.2 * accuracy + 0.4 * format_score
             tool_score = 0.0
         else:
