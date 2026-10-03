@@ -365,7 +365,8 @@ OFFICIAL_DEEPEYES_FORMAT_INSTRUCTION = (
 class OfficialDeepEyesChatAdapter(NativeToolChatAdapter):
     """DeepEyes' own prompt format: the tool schema is written in the dataset's system prompt (not passed to the
     chat template), and a tool result comes back as a user turn
-    ``<tool_response><image>{format instruction}</tool_response>`` (``Error: ...`` when the call fails)."""
+    ``<tool_response><image>{format instruction}</tool_response>`` (``Error: ...`` when the call fails; the crop's
+    text in place of the image when the tool returns no image, as with tool_image_mode=text_skipped)."""
 
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
@@ -386,6 +387,15 @@ class OfficialDeepEyesChatAdapter(NativeToolChatAdapter):
                 *({"type": "image"} for _ in result.images),
                 {"type": "text", "text": OFFICIAL_DEEPEYES_FORMAT_INSTRUCTION + "</tool_response>"},
             ]
+        elif (
+            result.success
+        ):  # a crop returned as text only (tool_image_mode=text_skipped): its text replaces the image
+            content = (
+                "<tool_response>"
+                + (result.observation_text or "")
+                + OFFICIAL_DEEPEYES_FORMAT_INSTRUCTION
+                + "</tool_response>"
+            )
         else:
             error = result.content.get("error") if isinstance(result.content, Mapping) else None
             message = error.get("message") if isinstance(error, Mapping) else None

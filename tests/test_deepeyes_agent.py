@@ -1721,6 +1721,24 @@ def test_official_chat_adapter_reproduces_the_official_deepeyes_strings(qwen2_5_
     assert failed.visual_token_count == 0
 
 
+def test_official_chat_adapter_keeps_text_only_crops_successful(qwen2_5_vl_processor):
+    """tool_image_mode=text_skipped: the crop succeeded and only its text marker comes back, not an error."""
+    from verl.workers.agent.chat import OfficialDeepEyesChatAdapter
+    from verl.workers.agent.tools.image_zoom import TEXT_SKIPPED_OBSERVATION
+
+    processor = qwen2_5_vl_processor
+    adapter = OfficialDeepEyesChatAdapter(processor, ToolRegistry([ImageZoomInTool()]), 1, max_tool_calls=6)
+    tool = ImageZoomInTool(output_image_mode="text_skipped")
+    result = tool.execute({"bbox_2d": [0, 0, 500, 500]}, [Image.new("RGB", (200, 200))])
+    assert result.success and not result.images
+    skipped = asyncio.run(adapter.encode(ObservationEncodingRequest(result)))
+    official = _official_observation(
+        "<tool_response>" + TEXT_SKIPPED_OBSERVATION + OFFICIAL_USER_PROMPT_V2 + "</tool_response>"
+    )
+    assert processor.tokenizer.decode(skipped.token_ids) == official
+    assert skipped.visual_token_count == 0
+
+
 def test_plain_chat_adapter_renders_the_rows_own_prompt_without_tools(qwen2_5_vl_processor):
     from verl.workers.agent.chat import PlainChatAdapter
 
