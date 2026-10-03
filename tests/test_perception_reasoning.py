@@ -740,7 +740,22 @@ def test_vp_diffusion_shared_fixed_t_matches_beta_path_bitwise():
 
     np.testing.assert_array_equal(np.asarray(fixed_image), np.asarray(direct_image))
     assert params.noise_t == 500.0
-    assert params.noise_beta == 0.5
+    # NoisyRollout's schedule (verl/utils/image_aug.py), which DVRP follows
+    betas = torch.sigmoid(torch.linspace(-6, 6, 1000)) * (0.5e-2 - 1e-5) + 1e-5
+    alphas_prod = torch.cumprod(1 - betas, dim=0)
+    assert params.noise_beta == pytest.approx(1 - alphas_prod[500].item(), abs=1e-7)
+
+
+def test_vp_diffusion_noise_follows_the_noisyrollout_step():
+    """x_t = sqrt(alpha_bar_t) x + sqrt(1 - alpha_bar_t) eps: at t=250 the noise std is about 0.147."""
+    image = Image.fromarray(np.full((256, 256, 3), 128, dtype=np.uint8))
+    noisy, params = vp_diffusion_noise_fixed_t(image, noise_t=250.0, noise_t_max=1000.0, seed=3)
+    pixels = np.asarray(noisy, dtype=np.float64) / 255.0
+    assert pixels.std() == pytest.approx(math.sqrt(params.noise_beta), rel=0.02)
+    assert params.noise_beta**0.5 == pytest.approx(0.147, abs=1e-3)
+    assert pixels.mean() == pytest.approx(math.sqrt(1 - params.noise_beta) * 128 / 255, abs=2e-3)
+    with pytest.raises(ValueError, match="noise_t_max"):
+        vp_diffusion_noise_fixed_t(image, noise_t=250.0, noise_t_max=2000.0)
 
 
 def test_shared_noise_schedule_keeps_legacy_tuple_unpacking():

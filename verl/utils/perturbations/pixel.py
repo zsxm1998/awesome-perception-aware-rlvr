@@ -15,15 +15,35 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 
 import numpy as np
+import torch
 from PIL import Image
+
+
+# NoisyRollout's forward-diffusion schedule (verl/utils/image_aug.py), which DVRP follows:
+# beta_i = sigmoid(linspace(-6, 6, 1000))_i * (5e-3 - 1e-5) + 1e-5, alpha_bar_t = prod_{i<=t} (1 - beta_i).
+VP_DIFFUSION_STEPS = 1000
+
+
+@lru_cache(maxsize=1)
+def _vp_diffusion_alphas_cumprod() -> tuple[float, ...]:
+    betas = torch.sigmoid(torch.linspace(-6, 6, VP_DIFFUSION_STEPS)) * (0.5e-2 - 1e-5) + 1e-5
+    return tuple(torch.cumprod(1 - betas, dim=0).tolist())
+
+
+def vp_diffusion_noise_fraction(noise_t: float) -> float:
+    """1 - alpha_bar at step int(noise_t) of NoisyRollout's schedule: the share of the noised image's variance
+    that is noise (x_t = sqrt(alpha_bar) x + sqrt(1 - alpha_bar) eps)."""
+    step = min(max(int(noise_t), 0), VP_DIFFUSION_STEPS - 1)
+    return 1.0 - _vp_diffusion_alphas_cumprod()[step]
 
 
 @dataclass(frozen=True)
 class VPDiffusionParams:
     noise_t: float
-    noise_beta: float
+    noise_beta: float  # 1 - alpha_bar_t, the noise variance fraction
 
     def __iter__(self):
         yield self.noise_t
@@ -42,14 +62,15 @@ def compute_noise_schedule(
     else:
         progress = min(max(float(global_step), 0.0), float(total_training_steps)) / float(max(total_training_steps, 1))
     noise_t = noise_t_init * (1.0 / (1.0 + math.exp(-noise_gamma * (0.5 - progress))))
-    noise_beta = min(max(noise_t / noise_t_max, 0.0), 1.0)
-    return VPDiffusionParams(noise_t=noise_t, noise_beta=noise_beta)
+    return vp_diffusion_params_from_fixed_t(noise_t, noise_t_max)
 
 
 def vp_diffusion_params_from_fixed_t(noise_t: float, noise_t_max: float) -> VPDiffusionParams:
+    """Step ``noise_t`` (at most ``noise_t_max``, itself at most 1000) of NoisyRollout's schedule."""
+    if not 0.0 < float(noise_t_max) <= VP_DIFFUSION_STEPS:
+        raise ValueError(f"noise_t_max must be in (0, {VP_DIFFUSION_STEPS}], but got {noise_t_max}.")
     noise_t = min(max(float(noise_t), 0.0), float(noise_t_max))
-    noise_beta = min(max(noise_t / float(noise_t_max), 0.0), 1.0)
-    return VPDiffusionParams(noise_t=noise_t, noise_beta=noise_beta)
+    return VPDiffusionParams(noise_t=noise_t, noise_beta=vp_diffusion_noise_fraction(noise_t))
 
 
 def random_patch_blackening(
@@ -96,6 +117,7 @@ def vp_diffusion_noise(
     beta: float,
     seed: int | None = None,
 ) -> Image.Image:
+    """sqrt(1 - beta) x + sqrt(beta) eps on [0, 1] pixels, clipped; beta is 1 - alpha_bar_t (see above)."""
     rng = np.random.default_rng(seed)
     arr = np.asarray(pil_img.convert("RGB"), dtype=np.float32) / 255.0
     noise = rng.standard_normal(size=arr.shape, dtype=np.float32)

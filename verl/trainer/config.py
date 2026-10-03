@@ -205,11 +205,11 @@ class AlgorithmConfig:
     incremental_entropy_coef: float = 0.0
     """coefficient for entropy regularization on the incremental auxiliary view. Non-zero values enable the DVRP-style incremental loss path."""
     noise_t_init: float = 500.0
-    """initial VP-diffusion timestep for DVRP's incremental view."""
+    """initial VP-diffusion timestep for DVRP's incremental view; the step t anneals as noise_t_init * sigmoid(noise_gamma * (0.5 - progress)), and the view is sqrt(alpha_bar_t) x + sqrt(1 - alpha_bar_t) eps on NoisyRollout's 1000-step schedule (DVRP follows NoisyRollout)."""
     noise_gamma: float = 10.0
     """sigmoid annealing sharpness for DVRP VP-diffusion scheduling."""
     noise_t_max: float = 1000.0
-    """maximum VP-diffusion timestep for DVRP."""
+    """largest VP-diffusion timestep for DVRP, at most 1000 (the length of NoisyRollout's schedule)."""
     tor_use_token_weighting: bool = False
     """enable ToR-style token weighting instead of binary masking when entropy/perception masks are available."""
     tor_rsn_weight: float = 1.0
@@ -255,6 +255,8 @@ class AlgorithmConfig:
         _validate_choice(
             "grounding_consistency_detector", self.grounding_consistency_detector, {"self", "grounding-dino"}
         )
+        if not 0.0 < self.noise_t_max <= 1000.0:
+            raise ValueError(f"noise_t_max must be in (0, 1000], but got {self.noise_t_max}.")
         _validate_choice("filter_criterion", self.filter_criterion, {"mean_range", "std"})
         _validate_choice(
             "online_filtering_fallback", self.online_filtering_fallback, {"error", "keep_round", "first_round"}
