@@ -7,7 +7,7 @@ source "$THIS_DIR/../common.sh"
 launch_original_cfpo_matrix() {
     pr_default MODEL_PATH "Qwen/Qwen2.5-VL-3B-Instruct"
     METHOD_COMMON_ARGS=(
-        "data.train_files=$DATA_ROOT/virl39k/train.parquet"
+        "data.train_files=$DATA_ROOT/cfpo/train.parquet"
         "data.val_files=$DATA_ROOT/mmk12/test.parquet"
         "data.prompt_key=problem"
         "data.answer_key=answer"

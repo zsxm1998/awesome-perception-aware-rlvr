@@ -52,7 +52,7 @@ DATASETS: dict[str, TrainDataset] = {
         repo_id="PAPOGalaxy/PAPO_ViRL39K_train",
         splits={"train": ["data/train-*.parquet"]},
         description="ViRL39K (38,870 multimodal reasoning problems) as preprocessed by PAPO",
-        used_by=["papo", "vppo", "dvrp", "pgpo", "cfpo", "cgpo", "comparison"],
+        used_by=["papo", "vppo", "dvrp", "pgpo", "cgpo", "comparison"],
     ),
     "mmk12": TrainDataset(
         name="mmk12",
@@ -71,6 +71,14 @@ DATASETS: dict[str, TrainDataset] = {
         },
         description="Geometry3K (2,101 train / 300 val / 601 test)",
         used_by=["tor", "pepo", "vepo"],  # VEPO: through the vepo dataset
+    ),
+    "cfpo": TrainDataset(
+        name="cfpo",
+        repo_id="RavenInJuly/CFPO_Datasets",
+        splits={"train": []},
+        description="CFPO's ViRL39K (38,870 problems, CFPO's problem text) with the ViRL39K images",
+        used_by=["cfpo"],
+        converter="cfpo",
     ),
     "vepo": TrainDataset(
         name="vepo",
@@ -103,7 +111,7 @@ METHOD_GROUPS: dict[str, list[str]] = {
     "vppo": ["virl39k", "mmk12"],
     "dvrp": ["virl39k", "mmk12"],
     "pgpo": ["virl39k", "mmk12"],
-    "cfpo": ["virl39k", "mmk12"],
+    "cfpo": ["cfpo", "mmk12"],
     "cgpo": ["virl39k", "mmk12"],
     "comparison": ["virl39k", "mmk12"],
     "tor": ["geometry3k"],

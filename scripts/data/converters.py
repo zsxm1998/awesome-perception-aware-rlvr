@@ -256,3 +256,52 @@ def convert_vepo(repo_id: str, raw_dir: Path, out_dir: Path, snapshot) -> dict[s
         summary[split] = table.num_rows
         print(f"[write] {out_dir / f'{split}.parquet'} ({table.num_rows} rows)")
     return summary
+
+
+# ---------------------------------------------------------------------------
+# CFPO (RavenInJuly/CFPO_Datasets): CFPO's copy of ViRL39K (38,870 problems) with its own problem
+# text (option format, <image> placement), and the ViRL39K images it references by file name.
+# ---------------------------------------------------------------------------
+
+
+@register("cfpo")
+def convert_cfpo(repo_id: str, raw_dir: Path, out_dir: Path, snapshot) -> dict[str, int]:
+    import json
+    import zipfile
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    snapshot(["ViRL39K_train.json", "ViRL39K_images.zip"])
+    with open(raw_dir / "ViRL39K_train.json", encoding="utf-8") as f:
+        rows = json.load(f)
+    schema = pa.schema(
+        [
+            ("problem", pa.string()),
+            ("answer", pa.string()),
+            ("images", pa.list_(pa.struct([("bytes", pa.binary()), ("path", pa.string())]))),
+        ]
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    output = out_dir / "train.parquet"
+    tmp_output = output.with_suffix(".parquet.tmp")
+    with zipfile.ZipFile(raw_dir / "ViRL39K_images.zip") as archive, pq.ParquetWriter(tmp_output, schema) as writer:
+        members = {name.rsplit("/", 1)[-1]: name for name in archive.namelist() if not name.endswith("/")}
+        for start in range(0, len(rows), 2000):  # row groups stay far below 2 GB
+            chunk = rows[start : start + 2000]
+            writer.write_table(
+                pa.table(
+                    {
+                        "problem": [row["problem"] for row in chunk],
+                        "answer": [str(row["answer"]) for row in chunk],
+                        "images": [
+                            [{"bytes": archive.read(members[name]), "path": name} for name in row["images"]]
+                            for row in chunk
+                        ],
+                    },
+                    schema=schema,
+                )
+            )
+    tmp_output.replace(output)
+    print(f"[write] {output} ({len(rows)} rows)")
+    return {"train": len(rows)}

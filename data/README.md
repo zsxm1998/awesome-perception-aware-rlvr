@@ -15,6 +15,7 @@ data/
 ├── mmk12/test.parquet           # MMK12 test (validation during training)
 ├── geometry3k/{train,validation,test}.parquet
 ├── vepo/{train,test}.parquet    # Geometry3K train + k12-freeform mini_train; k12-freeform test
+├── cfpo/train.parquet           # CFPO's ViRL39K (CFPO's problem text, ViRL39K images)
 ├── grit/{train,test}.parquet
 ├── deepeyes/train.parquet
 └── eval/<benchmark>/...         # created by scripts/prepare_eval_data.sh

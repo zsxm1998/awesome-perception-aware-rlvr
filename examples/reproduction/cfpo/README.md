@@ -18,7 +18,7 @@ or DAPO (CFPO_D, which also adds an entropy term).
 | | This repository |
 | --- | --- |
 | Base model | Qwen2.5-VL-3B-Instruct |
-| Training data | ViRL39K as processed by PAPO (38,870; CFPO ships its own JSON copy with the same number of items) — `bash scripts/prepare_data.sh cfpo` |
+| Training data | CFPO's ViRL39K (`RavenInJuly/CFPO_Datasets`: `ViRL39K_train.json` and `ViRL39K_images.zip`, 38,870 problems) — `bash scripts/prepare_data.sh cfpo` |
 | Validation | MMK12 test (2,000), greedy, 1 sample, every 5 steps |
 | Prompt / reward | CFPO's system prompt (`examples/system_prompt/cfpo.txt`, the official `base.jinja`: `<think>` + `\boxed{}`), the problem as the user message; 0.9 accuracy + 0.1 format (`math.py:compute_score`) |
 | Rollout | 384 prompts x 5 rollouts per step, T=1.0, top-p 0.99; update batch 128 prompts |
@@ -64,6 +64,10 @@ described in [eval/README.md](../../../eval/README.md).
   micro-batch are packed into one sequence and the hand-computed attention used for the saliency
   statistics receives no attention mask, so it is not causal, spans the packed samples, and the
   image-value mean V̄ is taken over them. We do not reproduce this.
+- The training data is CFPO's copy of ViRL39K. It holds the same problems and images as PAPO's
+  copy (used by the other ViRL39K methods) in the same order, but the text of 13,426 problems
+  differs (option format, `<image>` at the start instead of the end), which also changes the rows
+  that enter the saliency statistics.
 - Where the paper and the official code differ, we follow the code:
   - V̄ (Eq. 12) is the mean image-token value vector in the paper; the code averages over the
     image tokens and the hidden dimensions, one scalar per head.
