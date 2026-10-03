@@ -218,7 +218,9 @@ touching the other steps. `scripts/eval.sh` accepts finalized runs.
 The perception-aware methods are implemented as composable blocks in `verl/trainer/`:
 auxiliary (counterfactual) image views, token-level visual-sensitivity signals, token selection,
 advantage scaling, auxiliary losses and extra rewards. See
-[docs/algorithm_parameters.md](docs/algorithm_parameters.md) for every switch and
+[docs/algorithm_parameters.md](docs/algorithm_parameters.md) for every switch,
+[docs/implementation_notes.md](docs/implementation_notes.md) for behaviors several methods share
+(e.g. the gradient of the k3 KL estimator, loss averaging) and
 [docs/add_method.md](docs/add_method.md) for adding a new method.
 
 ## 📊 Controlled comparison

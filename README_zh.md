@@ -200,7 +200,8 @@ python3 scripts/finalize_run.py checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_pa
 
 各方法在 `verl/trainer/` 中被实现为可组合的模块：辅助（反事实）图像视图、token 级视觉敏感度信号、
 token 选择、优势缩放、辅助损失和额外奖励。所有开关见
-[docs/algorithm_parameters.md](docs/algorithm_parameters.md)，新增方法见
+[docs/algorithm_parameters.md](docs/algorithm_parameters.md)，多个方法共有的实现细节（如 k3 KL 估计的梯度方向、损失平均方式）见
+[docs/implementation_notes.md](docs/implementation_notes.md)，新增方法见
 [docs/add_method.md](docs/add_method.md)。
 
 ## 📊 统一设定对比
