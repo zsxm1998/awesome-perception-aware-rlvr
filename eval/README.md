@@ -157,6 +157,7 @@ temperature 1.0, top_p 1.0 and 2048 new tokens; "greedy" = 1 sample at temperatu
 | `grit_vsr` | GRIT VSR | `yfan1997/GRIT_data` + COCO 2017 | 288 | answer accuracy (GRIT grounding IoU in details) | greedy | GRIT |
 | `grit_tallyqa` | GRIT TallyQA (official file) | `yfan1997/GRIT_data` + Visual Genome | 491 | answer accuracy (+ GRIT grounding IoU) | greedy | GRIT |
 | `grit_gqa` | GRIT GQA | `yfan1997/GRIT_data` + Visual Genome | 509 | answer accuracy (+ GRIT grounding IoU) | greedy | GRIT |
+| `tallyqa_relabeled` | GRIT TallyQA, relabeled: one box per counted instance, corrected answers | `zsxm1998/GRIT-TallyQA-Relabeled` (with images) | 491 | answer accuracy (+ GRIT grounding IoU) | greedy | general |
 | `ovdeval_position` | OVDEval position | `yfan1997/GRIT_data` + `omlab/OVDEval` | 2146 | GRIT grounding IoU (Acc@0.5 in details) | greedy | GRIT |
 | `refcoco_val` | RefCOCO val (optional) | `PaDT-MLLM/RefCOCO` + COCO train2014 | 10834 | Acc@0.5 IoU | greedy | DeepEyes, PEPO |
 | `refcoco_plus_val` | RefCOCO+ val (optional) | `PaDT-MLLM/RefCOCO` + COCO train2014 | 10758 | Acc@0.5 IoU | greedy | DeepEyes |

@@ -366,6 +366,8 @@ benchmarks:
   # Grounding. GRIT sets (official GRIT_data annotations) follow the GRIT paper: answer
   # accuracy (rule-based here) and the GRIT grounding IoU (union of all predicted boxes vs
   # union of GT boxes, details key grounding/grit_iou). OVDEval reports the grounding IoU only.
+  # tallyqa_relabeled asks the GRIT TallyQA questions with one GT box per counted instance and
+  # corrected answers (zsxm1998/GRIT-TallyQA-Relabeled); it is not comparable with grit_tallyqa.
   # Predicted boxes are read according to the runner's --box-format.
   # ---------------------------------------------------------------------------
   - key: grit_vsr
@@ -390,6 +392,19 @@ benchmarks:
     source: yfan1997/GRIT_data (tallyqa_val) + Visual Genome images
     path: grit_tallyqa/tallyqa_val.jsonl
     image_root: grit_tallyqa/images
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+
+  - key: tallyqa_relabeled
+    label: TallyQA (relabeled)
+    group: Grounding
+    loader: grit_jsonl
+    scorer: answer_bbox
+    primary_metric: answer_accuracy
+    source: zsxm1998/GRIT-TallyQA-Relabeled (GRIT TallyQA, relabeled) + Visual Genome images
+    path: tallyqa_relabeled/tallyqa_val.jsonl
+    image_root: tallyqa_relabeled/images
     max_new_tokens: 2048
     temperature: 0.0
     num_samples: 1

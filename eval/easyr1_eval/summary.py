@@ -27,6 +27,7 @@ AUXILIARY_COLUMNS = {
     "grit_vsr": ("grit_vsr_giou", "grounding/grit_iou"),
     "grit_tallyqa": ("grit_tallyqa_giou", "grounding/grit_iou"),
     "grit_gqa": ("grit_gqa_giou", "grounding/grit_iou"),
+    "tallyqa_relabeled": ("tallyqa_relabeled_giou", "grounding/grit_iou"),
 }
 
 

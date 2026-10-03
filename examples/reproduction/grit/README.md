@@ -95,6 +95,12 @@ environment. Evaluation is described in [eval/README.md](../../../eval/README.md
   - The metric details also report `answer/grit_rule_accuracy`, the answer checked with the rule of
     this repository's GRIT training reward. It is neither the paper's metric nor calibrated
     against GPT-4o's scores.
+- **Relabeled TallyQA.** The boxes of the TallyQA set are Visual Genome's object annotations, which
+  cover 25.6% of the counted objects (GRIT paper, Table 2) and often box one instance several times.
+  The benchmark `tallyqa_relabeled` (not in the `grit` suite) asks the same 491 questions with one
+  box per counted instance and 37 corrected answers
+  ([zsxm1998/GRIT-TallyQA-Relabeled](https://huggingface.co/datasets/zsxm1998/GRIT-TallyQA-Relabeled));
+  its results are not comparable with `grit_tallyqa` or the paper.
 
 ## Results
 

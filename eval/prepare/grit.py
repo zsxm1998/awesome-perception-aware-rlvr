@@ -21,12 +21,16 @@ referenced ones are downloaded instead of the full COCO / Visual Genome / GQA ar
 - GQA (509 rows, Visual Genome images, same files as the GQA ``images.zip``)
 - OVDEval position (2146 rows): ``position.tar.gz`` (216 MB) from HF ``omlab/OVDEval``
 
+The relabeled TallyQA set (HF ``zsxm1998/GRIT-TallyQA-Relabeled``: the same 491 questions with one box
+per counted instance and corrected answers) ships its 465 Visual Genome images with the annotations.
+
 Layout::
 
     <data_root>/grit_vsr/vsr_val.jsonl            + images/<coco file name>
     <data_root>/grit_tallyqa/tallyqa_val.jsonl    + images/VG_100K{,_2}/<id>.jpg
     <data_root>/grit_gqa/gqa_val.jsonl            + images/<id>.jpg
     <data_root>/ovdeval_position/ovd_position_val.jsonl + images/<file>.jpg
+    <data_root>/tallyqa_relabeled/tallyqa_val.jsonl + images/VG_100K{,_2}/<id>.jpg
 """
 
 from __future__ import annotations
@@ -42,7 +46,9 @@ from .common import (
     copy_file,
     extract_tar,
     hf_download,
+    hf_snapshot,
     http_download_many,
+    move_file,
     place_referenced_files,
     read_jsonl,
 )
@@ -50,6 +56,7 @@ from .common import (
 
 REPO_ID = "yfan1997/GRIT_data"
 OVDEVAL_REPO_ID = "omlab/OVDEval"
+RELABELED_TALLYQA_REPO_ID = "zsxm1998/GRIT-TallyQA-Relabeled"
 COCO_URL = "http://images.cocodataset.org"
 VG_URL = "https://cs.stanford.edu/people/rak248"
 
@@ -119,6 +126,27 @@ def prepare_ovdeval_position(ctx: PrepareContext, spec: BenchmarkSource) -> dict
     }
 
 
+def prepare_tallyqa_relabeled(ctx: PrepareContext, spec: BenchmarkSource) -> dict[str, Any]:
+    target = spec.target_dir(ctx.data_root)
+    annotation = spec.options["annotation"]
+    raw = hf_snapshot(ctx, RELABELED_TALLYQA_REPO_ID, [annotation, "images/*"])
+    rows = read_jsonl(raw / annotation)
+    if len(rows) != spec.options["expected_rows"]:
+        raise PrepareError(
+            f"{spec.key}: expected {spec.options['expected_rows']} rows in {annotation}, found {len(rows)}"
+        )
+    images = sorted({str(row["image"]) for row in rows})
+    for image in images:
+        if (raw / "images" / image).is_file():
+            move_file(raw / "images" / image, target / "images" / image)
+    missing = [image for image in images if not (target / "images" / image).is_file()]
+    if missing:
+        raise PrepareError(f"{spec.key}: {len(missing)} images missing, e.g. {missing[:3]}")
+    move_file(raw / annotation, target / annotation)
+    ctx.discard_raw(raw)
+    return {"repo_id": RELABELED_TALLYQA_REPO_ID, "annotation": annotation, "rows": len(rows), "images": len(images)}
+
+
 SOURCES = [
     BenchmarkSource(
         key="grit_vsr",
@@ -156,5 +184,14 @@ SOURCES = [
         approx_size="215 MB",
         prepare=prepare_ovdeval_position,
         options={"annotation": "ovd_position_val.jsonl", "expected_rows": 2146},
+    ),
+    BenchmarkSource(
+        key="tallyqa_relabeled",
+        target="tallyqa_relabeled",
+        outputs=("tallyqa_relabeled/tallyqa_val.jsonl",),
+        source=f"{RELABELED_TALLYQA_REPO_ID} (relabeled GRIT TallyQA + its Visual Genome images)",
+        approx_size="35 MB",
+        prepare=prepare_tallyqa_relabeled,
+        options={"annotation": "tallyqa_val.jsonl", "expected_rows": 491},
     ),
 ]

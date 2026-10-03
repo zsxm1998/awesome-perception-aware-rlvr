@@ -70,6 +70,7 @@ def test_registry_groups_and_keys():
         "Grounding": [
             "grit_vsr",
             "grit_tallyqa",
+            "tallyqa_relabeled",
             "grit_gqa",
             "ovdeval_position",
             "refcoco_val",
