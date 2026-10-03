@@ -180,6 +180,7 @@ class AgenticVLLMBackend:
         sampling_params = SamplingParams(
             temperature=config.temperature,
             top_p=config.top_p,
+            **({} if config.top_k is None else {"top_k": config.top_k}),
             n=1,
             max_tokens=self.agent_config.max_tokens_per_turn,
             seed=config.seed,

@@ -443,6 +443,13 @@ def test_agentic_budget_changes_invalidate_only_agentic_inference_resume(tmp_pat
 
     assert changed_one_shot == one_shot
     assert agentic != one_shot
+
+    # --top-k enters the fingerprint only when set, so earlier results stay valid
+    unset_top_k, top_k_50 = copy(args), copy(args)
+    unset_top_k.top_k, top_k_50.top_k = None, 50
+    assert runner.task_fingerprint(unset_top_k, spec, phase="infer") == one_shot
+    assert runner.task_fingerprint(top_k_50, spec, phase="infer") != one_shot
+    assert runner.generation_config_for(spec, top_k_50).top_k == 50
     assert changed_agentic != agentic
 
     fixed_gray_agentic_args = copy(agentic_args)

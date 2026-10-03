@@ -114,6 +114,15 @@ MathVista checker; GRIT: a GPT-4o judge; DeepEyes: a Qwen2.5-72B judge fallback)
 are comparable across methods within this harness but not digit-for-digit with the paper.
 `--temperature 0 --num-samples 1` switches any run to greedy decoding.
 
+Sampling uses no top-k limit and images of 200,704-1,003,520 pixels by default, the settings
+the training scripts use, so that a model is evaluated as it was trained. The PAPO-Eval code
+itself (LLaMA-Factory) samples with top-k 50 and images of 1,024-589,824 pixels; to evaluate
+with those settings, add
+
+```bash
+--top-k 50 --min-pixels 1024 --max-pixels 589824
+```
+
 ## Benchmarks
 
 Sample counts are the rows actually evaluated. "avg@8" = mean accuracy over 8 samples at
@@ -310,7 +319,7 @@ Common runner options:
 |---|---|
 | `--suite`, `--benchmarks`, `--skip-benchmarks` | benchmark selection |
 | `--limit N` | only the first N samples of every benchmark (smoke tests) |
-| `--temperature`, `--num-samples`, `--top-p`, `--max-new-tokens` | override the registry decoding settings for every benchmark |
+| `--temperature`, `--num-samples`, `--top-p`, `--top-k`, `--max-new-tokens` | override the registry decoding settings for every benchmark (`--top-k` is unset by default: no limit) |
 | `--gpus`, `--tp`, `--gpu-memory-utilization`, `--max-model-len` | engine placement and size |
 | `--min-pixels`, `--max-pixels` | image resizing (default 200704 to 1003520 pixels, as in training) |
 | `--box-format auto\|norm1000\|pixel` | how predicted boxes are read (see [Scoring protocols](#scoring-protocols)) |

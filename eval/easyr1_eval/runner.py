@@ -236,6 +236,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--top-p", type=float, default=None, help="Override top_p for all benchmarks (registry default 1.0)."
     )
     parser.add_argument(
+        "--top-k",
+        type=int,
+        default=None,
+        help="Sample only from the k most likely tokens (default: no limit, as in training). "
+        "PAPO-Eval's LLaMA-Factory default is 50.",
+    )
+    parser.add_argument(
         "--format-prompt",
         help="Jinja template rendered with {{ content }} (same semantics as data.format_prompt in training). "
         "Default for one-shot runs: examples/format_prompt/math_perception.jinja; 'none' disables it.",
@@ -644,6 +651,7 @@ def write_run_summaries(results, args: argparse.Namespace, run_id: str) -> None:
         "backend": args.backend,
         "temperature": args.temperature if args.temperature is not None else "per_benchmark",
         "num_samples": args.num_samples if args.num_samples is not None else "per_benchmark",
+        **({"top_k": args.top_k} if getattr(args, "top_k", None) is not None else {}),
         "batch_size": args.batch_size,
         "max_batch_images": args.max_batch_images,
         "max_model_len": args.max_model_len,
@@ -1134,6 +1142,7 @@ def generation_config_for(spec: BenchmarkSpec, args: argparse.Namespace) -> Gene
         num_samples=num_samples,
         max_new_tokens=max_new_tokens,
         seed=args.seed,
+        top_k=getattr(args, "top_k", None),
     )
 
 
@@ -1205,7 +1214,12 @@ def task_fingerprint(
             "backend": args.backend,
             **_agent_fingerprint_fields(args),
             "spec": spec.__dict__,
-            "generation": generation_config_for(spec, args).__dict__,
+            # top_k only when set, so runs without it keep their fingerprints
+            "generation": {
+                key: value
+                for key, value in generation_config_for(spec, args).__dict__.items()
+                if key != "top_k" or value is not None
+            },
             "limit": args.limit,
             "min_pixels": args.min_pixels,
             "max_pixels": args.max_pixels,
@@ -1339,8 +1353,8 @@ def print_dry_run(specs: list[BenchmarkSpec], args: argparse.Namespace) -> None:
             notes.append("skipped: needs judge")
         print(
             f"- {spec.key}: group={spec.group} loader={spec.loader} scorer={spec.scorer} "
-            f"temp={gen.temperature} top_p={gen.top_p} n={gen.num_samples} max_new_tokens={gen.max_new_tokens}"
-            + (f"  [{'; '.join(notes)}]" if notes else "")
+            f"temp={gen.temperature} top_p={gen.top_p} top_k={gen.top_k} n={gen.num_samples} "
+            f"max_new_tokens={gen.max_new_tokens}" + (f"  [{'; '.join(notes)}]" if notes else "")
         )
 
 

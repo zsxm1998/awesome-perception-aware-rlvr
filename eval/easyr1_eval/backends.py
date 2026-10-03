@@ -323,6 +323,7 @@ class VLLMBackend:
             n=config.num_samples,
             max_tokens=config.max_new_tokens,
             seed=config.seed,
+            **({} if config.top_k is None else {"top_k": config.top_k}),
         )
         completions = self.llm.generate(inputs, sampling_params=sampling)
         if self.perturbation.is_feature and has_images:
@@ -573,6 +574,7 @@ class TransformersBackend:
                             do_sample=config.temperature > 0,
                             temperature=max(config.temperature, 1e-6),
                             top_p=config.top_p,
+                            **({} if config.top_k is None else {"top_k": config.top_k}),
                             max_new_tokens=config.max_new_tokens,
                             pad_token_id=self.tokenizer.pad_token_id,
                         )

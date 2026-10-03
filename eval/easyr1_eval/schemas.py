@@ -88,6 +88,7 @@ class GenerationConfig:
     num_samples: int
     max_new_tokens: int
     seed: int
+    top_k: int | None = None  # None: no top-k limit
 
 
 @dataclass(frozen=True)
