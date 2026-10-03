@@ -21,7 +21,7 @@ zoom-in was used.
 | Training data | DeepEyes-Datasets-47k (`ChenShawn/DeepEyes-Datasets-47k`, 47,052 = 22,362 V*-derived + 13,659 ArxivQA charts + 11,031 ThinkLite-VL) — `bash scripts/prepare_data.sh deepeyes` |
 | Validation | none during training (`trainer.val_freq=-1`); the prepared `val.parquet` (100 training rows per source) is for monitoring only |
 | Interaction | agentic rollout (`worker.rollout.interaction_mode=agentic`); at most 6 tool calls (`worker.rollout.agent_max_tool_calls=6`), 10,240 tokens per turn, 20,480 tokens per trajectory, at most 16 images per sample. Qwen2.5-VL: DeepEyes' own prompts (see [Prompts](#prompts)), `bbox_2d` in absolute pixels of the image the model sees; Qwen3-VL: our rewritten prompt `examples/system_prompt/deepeyes.txt` through the native tool-call template, `bbox_2d` in 0-1000 coordinates (see [Coordinates](#coordinates)). ThinkLite rows are rolled out once without the tool, as in the official environment |
-| Reward | `examples/reward_function/deepeyes.py:compute_score_official`: V* / chart samples 0.8·acc + 0.2·format (0 / −1) + 1.2·tool (tool only if correct and ≥ 1 successful zoom-in); ThinkLite samples 1.2·acc + 0.4·format, no tool bonus, as the official `compute_score_math`: the answer is the last `\boxed{}` after `</think>`, and the format is wrong unless the think tags balance and there is exactly one boxed answer |
+| Reward | `examples/reward_function/deepeyes.py:compute_score_official`: V* / chart samples 0.8·acc + 0.2·format (0 / −1) + 1.2·tool (tool only if correct and ≥ 1 successful zoom-in); ThinkLite samples 1.2·acc + 0.4·format, no tool bonus, as the official `compute_score_math`: the answer is the last `\boxed{}` after `</think>` (read whole, see below), and the format is wrong unless the think tags balance and there is exactly one boxed answer |
 | Answer judge | the official few-shot judge prompt when `DEEPEYES_JUDGE_BASE_URL` and `DEEPEYES_JUDGE_MODEL` are set (the paper uses Qwen2.5-72B-Instruct served by vLLM; see [Answer judge](#answer-judge)); otherwise a rule-based matcher. ThinkLite answers are first checked with `math_verify` and go to the judge (official math prompt) only when it rejects them |
 | Rollout | 256 prompts x 16 rollouts per step, T=1.0, top-p 1.0; one policy update per step (update batch 256 prompts) |
 | RL | GRPO; no KL; clip 0.2 / 0.2; no entropy term |
@@ -172,8 +172,10 @@ python scripts/check_bbox_mapping.py --model Qwen/Qwen2.5-VL-7B-Instruct
   call, an empty answer or an answer inside unclosed reasoning is a tool or format error, and the
   error messages are the tool's own.
 - **ThinkLite answers with nested braces.** The official `\boxed{([^}]+)}` stops at the first `}`,
-  so a reference such as `\frac{4}{3}` cannot be matched by `math_verify` (174 of 11,031 rows);
-  this is kept.
+  so an answer such as `\boxed{\frac{4}{3}}` is read as `\frac{4` and judged wrong, also by the
+  judge, which sees the cut answer: even the reference answer itself fails on 174 of the 11,031
+  ThinkLite rows, and any correct answer written as a fraction fails. Here the braces are matched,
+  and the answer is read whole.
 - **Length of training.** 80 steps with at most 6 tool calls, following the paper ("80
   iterations", "up to 6" active perceptions); the released 7B script uses `total_epochs=32` and
   `max_turns=5`.

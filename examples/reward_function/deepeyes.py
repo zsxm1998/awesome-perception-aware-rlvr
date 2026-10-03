@@ -121,12 +121,13 @@ def compute_score(
 #   vstar / chart:     0.8 * acc + 0.2 * format(0 / -1) + 1.2 * tool   (tool only if correct)
 #   thinklite_eureka:  1.2 * acc + 0.4 * format(0 / -1)                (no tool bonus)
 # where acc is decided by a Qwen2.5-72B-Instruct judge; ThinkLite rows (compute_score_math) take
-# the last \boxed{} after </think>, check it with math_verify and ask the judge (with its math
-# prompt) only when that fails, and their format is wrong unless the think tags balance and there
-# is exactly one boxed answer. Set DEEPEYES_JUDGE_BASE_URL (OpenAI-compatible, e.g. a vLLM
-# server), DEEPEYES_JUDGE_MODEL and optionally DEEPEYES_JUDGE_API_KEY to use a judge; otherwise a
-# rule-based matcher (_rule_match) takes the judge's place, also for ThinkLite answers that
-# math_verify rejects (about half of the ThinkLite references are words, such as "brick").
+# the last \boxed{} after </think> (with nested braces matched, where DeepEyes' regex stops at the
+# first "}"), check it with math_verify and ask the judge (with its math prompt) only when that
+# fails, and their format is wrong unless the think tags balance and there is exactly one boxed
+# answer. Set DEEPEYES_JUDGE_BASE_URL (OpenAI-compatible, e.g. a vLLM server), DEEPEYES_JUDGE_MODEL
+# and optionally DEEPEYES_JUDGE_API_KEY to use a judge; otherwise a rule-based matcher
+# (_rule_match) takes the judge's place, also for ThinkLite answers that math_verify rejects (about
+# half of the ThinkLite references are words, such as "brick").
 # ---------------------------------------------------------------------------
 
 
@@ -284,14 +285,31 @@ Professional, scientific.
 
 ## Student Final Answer
 {pred_ans}"""  # noqa: E501
-_BOXED_ANSWER = re.compile(r"\\boxed{([^}]+)}", re.DOTALL)
+_BOXED_OPEN = "\\boxed{"
+
+
+def _boxed_answers(text: str) -> list[str]:
+    """The non-empty contents of every closed \\boxed{...} in ``text``, with nested braces matched. DeepEyes' regex
+    ``\\boxed{([^}]+)}`` stops at the first "}", which cuts answers such as \\frac{1}{2} to \\frac{1."""
+    answers, start = [], text.find(_BOXED_OPEN)
+    while start != -1:
+        depth, index = 1, start + len(_BOXED_OPEN)
+        while index < len(text) and depth:
+            depth += {"{": 1, "}": -1}.get(text[index], 0)
+            index += 1
+        content = text[start + len(_BOXED_OPEN) : index - 1]
+        if depth == 0 and content:
+            answers.append(content)
+        start = text.find(_BOXED_OPEN, index if depth == 0 else start + len(_BOXED_OPEN))
+    return answers
 
 
 def _math_answer(response: str) -> tuple[str | None, bool]:
-    """DeepEyes' compute_score_math parsing: the last \\boxed{...} (up to the first "}") after the last </think>;
-    returns it and whether the format is wrong (unbalanced think tags, or not exactly one boxed answer)."""
+    """DeepEyes' compute_score_math parsing: the last \\boxed{...} after the last </think> (with nested braces
+    matched, see _boxed_answers); returns it and whether the format is wrong (unbalanced think tags, or not exactly
+    one boxed answer)."""
     is_format_error = response.count("<think>") != response.count("</think>")
-    answers = _BOXED_ANSWER.findall(response.split("</think>")[-1].strip())
+    answers = _boxed_answers(response.split("</think>")[-1].strip())
     if len(answers) != 1:
         is_format_error = True
     return (answers[-1] if answers else None), is_format_error

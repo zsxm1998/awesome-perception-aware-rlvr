@@ -359,7 +359,6 @@ _MATH_CASES = [
     ("<think>a \\boxed{4}</think>so it is four", "4"),  # boxed only inside the reasoning
     ("<think>a</think><think>b \\boxed{4}", "4"),  # unbalanced think tags
     ("\\boxed{0.5}", "\\frac{1}{2}"),
-    ("\\boxed{\\frac{1}{2}}", "\\frac{1}{2}"),  # nested braces end the answer at the first "}"
     ("<think>a</think>\\boxed{B}", "B"),
     ("<think>a</think>\\boxed{x = 3}", "3"),
     ("<think>a</think>\\boxed{12\\%}", "12"),
@@ -393,6 +392,25 @@ def test_thinklite_reward_matches_the_official_compute_score_math(monkeypatch):
         -1.0,
     }
     assert all(score["tool"] == 0.0 for score in scores)
+
+
+def test_thinklite_answers_with_nested_braces_are_read_whole(monkeypatch):
+    """DeepEyes' regex stops at the first "}" (\\frac{1}{2} -> \\frac{1); the braces are matched here."""
+    monkeypatch.delenv("DEEPEYES_JUDGE_BASE_URL", raising=False)
+    cases = [
+        ("\\boxed{\\frac{1}{2}}", "\\frac{1}{2}"),
+        ("<think>a</think>\\boxed{\\frac{1}{2}}", "0.5"),
+        ("<think>a</think>\\boxed{\\frac{1}{2}} or \\boxed{\\frac{1}{3}}", "\\frac{1}{3}"),  # two answers
+        ("<think>a</think>\\boxed{\\frac{2}{3}}", "\\frac{1}{2}"),
+    ]
+    scores = deepeyes_reward.compute_score_official([_math_input(*case) for case in cases])
+    assert [score["overall"] for score in scores] == pytest.approx([1.2, 1.2, 0.8, 0.0])
+    assert [_official_compute_score_math(*case) for case in cases] == pytest.approx([0.0, 0.0, -0.4, 0.0])
+
+    assert deepeyes_reward._boxed_answers("\\boxed{} \\boxed{{3}} \\boxed{\\sqrt{2}} \\boxed{4") == [
+        "{3}",
+        "\\sqrt{2}",
+    ]
 
 
 def test_thinklite_reward_asks_the_math_judge_only_when_math_verify_fails(monkeypatch):
