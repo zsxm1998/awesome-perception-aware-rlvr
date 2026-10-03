@@ -47,13 +47,15 @@ DEEPEYES_JUDGE_BASE_URL=http://<judge-host>:8000/v1 DEEPEYES_JUDGE_MODEL=judge \
     bash examples/reproduction/deepeyes/qwen2_5_vl_7b_grpo_deepeyes.sh
 bash scripts/prepare_eval_data.sh deepeyes
 bash scripts/eval.sh checkpoints/DeepEyes-Reproduce/qwen2_5_vl_7b_grpo_deepeyes --suite deepeyes \
-    --agent-observation-min-pixels 3136
+    --agent-prompt-style official --agent-observation-min-pixels 3136
 # DeepEyes' own input resolution (up to 16384·28·28 pixels)
 bash scripts/eval.sh checkpoints/DeepEyes-Reproduce/qwen2_5_vl_7b_grpo_deepeyes --suite deepeyes \
-    --agent-observation-min-pixels 3136 --max-pixels 12845056
+    --agent-prompt-style official --agent-observation-min-pixels 3136 --max-pixels 12845056
 ```
 
-The `deepeyes` suite runs the agent loop by default. For the text-only baseline, append
+The `deepeyes` suite runs the agent loop by default. `--agent-prompt-style official` evaluates
+with the prompts the Qwen2.5-VL run was trained with (DeepEyes' system prompt and format
+instruction); drop it for `qwen2_5_vl_7b_grpo_deepeyes_native.sh` and the Qwen3-VL runs. For the text-only baseline, append
 `--interaction-mode one_shot --system-prompt examples/system_prompt/deepeyes_text_only.txt`.
 Checkpoints go to `checkpoints/DeepEyes-Reproduce/<script name>`. Append `key=value` overrides to
 the training command and set `N_GPUS_PER_NODE`, `NNODES`, `MODEL_PATH`, `DATA_ROOT`, `LOGGER` or

@@ -244,7 +244,7 @@ def test_agentic_backend_passes_bbox_format_and_records_model_frames(monkeypatch
         [sample], GenerationConfig(temperature=0.0, top_p=1.0, num_samples=1, max_new_tokens=32, seed=1)
     )
 
-    assert seen["bbox_format"] == "pixel"
+    assert seen["bbox_format"] == "pixel" and seen["prompt_style"] == "native"
     (record,) = outputs[0].diagnostics["image_sizes"]
     prepared = seen["image_cache"].prepare(seen["source_images"][0])
     # the recorded model-input frame is the one the zoom-in tool maps pixel boxes from
@@ -290,6 +290,62 @@ def test_build_backend_forwards_bbox_format_and_chat_template(monkeypatch):
     runner.build_eval_backend(args)
     assert captured["agent_bbox_format"] == "pixel"
     assert captured["chat_template"] == str(TOOL_TEMPLATE)
+    assert captured["agent_prompt_style"] == "native"
+    args.agent_prompt_style = "official"
+    runner.build_eval_backend(args)
+    assert captured["agent_prompt_style"] == "official"
+
+
+def test_official_prompt_style_builds_deepeyes_messages(tmp_path, capsys):
+    from easyr1_eval.prompting import apply_prompt_config, prompt_config_from_args
+
+    from verl.workers.agent.chat import OFFICIAL_DEEPEYES_FORMAT_INSTRUCTION, OFFICIAL_DEEPEYES_SYSTEM_PROMPT
+
+    qwen25 = _model_dir(tmp_path, "qwen2_5_vl")
+    args = _parse("--model", qwen25, "--suite", "deepeyes", "--agent-prompt-style", "official")
+    assert args.system_prompt is None and "system_prompt" not in args.suite_defaults_applied
+    assert args.box_format == "pixel"
+    sample = EvalSample("vstar", "0", "Is it red?\n(A) yes\n(B) no", "A", images=[Image.new("RGB", (8, 8))])
+    (built,) = apply_prompt_config(runner.apply_agent_prompt_style([sample], args), prompt_config_from_args(args))
+    assert built.messages == [
+        {"role": "system", "content": OFFICIAL_DEEPEYES_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": [
+                {"type": "image"},
+                {"type": "text", "text": "Is it red?\n(A) yes\n(B) no" + OFFICIAL_DEEPEYES_FORMAT_INSTRUCTION},
+            ],
+        },
+    ]
+    assert OFFICIAL_DEEPEYES_SYSTEM_PROMPT.startswith("You are a helpful assistant.\n\n# Tools\n")
+    assert (
+        '"name": "image_zoom_in_tool", "arguments": {"bbox_2d": [10, 20, 100, 200]' in OFFICIAL_DEEPEYES_SYSTEM_PROMPT
+    )
+
+    with pytest.raises(SystemExit):
+        _parse(
+            "--model",
+            qwen25,
+            "--suite",
+            "deepeyes",
+            "--agent-prompt-style",
+            "official",
+            "--system-prompt",
+            str(DEEPEYES_PIXEL),
+        )
+    assert "drop --system-prompt" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        _parse("--model", qwen25, "--agent-prompt-style", "official")
+    assert "only valid with --interaction-mode agentic" in capsys.readouterr().err
+
+
+def test_official_prompt_style_is_fingerprinted_only_when_set(tmp_path):
+    qwen25 = _model_dir(tmp_path, "qwen2_5_vl")
+    spec = BenchmarkSpec(key="vstar", label="V*", group="HighRes", loader="vstar", scorer="mcq", primary_metric="acc")
+    default = _parse("--model", qwen25, "--suite", "deepeyes")
+    native = _parse("--model", qwen25, "--suite", "deepeyes", "--agent-prompt-style", "native")
+    official = _parse("--model", qwen25, "--suite", "deepeyes", "--agent-prompt-style", "official")
+    assert _fingerprint(default, spec) == _fingerprint(native, spec) != _fingerprint(official, spec)
 
 
 def test_failed_tool_calls_keep_their_error_codes():

@@ -357,6 +357,13 @@ images of up to 16384*28*28 pixels; pass `--max-pixels 12845056` to match. To ev
 non-agent model on the DeepEyes suite, add `--interaction-mode one_shot --format-prompt
 examples/format_prompt/math_perception.jinja --system-prompt none`.
 
+`--agent-prompt-style official` evaluates a model trained with DeepEyes' own prompts
+(`worker.rollout.agent_prompt_style=official`): DeepEyes' system prompt (tool schema written
+out) replaces `--system-prompt`, its format instruction ("Think first, call
+**image_zoom_in_tool** if needed, then answer. ...") follows the question, and crops come back
+as `<tool_response><image>` + the same instruction + `</tool_response>`, as in its training data
+and evaluation scripts. The setting enters the result fingerprint only when used.
+
 Tool coordinates follow training (`worker.rollout.agent_bbox_format`). In agentic runs
 `--box-format auto` resolves from the model alone: Qwen2-VL / Qwen2.5-VL write `bbox_2d` in
 absolute pixels of the image as they see it (after the `--min-pixels`/`--max-pixels` resize

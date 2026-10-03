@@ -75,6 +75,7 @@ class AgenticVLLMBackend:
         agent_max_batch_images: int,
         agent_tool_image_mode: str = "original",
         agent_observation_min_pixels: int | None = None,
+        agent_prompt_style: str = "native",
         tensor_parallel_size: int = 1,
         max_model_len: int | None = None,
         gpu_memory_utilization: float = 0.9,
@@ -108,6 +109,8 @@ class AgenticVLLMBackend:
             raise ValueError("agentic evaluation does not yet support pixel or feature perturbations")
         if agent_bbox_format not in {"norm1000", "pixel"}:
             raise ValueError("agent_bbox_format must be 'norm1000' or 'pixel'")
+        if agent_prompt_style not in {"native", "official"}:
+            raise ValueError("agent_prompt_style must be 'native' or 'official'")
 
         self.agent_profile = agent_profile
         self.agent_config = agent_config
@@ -115,6 +118,7 @@ class AgenticVLLMBackend:
         self.agent_max_batch_images = agent_max_batch_images
         self.agent_tool_image_mode = agent_tool_image_mode
         self.agent_observation_min_pixels = agent_observation_min_pixels
+        self.agent_prompt_style = agent_prompt_style
         # Coordinate convention of the zoom-in tool's bbox_2d: 0-1000 of the source image, or
         # absolute pixels of the frame a Qwen2-VL / Qwen2.5-VL model sees.
         self.agent_bbox_format = agent_bbox_format
@@ -333,6 +337,7 @@ class AgenticVLLMBackend:
             max_model_len=self.max_model_len,
             tool_image_mode=self.agent_tool_image_mode,
             bbox_format=self.agent_bbox_format,
+            prompt_style=getattr(self, "agent_prompt_style", "native"),
         )
 
 

@@ -212,6 +212,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "in training (DeepEyes: 3136).",
     )
     parser.add_argument(
+        "--agent-prompt-style",
+        choices=["native", "official"],
+        default="native",
+        help="native: --system-prompt (examples/system_prompt/deepeyes*.txt) through the tool-call chat template; "
+        "official: DeepEyes' own system prompt, its format instruction after the question and its tool response "
+        "format, as worker.rollout.agent_prompt_style=official in training.",
+    )
+    parser.add_argument(
         "--agent-tool-image-mode",
         choices=["original", "fixed_gray", "text_skipped"],
         default="original",
@@ -375,6 +383,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                 "--agent-max-response-tokens and "
                 "--agent-max-tokens-per-turn"
             )
+    if args.interaction_mode == "agentic" and getattr(args, "agent_prompt_style", "native") == "official":
+        if args.system_prompt and "system_prompt" not in (getattr(args, "suite_defaults_applied", None) or {}):
+            parser.error("--agent-prompt-style official uses DeepEyes' own system prompt; drop --system-prompt")
+        if args.format_prompt:
+            parser.error("--agent-prompt-style official does not use --format-prompt")
+        args.system_prompt = None  # the official system prompt is added when the messages are built
+        (getattr(args, "suite_defaults_applied", None) or {}).pop("system_prompt", None)
+        try:
+            agent_loop_config_from_args(args)
+        except (TypeError, ValueError) as exc:
+            parser.error(str(exc))
+        if args.agent_max_images_per_prompt <= 0:
+            parser.error("--agent-max-images-per-prompt must be positive")
+    elif args.interaction_mode == "agentic":
         if not args.system_prompt:
             parser.error(
                 "native DeepEyes agentic mode requires --system-prompt examples/system_prompt/deepeyes.txt "
@@ -415,6 +437,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             parser.error("--agent-max-images-per-prompt must be positive")
     elif args.agent_tool_image_mode != "original":
         parser.error("--agent-tool-image-mode is only valid with --interaction-mode agentic")
+    if args.interaction_mode != "agentic" and getattr(args, "agent_prompt_style", "native") != "native":
+        parser.error("--agent-prompt-style is only valid with --interaction-mode agentic")
     return args
 
 
@@ -1001,6 +1025,7 @@ def infer_benchmark_shard(
     samples = apply_grounding_instruction(samples, args)
     samples = apply_answer_protocol(samples, spec, args)
     samples = apply_box_format_to_prompts(samples, getattr(args, "box_format", "norm1000"))
+    samples = apply_agent_prompt_style(samples, args)
     samples = apply_prompt_config(samples, prompt_config_from_args(args))
     output = shard_prediction_path(args.output_dir, spec, shard_index)
     if backend is None:
@@ -1075,6 +1100,18 @@ def apply_interaction_prompt_contract(
         (replace(sample, prompt=sample.native_agentic_prompt) if sample.native_agentic_prompt is not None else sample)
         for sample in samples
     ]
+
+
+def apply_agent_prompt_style(samples: list[EvalSample], args: argparse.Namespace) -> list[EvalSample]:
+    """--agent-prompt-style official: DeepEyes' format instruction after the question, as in its training data and
+    evaluation scripts (the system prompt is added by prompt_config_from_args)."""
+    if getattr(args, "interaction_mode", "one_shot") != "agentic" or getattr(args, "agent_prompt_style", "native") != (
+        "official"
+    ):
+        return samples
+    from verl.workers.agent.chat import OFFICIAL_DEEPEYES_FORMAT_INSTRUCTION
+
+    return [replace(sample, prompt=sample.prompt + OFFICIAL_DEEPEYES_FORMAT_INSTRUCTION) for sample in samples]
 
 
 PEPO_MATHVERSE_INSTRUCTION = "\nAnswer with the option's letter from the given choices directly."
@@ -1250,6 +1287,7 @@ def build_eval_backend(args: argparse.Namespace):
         agent_config=agent_loop_config_from_args(args),
         agent_max_images_per_prompt=int(getattr(args, "agent_max_images_per_prompt", 16)),
         agent_observation_min_pixels=getattr(args, "agent_observation_min_pixels", None),
+        agent_prompt_style=getattr(args, "agent_prompt_style", "native"),
         agent_max_batch_images=int(args.max_batch_images),
         agent_tool_image_mode=getattr(
             args,
@@ -1474,6 +1512,7 @@ def _agent_fingerprint_fields(args: argparse.Namespace) -> dict[str, Any]:
             if getattr(args, "agent_observation_min_pixels", None) is not None
             else {}
         ),
+        **({"agent_prompt_style": "official"} if getattr(args, "agent_prompt_style", "native") == "official" else {}),
         "agent_tool_image_mode": getattr(
             args,
             "agent_tool_image_mode",

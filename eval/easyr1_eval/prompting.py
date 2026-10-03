@@ -30,9 +30,17 @@ class PromptConfig:
 
 
 def prompt_config_from_args(args: Any) -> PromptConfig:
+    system_prompt = _read_optional_text(getattr(args, "system_prompt", None), strip=True)
+    if (
+        getattr(args, "interaction_mode", None) == "agentic"
+        and getattr(args, "agent_prompt_style", None) == "official"
+    ):
+        from verl.workers.agent.chat import OFFICIAL_DEEPEYES_SYSTEM_PROMPT
+
+        system_prompt = OFFICIAL_DEEPEYES_SYSTEM_PROMPT
     return PromptConfig(
         format_prompt=_read_optional_text(getattr(args, "format_prompt", None), strip=False),
-        system_prompt=_read_optional_text(getattr(args, "system_prompt", None), strip=True),
+        system_prompt=system_prompt,
         prompt_mode=str(getattr(args, "prompt_mode", "raw")),
     )
 
