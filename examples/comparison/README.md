@@ -77,7 +77,8 @@ script overrides the shared setting (e.g. `bash examples/comparison/qwen3_vl_4b/
 `N_GPUS_PER_NODE`, `MODEL_PATH`, `DATA_ROOT`, `LOGGER` and `EXPERIMENT_NAME` are read from the
 environment. `grit` and `cgpo` answer in their own formats, so evaluate them with the matching
 prompt: `--format-prompt none --system-prompt examples/system_prompt/grit_GR.txt` for `grit` (on the
-GRIT sets, `--suite grit` with these flags and `--min-pixels 200704 --max-pixels 1003520`),
+GRIT sets, `--benchmarks grit_vsr,grit_tallyqa,grit_gqa,ovdeval_position` with these flags; the `grit`
+suite holds GRIT's own protocol for the reproduction models),
 `--format-prompt examples/format_prompt/xml_grounded_reasoning.jinja` for `cgpo`. See
 [eval/README.md](../../eval/README.md).
 

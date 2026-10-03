@@ -99,7 +99,7 @@ also set prompt defaults (see [Prompts](#prompts)); explicit flags always win.
 | `vepo` | geo3k, mmk12, hallusionbench, mathvista, wemath, mathverse, mathvision | VEPO Table 1; the paper uses greedy decoding and a gpt-4o-mini judge for 4 benchmarks, we use rule-based avg@8 |
 | `tor` | mathverse, mathvision, mathvista, wemath, hallusionbench | ToR Table 4; the paper follows NoisyRollout (greedy + Gemini answer parsing), we use rule-based avg@8 |
 | `cfpo` | cvqa_real, mars_bench, pope, textvqa, mmmu_pro, geo3k, wemath, mmk12, mathverse, logicvista | CFPO Table 1; CFPO reports POPE as pooled accuracy with avg@8 (same 9,000 questions; our primary is greedy macro F1, pooled accuracy in the details); CFPO's LogicVista file has 448 items, PAPO-Eval's 447 |
-| `grit` | grit_vsr, grit_tallyqa, grit_gqa, ovdeval_position | GRIT Table 1 (GRIT judges answers with GPT-4o, we use relaxed exact match); defaults follow GRIT's evaluation: its prompt (`grit.jinja`, no system prompt), the bare question (`--grounding-instruction none`; other suites append a box instruction to these sets) and 3,136–200,704 pixels |
+| `grit` | grit_vsr, grit_tallyqa, grit_gqa, ovdeval_position | GRIT Table 1 (GRIT judges answers with GPT-4o, we use relaxed exact match); defaults follow GRIT's evaluation, for models trained with GRIT's prompt: its prompt (`grit.jinja`, no system prompt), the bare question (`--grounding-instruction none`; elsewhere a box instruction is appended to these sets) and 3,136–200,704 pixels. Evaluate other models on these sets with `--benchmarks grit_vsr,grit_tallyqa,grit_gqa,ovdeval_position` and their own prompt flags |
 | `deepeyes` | vstar, hrbench_4k, hrbench_8k, mme_realworld_lite, pope | DeepEyes Tables 1-3; default: agentic DeepEyes inference (see [Agentic evaluation](#agentic-evaluation-deepeyes)) |
 | `cgpo` | = `papo` | CGPO natural-image reproduction (trained on ViRL39K); default prompt `xml_grounded_reasoning.jinja` |
 | `comparison` | `papo` + `vppo` + pope, hallusionbench | the benchmark set used by `examples/comparison/` |
@@ -275,7 +275,7 @@ Evaluate a model with the prompt it was trained with:
 | PEPO (Geometry3K setting) | `--format-prompt examples/format_prompt/pepo.jinja` (suite `pepo_geometry`) |
 | CGPO | `--format-prompt examples/format_prompt/xml_grounded_reasoning.jinja` (suite `cgpo`) |
 | GRIT (`examples/reproduction/grit`) | `--format-prompt examples/format_prompt/grit.jinja --system-prompt none --min-pixels 3136 --max-pixels 200704` (suite `grit`) |
-| GRIT in the comparison (`examples/comparison/qwen3_vl_4b/grit.sh`) | `--format-prompt none --system-prompt examples/system_prompt/grit_GR.txt`, with `--suite grit` also `--min-pixels 200704 --max-pixels 1003520` |
+| GRIT in the comparison (`examples/comparison/qwen3_vl_4b/grit.sh`) | `--format-prompt none --system-prompt examples/system_prompt/grit_GR.txt`; on the GRIT sets with `--benchmarks grit_vsr,grit_tallyqa,grit_gqa,ovdeval_position`, not `--suite grit` |
 | DeepEyes | `--interaction-mode agentic --system-prompt examples/system_prompt/deepeyes.txt` (suite `deepeyes`; `deepeyes_pixel.txt` for Qwen2-VL / Qwen2.5-VL) |
 
 ## LLM judge

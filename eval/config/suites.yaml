@@ -109,10 +109,12 @@ suites:
       max_pixels: 200704
     notes: >-
       GRIT judges answers with GPT-4o; we use rule-based relaxed exact match. The GRIT-paper
-      grounding IoU is reported as grounding/grit_iou in the metric details. The comparison
-      GRIT (examples/comparison) answers in its own format: evaluate it with
-      --format-prompt none --system-prompt examples/system_prompt/grit_GR.txt
-      --min-pixels 200704 --max-pixels 1003520.
+      grounding IoU is reported as grounding/grit_iou in the metric details. These defaults are
+      for models trained with GRIT's prompt; evaluate other models on these sets with
+      --benchmarks grit_vsr,grit_tallyqa,grit_gqa,ovdeval_position and their own prompt flags
+      (the box instruction is appended and the default pixels apply, as in --suite all), e.g.
+      the comparison GRIT with --format-prompt none --system-prompt
+      examples/system_prompt/grit_GR.txt.
 
   deepeyes:
     description: DeepEyes high-resolution (Tables 1-2) and hallucination (POPE) benchmarks
