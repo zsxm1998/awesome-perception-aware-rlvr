@@ -26,7 +26,7 @@ zoom-in was used.
 | Rollout | 256 prompts x 16 rollouts per step, T=1.0, top-p 1.0; one policy update per step (update batch 256 prompts) |
 | RL | GRPO; no KL; clip 0.2 / 0.2; no entropy term |
 | Optimization | AdamW (bf16), lr 1e-6 constant, vision tower trainable, 80 steps (`trainer.max_steps=80`) |
-| Lengths / pixels | max prompt 8,192; 200,704-1,003,520 pixels per input image |
+| Lengths / pixels | max prompt 8,192; 200,704-1,003,520 pixels per input image; tool crops at least 3,136 pixels (`worker.rollout.agent_observation_min_pixels=3136`, as the official code), so a small crop is not upscaled |
 | GPUs | 8 (one node) |
 
 DeepEyes changes the rollout mode and the reward; no `algorithm.*` switch is used.

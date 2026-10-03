@@ -386,6 +386,7 @@ class vLLMRollout(BaseRollout):
             min_pixels=prompts.meta_info.get("min_pixels"),
             max_pixels=prompts.meta_info.get("max_pixels"),
             limit_images=self.config.limit_images,
+            observation_min_pixels=self.config.agent_observation_min_pixels,
         )
         loop_config = AgentLoopConfig(
             max_tool_calls=self.config.agent_max_tool_calls,

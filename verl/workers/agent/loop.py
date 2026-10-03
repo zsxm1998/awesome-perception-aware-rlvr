@@ -14,10 +14,12 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Optional, Sequence
 
 from PIL import Image
 
+from ...utils.dataset import ProcessedImageInput, process_image
 from .protocol import (
     AgentImageConfig,
     AgentLoopConfig,
@@ -240,6 +242,7 @@ class AgentLoop:
                 assert parsed.tool_call is not None
                 step.tool_call = parsed.tool_call
                 result = self.tool_registry.execute(parsed.tool_call, source_images)
+                result = self._resize_observation_images(result)
             step.tool_result = result
             self._record_tool_result(metrics, result)
 
@@ -314,6 +317,20 @@ class AgentLoop:
             response_token_budget=self.config.max_response_tokens,
             image_config=self.image_config,
             assistant_termination_token_ids=self.assistant_termination_token_ids,
+        )
+
+    def _resize_observation_images(self, result: ToolResult) -> ToolResult:
+        """With observation_min_pixels, resize tool images once to [observation_min_pixels, max_pixels]; the
+        wrapped result is not resized again by the rollout, the observation encoder or the trainer."""
+        min_pixels = self.image_config.observation_min_pixels
+        if min_pixels is None or not result.images:
+            return result
+        return replace(
+            result,
+            images=[
+                ProcessedImageInput(process_image(image, min_pixels, self.image_config.max_pixels))
+                for image in result.images
+            ],
         )
 
     def _record_tool_result(self, metrics: AgentMetrics, result: ToolResult) -> None:

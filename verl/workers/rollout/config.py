@@ -52,6 +52,9 @@ class RolloutConfig:
     # coordinates in the resized frame the model sees; Qwen2-VL / Qwen2.5-VL) or "auto" (from the
     # model's config.json). Resolved during config validation.
     agent_bbox_format: str = "auto"
+    # Lower pixel bound of the zoom-in tool's crops (None: data.min_pixels); DeepEyes uses 3136, so a small crop
+    # stays small instead of being upscaled to data.min_pixels.
+    agent_observation_min_pixels: Optional[int] = None
     val_override_config: dict[str, Any] = field(default_factory=dict)
     # below are auto keys
     prompt_length: int = field(default=-1, init=False)

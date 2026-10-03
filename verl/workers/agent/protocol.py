@@ -31,9 +31,12 @@ class AgentImageConfig:
     # ``None`` is unbounded. EasyR1's public rollout config uses 0 as the
     # equivalent sentinel, which is normalized here at the boundary.
     limit_images: Optional[int] = None
+    # Lower pixel bound of tool observations (crops); ``None`` uses ``min_pixels``. Observations are resized
+    # once when the tool returns them, so rollout and training see the same size.
+    observation_min_pixels: Optional[int] = None
 
     def __post_init__(self) -> None:
-        for name in ("min_pixels", "max_pixels"):
+        for name in ("min_pixels", "max_pixels", "observation_min_pixels"):
             value = getattr(self, name)
             if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value <= 0):
                 raise ValueError(f"{name} must be a positive integer when provided")

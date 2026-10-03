@@ -90,6 +90,7 @@ DEEPEYES_AGENT_ARGS=(
     "worker.rollout.agent_max_tool_calls=6"
     "worker.rollout.agent_max_tokens_per_turn=10240"
     "worker.rollout.agent_max_batch_images=256"
+    "worker.rollout.agent_observation_min_pixels=3136"
     "worker.rollout.limit_images=16"
     "worker.rollout.mm_processor_cache_gb=4"
     "worker.reward.reward_function=$ROOT_DIR/examples/reward_function/deepeyes.py:compute_score_official"

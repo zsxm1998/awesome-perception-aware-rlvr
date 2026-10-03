@@ -1630,3 +1630,26 @@ def test_vllm_backend_reuses_resized_images_and_stable_uuids_across_turns():
     second_prompt = engine.calls[1]["prompts"][0]
     assert first_prompt["multi_modal_data"]["image"][0] is second_prompt["multi_modal_data"]["image"][0]
     assert first_prompt["multi_modal_uuids"]["image"][0] == second_prompt["multi_modal_uuids"]["image"][0]
+
+
+def test_observation_min_pixels_keeps_small_crops_small_downstream():
+    from verl.utils.dataset import ProcessedImageInput, process_image
+    from verl.workers.agent.protocol import AgentImageConfig
+
+    source = Image.new("RGB", (200, 100), color="red")
+    encoder = RecordingObservationEncoder()
+    encoder.image_config = AgentImageConfig(min_pixels=40000, max_pixels=1000000, observation_min_pixels=3136)
+    backend = ScriptedBackend(
+        [
+            GenerationOutput([10], _tool_call({"bbox_2d": [0, 0, 500, 1000]})),  # a 100 x 100 crop
+            GenerationOutput([11], "<answer>done</answer>"),
+        ]
+    )
+    loop = AgentLoop(backend, encoder, ToolRegistry([ImageZoomInTool()]))
+    trajectory = asyncio.run(loop.run(prompt_ids=[1], source_images=[source]))
+
+    (crop,) = trajectory.observation_images
+    assert isinstance(crop, ProcessedImageInput) and crop.image.size == (100, 100)
+    # the rollout, the observation encoder and the trainer resize with data.min_pixels, which keeps it as is
+    assert process_image(crop, 40000, 1000000).size == (100, 100)
+    assert process_image(source, 40000, 1000000).size != source.size  # source images still follow min_pixels
