@@ -62,7 +62,10 @@ environment. Evaluation is described in [eval/README.md](../../../eval/README.md
   first number, short open-ended answers by containment of the reference phrase, with a `mathruler`
   fallback), so training needs no API access. The other reward terms follow the released code,
   which differs from the paper text (counting bonus 1.0 instead of 0.5, structure term capped at
-  0.5, extra answer-format and repetition terms).
+  0.5, extra answer-format and repetition terms), except the BLEU-1 term: the released code
+  scores everything after `<answer>`, so the closing tag (cleaned to the word "answer") and any
+  text after it enter the hypothesis (`<answer>cat</answer>` against "cat" gets 0.05 instead of
+  0.1); we score the text between the tags.
 - **Batch.** Each step uses all 20 training prompts (80 rollouts). The paper states a total batch of
   128; the released Qwen script uses 1 sample per device without gradient accumulation on 8 GPUs.
   The InternVL run uses the same settings as the Qwen run except for the image tiles and the
