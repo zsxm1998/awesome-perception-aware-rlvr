@@ -99,8 +99,9 @@ export DEEPEYES_JUDGE_BASE_URL=https://<provider>/v1 DEEPEYES_JUDGE_MODEL=<model
 
 `DEEPEYES_JUDGE_WORKERS` sets the number of concurrent judge requests (default 32). A failed request
 is tried up to 3 times for the answer judge (the official code calls it once) and 8 times for the
-math judge (as the official code); after that the answer judge falls back to the rule below and
-the math judge counts the answer as wrong.
+math judge (as the official code), each waiting at most `DEEPEYES_JUDGE_TIMEOUT` seconds (default
+120); after that the answer judge falls back to the rule below and the math judge counts the answer
+as wrong, and the score records it (`reward/judge_failed`, the share of samples).
 
 Without a judge, a rule decides: option letters for multiple-choice references, the first yes/no
 for yes/no references, and otherwise the answer's keywords (words outside the question and a stop

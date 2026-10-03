@@ -501,6 +501,37 @@ def test_thinklite_reward_asks_the_math_judge_only_when_math_verify_fails(monkey
     assert "**Question**:\nFind x.\n\n**Reference Answer**\n4\n\n## Student Final Answer\n" in message["content"]
 
 
+def test_judge_failures_are_reported(monkeypatch):
+    """A judge that never answers: the answer judge falls back to the rule, the math judge counts as wrong, and the
+    score says so (judge_failed) instead of hiding it."""
+
+    class _Completions:
+        def create(self, **kwargs):
+            raise TimeoutError("judge down")
+
+    client = type("Client", (), {"chat": type("Chat", (), {"completions": _Completions()})()})()
+    monkeypatch.setattr(deepeyes_reward, "_judge_client", lambda: client)
+    rule, math_wrong, math_rule = deepeyes_reward.compute_score_official(
+        [
+            _official_input("white", "The chair is white.", "vstar", 1, "What color is the chair?"),
+            _math_input("<think>a</think>\\boxed{7}", "6"),
+            _math_input("<think>a</think>\\boxed{6}", "6"),
+        ]
+    )
+    assert (rule["accuracy"], rule["judge_failed"]) == (1.0, 1.0)
+    assert (math_wrong["accuracy"], math_wrong["judge_failed"]) == (0.0, 1.0)
+    assert (math_rule["accuracy"], math_rule["judge_failed"]) == (1.0, 0.0)  # math_verify decided, no judge call
+
+
+def test_judge_client_waits_a_bounded_time(monkeypatch):
+    for proxy in ("all_proxy", "ALL_PROXY", "http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY"):
+        monkeypatch.delenv(proxy, raising=False)  # a SOCKS proxy would need the optional socksio package
+    monkeypatch.setenv("DEEPEYES_JUDGE_BASE_URL", "http://127.0.0.1:9/v1")
+    monkeypatch.setenv("DEEPEYES_JUDGE_TIMEOUT", "30")
+    client = deepeyes_reward._judge_client()
+    assert client.max_retries == 0 and client.timeout == 30.0
+
+
 def test_math_verify_runs_outside_the_main_thread():
     results = []
     thread = threading.Thread(target=lambda: results.append(deepeyes_reward._math_verify("\\frac{1}{2}", "0.5")))

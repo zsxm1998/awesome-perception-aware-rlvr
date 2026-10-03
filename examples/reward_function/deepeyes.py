@@ -269,11 +269,19 @@ def _judge_client():
         return None
     from openai import OpenAI
 
-    return OpenAI(base_url=base_url, api_key=os.environ.get("DEEPEYES_JUDGE_API_KEY", "EMPTY"))
+    # the retries are ours (3 for the answer judge, 8 for the math judge); the client would add 2 per call and wait up
+    # to 600 s for each
+    return OpenAI(
+        base_url=base_url,
+        api_key=os.environ.get("DEEPEYES_JUDGE_API_KEY", "EMPTY"),
+        timeout=float(os.environ.get("DEEPEYES_JUDGE_TIMEOUT", "120")),
+        max_retries=0,
+    )
 
 
-def _judge_match(client, question: str, prediction: str, reference: str) -> bool:
-    """DeepEyes' judge call: its few-shot prompt, system "You are a helpful assistant.", temperature 0.3."""
+def _judge_match(client, question: str, prediction: str, reference: str) -> bool | None:
+    """DeepEyes' judge call: its few-shot prompt, system "You are a helpful assistant.", temperature 0.3. None when
+    every attempt failed."""
     model = os.environ.get("DEEPEYES_JUDGE_MODEL", "judge")
     for _ in range(3):
         try:
@@ -288,7 +296,7 @@ def _judge_match(client, question: str, prediction: str, reference: str) -> bool
             return _parse_judgement(completion.choices[0].message.content or "")
         except Exception:
             continue
-    return _rule_match(prediction, reference, question)
+    return None
 
 
 # DeepEyes' math judge prompt (verl/utils/reward_score/vl_agent.py: MATH_VERIFY_PROMPT)
@@ -386,8 +394,9 @@ def _math_rule_fallback(answer: str, reference: str, question: str) -> bool:
     return _rule_match(answer, reference, question)
 
 
-def _judge_math(client, question: str, reference: str, answer: str) -> bool:
-    """DeepEyes' generative_verify: MATH_VERIFY_PROMPT as the only (user) message, temperature 0."""
+def _judge_math(client, question: str, reference: str, answer: str) -> bool | None:
+    """DeepEyes' generative_verify: MATH_VERIFY_PROMPT as the only (user) message, temperature 0. None when every
+    attempt failed."""
     model = os.environ.get("DEEPEYES_JUDGE_MODEL", "judge")
     prompt = _MATH_VERIFY_PROMPT.format(query=question, gold_ans=reference, pred_ans=answer)
     for _ in range(8):
@@ -400,7 +409,7 @@ def _judge_math(client, question: str, reference: str, answer: str) -> bool:
         except Exception:
             continue
     else:
-        return False
+        return None
     judgement = reply.split("## Equivalence Judgement")[-1].lower()
     return "true" in judgement and "false" not in judgement
 
@@ -420,30 +429,35 @@ def compute_score_official(reward_inputs: list[dict[str, Any]]) -> list[dict[str
         for index, (answer, _) in math_answers.items()
     }
 
-    def decide(index: int) -> float:
+    def decide(index: int) -> tuple[float, bool]:
+        """(accuracy, whether the judge failed): a failed answer judge falls back to the rule, a failed math judge
+        counts the answer as wrong."""
         reward_input = reward_inputs[index]
-        reference = str(reward_input["ground_truth"])
+        reference, question = str(reward_input["ground_truth"]), reward_input.get("question", "")
         if index in math_answers:
             answer = math_answers[index][0]
             if math_rule[index]:
-                return 1.0
+                return 1.0, False
             if answer is None:
-                return 0.0
+                return 0.0, False
             if client is None:
-                return 1.0 if _math_rule_fallback(answer, reference, reward_input.get("question", "")) else 0.0
-            return 1.0 if _judge_math(client, reward_input.get("question", ""), reference, answer) else 0.0
+                return float(_math_rule_fallback(answer, reference, question)), False
+            judged = _judge_math(client, question, reference, answer)
+            return float(bool(judged)), judged is None
         final_answer = finals[index]
         # as the official reward, an answer of 1,000 characters or more is wrong (and a format error), so that a long
         # answer cannot talk the judge into a match; the math rows have no such check
         if final_answer is None or len(final_answer) >= _MAX_ANSWER_CHARS:
-            return 0.0
-        if client is None:
-            return 1.0 if _rule_match(final_answer, reference, reward_input.get("question", "")) else 0.0
-        return 1.0 if _judge_match(client, reward_input.get("question", ""), final_answer, reference) else 0.0
+            return 0.0, False
+        judged = None if client is None else _judge_match(client, question, final_answer, reference)
+        if judged is None:
+            return float(_rule_match(final_answer, reference, question)), client is not None
+        return float(judged), False
 
     workers = int(os.environ.get("DEEPEYES_JUDGE_WORKERS", "32")) if client is not None else 1
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-        accuracies = list(pool.map(decide, range(len(reward_inputs))))
+        decisions = list(pool.map(decide, range(len(reward_inputs))))
+    accuracies = [accuracy for accuracy, _ in decisions]
 
     base_scores = compute_score(reward_inputs)
     scores = []
@@ -459,7 +473,16 @@ def compute_score_official(reward_inputs: list[dict[str, Any]]) -> list[dict[str
             format_score = format_reward(response, final_answer)
             tool_score = 1.0 if accuracy == 1.0 and int(reward_input.get("tool_call_successes", 0)) > 0 else 0.0
             overall = 0.8 * accuracy + 0.2 * format_score + 1.2 * tool_score
-        scores.append({**base, "overall": overall, "accuracy": accuracy, "format": format_score, "tool": tool_score})
+        scores.append(
+            {
+                **base,
+                "overall": overall,
+                "accuracy": accuracy,
+                "format": format_score,
+                "tool": tool_score,
+                "judge_failed": float(decisions[index][1]),  # the judge did not answer after all retries
+            }
+        )
     return scores
 
 
