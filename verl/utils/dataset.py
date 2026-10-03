@@ -208,8 +208,9 @@ class RLHFDataset(Dataset):
 
         messages: list[dict[str, Any]] = []
         system_prompt = self.system_prompt
-        if self.system_prompt_key and example.get(self.system_prompt_key):
-            system_prompt = str(example[self.system_prompt_key]).strip()
+        row_system_prompt = str(example.get(self.system_prompt_key) or "").strip() if self.system_prompt_key else ""
+        if row_system_prompt:  # an empty or blank value keeps data.system_prompt
+            system_prompt = row_system_prompt
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
 

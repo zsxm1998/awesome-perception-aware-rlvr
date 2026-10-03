@@ -220,6 +220,7 @@ class TestSystemPrompt:
         rows = [
             {"question": "What is 2+2?", "answer": "4", "row_system": "  You solve math problems.\n"},
             {"question": "What is 3+3?", "answer": "6", "row_system": ""},
+            {"question": "What is 4+4?", "answer": "8", "row_system": "  \n"},
         ]
         data_file = tmp_path / "rows.json"
         data_file.write_text(json.dumps(rows))
@@ -238,6 +239,7 @@ class TestSystemPrompt:
         ds = RLHFDataset(system_prompt=sys_prompt_file, **kwargs)
         assert ds._build_messages(ds.dataset[0])[0] == {"role": "system", "content": "You solve math problems."}
         assert ds._build_messages(ds.dataset[1])[0] == {"role": "system", "content": self.SYSTEM_TEXT}
+        assert ds._build_messages(ds.dataset[2])[0] == {"role": "system", "content": self.SYSTEM_TEXT}  # blank
         ds = RLHFDataset(**kwargs)
         assert ds[0]["raw_prompt"][0] == {"role": "system", "content": "You solve math problems."}
         assert [message["role"] for message in ds._build_messages(ds.dataset[1])] == ["user"]
