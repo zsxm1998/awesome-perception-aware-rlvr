@@ -82,14 +82,16 @@ suites:
   cfpo:
     description: CFPO Table 1 (5 real-world + 5 math benchmarks)
     benchmarks: [cvqa_real, mars_bench, pope, textvqa, mmmu_pro, geo3k, wemath, mmk12, mathverse, logicvista]
+    defaults:  # the training prompt of examples/reproduction/cfpo (CFPO's system prompt)
+      format_prompt: none
+      system_prompt: examples/system_prompt/cfpo.txt
     notes: >-
       C-VQA-Real, MARS-Bench and TextVQA use CFPO's data and grading (avg@8, mathruler match
       on the last \boxed{} or on the whole response when there is none). CFPO's POPE_test.json
       holds the same 9,000 questions as lmms-lab/POPE; CFPO reports pooled accuracy with avg@8
       sampling, our POPE primary is greedy macro-F1 with the pooled accuracy in the details.
-      CFPO evaluates its own models with a system prompt that asks for <think> and \boxed{};
-      we use the training format prompt. CFPO's LogicVista file has 448 items (we use the
-      447-item PAPO-Eval split).
+      As CFPO, the models are prompted with CFPO's system prompt (<think> and \boxed{}).
+      CFPO's LogicVista file has 448 items (we use the 447-item PAPO-Eval split).
 
   grit:
     description: GRIT Table 1 grounded-reasoning benchmarks

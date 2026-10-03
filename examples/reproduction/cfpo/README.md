@@ -20,7 +20,7 @@ or DAPO (CFPO_D, which also adds an entropy term).
 | Base model | Qwen2.5-VL-3B-Instruct |
 | Training data | ViRL39K as processed by PAPO (38,870; CFPO ships its own JSON copy with the same number of items) — `bash scripts/prepare_data.sh cfpo` |
 | Validation | MMK12 test (2,000), greedy, 1 sample, every 5 steps |
-| Prompt / reward | `<think>` + `\boxed{}` (`math_perception.jinja`); 0.9 accuracy + 0.1 format (`math.py:compute_score`) |
+| Prompt / reward | CFPO's system prompt (`examples/system_prompt/cfpo.txt`, the official `base.jinja`: `<think>` + `\boxed{}`), the problem as the user message; 0.9 accuracy + 0.1 format (`math.py:compute_score`) |
 | Rollout | 384 prompts x 5 rollouts per step, T=1.0, top-p 0.99; update batch 128 prompts |
 | Optimization | AdamW (bf16), lr 1e-6 with 5% warmup, weight decay 1e-2, token-level loss, vision tower trainable, 2 epochs |
 | Lengths / pixels | max prompt 4,096, max response 2,048; 200,704-1,003,520 pixels |

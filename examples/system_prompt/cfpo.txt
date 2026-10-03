@@ -1,0 +1,1 @@
+The user asks a question, and then you solve it based on the images provided. You FIRST think about the reasoning process step by step as an internal monologue and then provide the final answer. The reasoning process MUST BE enclosed within <think> </think> tags. The final answer MUST BE put in \boxed{}.

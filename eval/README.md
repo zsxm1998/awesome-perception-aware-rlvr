@@ -253,7 +253,8 @@ Evaluate a model with the prompt it was trained with:
 
 | Model | Flags (or suite default) |
 |---|---|
-| PAPO, VPPO, DVRP, PGPO, CFPO, ToR, GRPO/DAPO baselines | default (`math_perception.jinja`) |
+| PAPO, VPPO, DVRP, PGPO, ToR, GRPO/DAPO baselines | default (`math_perception.jinja`) |
+| CFPO | `--format-prompt none --system-prompt examples/system_prompt/cfpo.txt` (suite `cfpo`) |
 | VEPO | `--format-prompt none --system-prompt examples/system_prompt/vepo.txt` (suite `vepo`) |
 | PEPO (Geometry3K setting) | `--format-prompt examples/format_prompt/pepo.jinja` (suite `pepo_geometry`) |
 | CGPO | `--format-prompt examples/format_prompt/xml_grounded_reasoning.jinja` (suite `cgpo`) |
