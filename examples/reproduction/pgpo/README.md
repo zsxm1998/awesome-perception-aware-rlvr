@@ -28,7 +28,7 @@ their sum equal to the response length, and multiply the DAPO advantage token by
 | GPUs | 4 |
 | Blind pass | `algorithm.corrupt_image=mask_visual_attention`, `algorithm.corrupt_image_position=prompt` |
 | Visual dependency | `algorithm.visual_sensitivity_metric=sampled_low_var_kl`, `algorithm.visual_sensitivity_reference=old` |
-| Token scaling | `algorithm.advantage_scaling_method=pgpo`, `algorithm.pgpo_token_scaling_threshold=0.4` (τ), `algorithm.pgpo_token_scaling_boost=2.0` (β) |
+| Token scaling | `algorithm.advantage_scaling_method=pgpo`, `algorithm.pgpo_token_scaling_threshold=0.4` (τ), `algorithm.pgpo_token_scaling_boost=2.0` (β); the `_authorcode` scripts add `algorithm.pgpo_threshold_mode=quantile`, `algorithm.pgpo_low_weight_floor=0.1`, `algorithm.pgpo_mass_normalization=false` (see below) |
 
 See [docs/algorithm_parameters.md](../../../docs/algorithm_parameters.md) for the full list of `algorithm.*` switches.
 
@@ -37,9 +37,11 @@ See [docs/algorithm_parameters.md](../../../docs/algorithm_parameters.md) for th
 | Script | Run |
 | --- | --- |
 | `qwen2_5_vl_3b_dapo.sh` | DAPO baseline, 3B |
-| `qwen2_5_vl_3b_dapo_pgpo.sh` | PGPO, 3B |
+| `qwen2_5_vl_3b_dapo_pgpo.sh` | PGPO as in the paper, 3B |
+| `qwen2_5_vl_3b_dapo_pgpo_authorcode.sh` | PGPO as in the authors' development code, 3B |
 | `qwen2_5_vl_7b_dapo.sh` | DAPO baseline, 7B |
-| `qwen2_5_vl_7b_dapo_pgpo.sh` | PGPO, 7B |
+| `qwen2_5_vl_7b_dapo_pgpo.sh` | PGPO as in the paper, 7B |
+| `qwen2_5_vl_7b_dapo_pgpo_authorcode.sh` | PGPO as in the authors' development code, 7B |
 
 ```bash
 bash scripts/prepare_data.sh pgpo
@@ -55,10 +57,14 @@ described in [eval/README.md](../../../eval/README.md).
 
 ## Differences from the paper
 
-- The official code is not released; the method is re-implemented from the paper. It follows the
-  paper rather than an unlinked development snapshot by the authors (`Yzk1114/EasyR1`, method
-  "vig"): τ is a fixed threshold on the normalized score (the snapshot uses a per-sequence
-  quantile) and the sum-preserving normalization is enabled (the snapshot comments it out).
+- The announced repository is not public. The `*_dapo_pgpo.sh` scripts follow the paper: τ is a
+  fixed threshold on the normalized score, tokens below it get I/τ with no lower bound, and each
+  response's weights are rescaled to sum to its length (Eq. 6-7). A development repository of the
+  authors (`Yzk1114/EasyR1@6259f02`, method "vig", not linked from the paper) differs in three
+  places: τ is a quantile of each response (the threshold is the response's ascending normalized
+  score at index ⌊L·τ⌋), weights below it are floored at 0.1, and the weights are not rescaled. The
+  `*_dapo_pgpo_authorcode.sh` scripts run that version. The paper does not say which one produced
+  its numbers.
 - Online filtering uses the accuracy reward; the paper lists "Overall" as the filter key.
 - The paper uses H100 clusters (2 GPUs in its 3B overhead study); our scripts use 4 GPUs for both
   model sizes.
@@ -88,7 +94,8 @@ pre-collapse checkpoint (step 190 of 202).
 | `qwen2_5_vl_7b_dapo_pgpo` | 45.20 | 80.83 | 71.45 | 57.71 | 29.02 | 47.93 | 39.01 | 66.41 | 54.70 | TBD |
 
 The abstract's "18.7% on average" is the absolute gain over the base model; the gain over DAPO is
-+2.16 (3B) and +2.01 (7B). Results of this repository will be added after the reproduction runs
++2.16 (3B) and +2.01 (7B). The `_authorcode` scripts have no rows of their own; compare them with the
+PGPO rows. Results of this repository will be added after the reproduction runs
 finish.
 
 ## Citation
