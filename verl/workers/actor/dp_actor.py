@@ -139,6 +139,7 @@ class DataParallelPPOActor(BasePPOActor):
         temperature: float,
         return_entropy: bool = False,
         entropy_requires_grad: bool = True,
+        entropy_top_p: float = 1.0,
         return_hidden_visual_scores: bool = False,
         visual_token_ids: list[int] | tuple[int, ...] | None = None,
         hidden_visual_metric: str = "cosine",
@@ -228,9 +229,7 @@ class DataParallelPPOActor(BasePPOActor):
             logits_rmpad.div_(temperature)
             entropy_rmpad = None
             if return_entropy:
-                entropy_logits = logits_rmpad if entropy_requires_grad else logits_rmpad.detach()
-                with nullcontext() if entropy_requires_grad else torch.no_grad():
-                    entropy_rmpad = self.entropy_from_logits(entropy_logits)
+                entropy_rmpad = self._entropy(logits_rmpad, entropy_requires_grad, entropy_top_p)
             # ((total_nnz / sp) + pad)
             log_probs = self.log_probs_from_logits(logits=logits_rmpad, labels=input_ids_rmpad_rolled)
 
@@ -311,9 +310,7 @@ class DataParallelPPOActor(BasePPOActor):
             logits = logits[:, -response_length - 1 : -1, :]  # (bsz, response_length, vocab_size)
             log_probs = self.log_probs_from_logits(logits, responses)  # (bsz, response_length)
             if return_entropy:
-                entropy_logits = logits if entropy_requires_grad else logits.detach()
-                with torch.enable_grad() if entropy_requires_grad else torch.no_grad():
-                    entropy = self.entropy_from_logits(entropy_logits)
+                entropy = self._entropy(logits, entropy_requires_grad, entropy_top_p, padded=True)
             hidden_visual_scores = None
             if return_hidden_visual_scores:
                 hidden_visual_scores = self._compute_hidden_visual_scores(
@@ -330,6 +327,23 @@ class DataParallelPPOActor(BasePPOActor):
         if return_entropy:
             return log_probs, entropy
         return log_probs
+
+    def _entropy(
+        self, logits: torch.Tensor, requires_grad: bool, top_p: float = 1.0, padded: bool = False
+    ) -> torch.Tensor:
+        """Token entropy of ``logits``; ``top_p < 1`` gives the entropy of the top-p truncated distribution
+        (no gradient, used for the rollout-policy entropy of batch-level entropy masks)."""
+        if top_p < 1.0:
+            if requires_grad:
+                raise ValueError("the top-p truncated entropy is only computed without gradient.")
+            with torch.no_grad():
+                return VF.top_p_entropy_from_logits(logits.detach(), top_p)
+        entropy_logits = logits if requires_grad else logits.detach()
+        if padded:
+            with torch.enable_grad() if requires_grad else torch.no_grad():
+                return self.entropy_from_logits(entropy_logits)
+        with nullcontext() if requires_grad else torch.no_grad():
+            return self.entropy_from_logits(entropy_logits)
 
     def _compute_hidden_visual_scores(
         self,
@@ -638,7 +652,7 @@ class DataParallelPPOActor(BasePPOActor):
 
     @torch.no_grad()
     def compute_log_prob(
-        self, data: DataProto, return_entropy: bool = False
+        self, data: DataProto, return_entropy: bool = False, entropy_top_p: float = 1.0
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Compute the log probability of the responses given input_ids, attention_mask and position_ids
 
@@ -691,6 +705,7 @@ class DataParallelPPOActor(BasePPOActor):
                 model_inputs,
                 temperature=temperature,
                 return_entropy=return_entropy,
+                entropy_top_p=entropy_top_p,
                 model_level_visual_corruption=model_level_visual_corruption,
             )
             if return_entropy:
@@ -922,6 +937,8 @@ class DataParallelPPOActor(BasePPOActor):
             "incremental_entropies",
             "region_token_mask",
             "per_token_sensitivity_scores",
+            "batch_entropy_mask",
+            "batch_perception_mask",
         ]:
             if optional_key in data.batch.keys():
                 select_keys.append(optional_key)
@@ -1008,6 +1025,8 @@ class DataParallelPPOActor(BasePPOActor):
                                 else model_inputs.get("per_token_sensitivity_scores")
                             ),
                             advantage_shaping_context=advantage_shaping_context,
+                            batch_entropy_mask=model_inputs.get("batch_entropy_mask"),
+                            batch_perception_mask=model_inputs.get("batch_perception_mask"),
                         )
                     else:
                         pg_loss, pg_metrics = compute_policy_loss(

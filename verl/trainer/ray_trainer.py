@@ -85,6 +85,7 @@ from .perception_reasoning_data import (
     uses_model_level_visual_corruption,
 )
 from .perception_reasoning_loss import (
+    build_batch_token_masks,
     build_sensitivity_advantage_shaping_context,
     has_perception_reasoning,
 )
@@ -1298,9 +1299,16 @@ class RayPPOTrainer:
                         sensitivity_output.meta_info.pop("visual_sensitivity_metrics", None)
                         batch = batch.union(sensitivity_output)
                 else:
-                    # recompute old_log_probs
+                    # recompute old_log_probs (and the rollout policy's entropy for batch-level entropy masks)
                     with timer("old", timing_raw):
+                        if self.config.algorithm.top_entropy_quantile < 1.0 and (
+                            self.config.algorithm.entropy_thr_granularity == "batch"
+                        ):
+                            batch.meta_info["return_old_entropies"] = True
+                            batch.meta_info["old_entropy_top_p"] = self.config.algorithm.entropy_top_p
                         old_log_probs = self.actor_rollout_ref_wg.compute_log_probs(batch)
+                        batch.meta_info.pop("return_old_entropies", None)
+                        batch.meta_info.pop("old_entropy_top_p", None)
                         batch = batch.union(old_log_probs)
 
                 if needs_auxiliary_log_probs(self.config.algorithm):
@@ -1369,6 +1377,11 @@ class RayPPOTrainer:
                     shaping_context = build_sensitivity_advantage_shaping_context(perception_reasoning_config, batch)
                     if shaping_context is not None:
                         batch.meta_info["advantage_shaping_context"] = shaping_context
+                    # top-quantile masks over the whole rollout batch (*_thr_granularity=batch)
+                    batch_masks, mask_metrics = build_batch_token_masks(perception_reasoning_config, batch)
+                    for key, mask in batch_masks.items():
+                        batch.batch[key] = mask
+                    metrics.update(mask_metrics)
 
                 # update critic
                 if self.use_critic:

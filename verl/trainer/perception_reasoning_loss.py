@@ -84,10 +84,92 @@ def needs_current_policy_entropy(loss_config: dict[str, Any] | None) -> bool:
         return False
     return (
         loss_config.get("log_entropy", False)
-        or loss_config.get("top_entropy_quantile", 1.0) < 1.0
+        or (
+            loss_config.get("top_entropy_quantile", 1.0) < 1.0
+            and loss_config.get("entropy_thr_granularity", "micro_batch") != "batch"
+        )
         or _get_advantage_scaling_method(loss_config) == "pepo"
         or current_policy_entropy_requires_grad(loss_config)
     )
+
+
+def uses_batch_entropy_mask(loss_config: dict[str, Any] | None) -> bool:
+    """Whether the top-entropy mask is taken over the whole rollout batch (from the rollout policy's entropy)."""
+    return bool(
+        loss_config
+        and loss_config.get("top_entropy_quantile", 1.0) < 1.0
+        and loss_config.get("entropy_thr_granularity", "micro_batch") == "batch"
+    )
+
+
+def uses_batch_perception_mask(loss_config: dict[str, Any] | None) -> bool:
+    """Whether the top-perception mask is taken over the whole rollout batch."""
+    return bool(
+        loss_config
+        and loss_config.get("top_perception_quantile", 1.0) < 1.0
+        and loss_config.get("perception_thr_granularity", "micro_batch") == "batch"
+    )
+
+
+def _mask_granularity(granularity: str) -> str:
+    """``_compute_top_quantile_mask`` granularity for a configured one: ``micro_batch`` selects within the tensor it
+    is given; ``batch`` masks are built on the driver over the whole rollout batch (``build_batch_token_masks``)."""
+    return "response" if granularity == "response" else "batch"
+
+
+def build_batch_token_masks(
+    loss_config: dict[str, Any] | None,
+    data: DataProto | dict[str, torch.Tensor] | Any,
+) -> tuple[dict[str, torch.Tensor], dict[str, float]]:
+    """Top-quantile token masks over every response token of the rollout batch (``*_thr_granularity=batch``).
+
+    Runs on the driver before the update, so the thresholds do not depend on how the batch is split into
+    micro-batches. The entropy comes from the rollout (old) policy (``old_entropies``); perception scores are the
+    precomputed ``per_token_sensitivity_scores`` or the sampled metric between ``old_log_probs`` and
+    ``decremental_old_log_probs``.
+    """
+    masks: dict[str, torch.Tensor] = {}
+    metrics: dict[str, float] = {}
+    batch = data.batch if isinstance(data, DataProto) else data
+    if uses_batch_entropy_mask(loss_config):
+        if "old_entropies" not in batch:
+            raise ValueError("entropy_thr_granularity=batch requires old_entropies from the rollout policy.")
+        entropy_mask, threshold, fraction = _compute_top_quantile_mask(
+            values=batch["old_entropies"].float(),
+            response_mask=batch["response_mask"],
+            quantile=loss_config["top_entropy_quantile"],
+            granularity="batch",
+        )
+        masks["batch_entropy_mask"] = entropy_mask
+        metrics["algo/token_selection/entropy_threshold"] = to_float(threshold)
+        metrics["algo/token_selection/entropy_fraction"] = to_float(fraction)
+    if uses_batch_perception_mask(loss_config):
+        if "per_token_sensitivity_scores" in batch:
+            scores = batch["per_token_sensitivity_scores"]
+        elif "old_log_probs" in batch and "decremental_old_log_probs" in batch:
+            scores = compute_sampled_sensitivity_scores(
+                metric=resolve_sampled_sensitivity_metric(
+                    str(loss_config.get("visual_sensitivity_metric", "sampled_low_var_kl"))
+                ),
+                corrupted_log_probs=batch["decremental_old_log_probs"],
+                reference_log_probs=batch["old_log_probs"],
+                reference_mode="old",
+                boxcox_alpha=loss_config.get("visual_sensitivity_boxcox_alpha", 1.0),
+            )
+        else:
+            raise ValueError(
+                "perception_thr_granularity=batch requires per_token_sensitivity_scores or "
+                "old_log_probs and decremental_old_log_probs before the update."
+            )
+        perception_mask, threshold, _ = _compute_top_quantile_mask(
+            values=scores.float(),
+            response_mask=batch["response_mask"],
+            quantile=loss_config["top_perception_quantile"],
+            granularity="batch",
+        )
+        masks["batch_perception_mask"] = perception_mask
+        metrics["algo/token_selection/perception_threshold"] = to_float(threshold)
+    return masks, metrics
 
 
 def build_sensitivity_advantage_shaping_context(
@@ -153,6 +235,8 @@ def compute_perception_reasoning_policy_loss(
     region_token_mask: torch.Tensor | None = None,
     per_token_sensitivity_scores: torch.Tensor | None = None,
     advantage_shaping_context: dict[str, float] | None = None,
+    batch_entropy_mask: torch.Tensor | None = None,
+    batch_perception_mask: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     """Unified policy loss for PAPO / VPPO / ToR / DVRP / VEPO / PGPO / PEPO / CFPO / CGPO.
 
@@ -180,14 +264,18 @@ def compute_perception_reasoning_policy_loss(
 
     # Step 1: Compute perception/reasoning control signals.
     entropy_mask = None
-    if loss_config.get("top_entropy_quantile", 1.0) < 1.0:
+    if uses_batch_entropy_mask(loss_config):
+        if batch_entropy_mask is None:
+            raise ValueError("entropy_thr_granularity=batch requires the batch_entropy_mask built before the update.")
+        entropy_mask = batch_entropy_mask.to(torch.bool) & response_mask.to(torch.bool)
+    elif loss_config.get("top_entropy_quantile", 1.0) < 1.0:
         if entropy is None:
             raise ValueError("top_entropy_quantile requires current-policy entropy, but entropy was not computed.")
         entropy_mask, entropy_threshold, entropy_fraction = _compute_top_quantile_mask(
             values=entropy,
             response_mask=response_mask,
             quantile=loss_config["top_entropy_quantile"],
-            granularity=loss_config.get("entropy_thr_granularity", "batch"),
+            granularity=_mask_granularity(loss_config.get("entropy_thr_granularity", "micro_batch")),
         )
         metrics["algo/token_selection/entropy_threshold"] = to_float(entropy_threshold)
         metrics["algo/token_selection/entropy_fraction"] = to_float(entropy_fraction)
@@ -281,12 +369,18 @@ def compute_perception_reasoning_policy_loss(
                     extra_signals=comparison_signals,
                     response_mask=response_mask,
                     quantile=loss_config.get("top_perception_quantile", 1.0),
-                    granularity=loss_config.get("perception_thr_granularity", "batch"),
+                    granularity=_mask_granularity(loss_config.get("perception_thr_granularity", "micro_batch")),
                 )
             )
 
     perception_mask = None
-    if loss_config.get("top_perception_quantile", 1.0) < 1.0:
+    if uses_batch_perception_mask(loss_config):
+        if batch_perception_mask is None:
+            raise ValueError(
+                "perception_thr_granularity=batch requires the batch_perception_mask built before the update."
+            )
+        perception_mask = batch_perception_mask.to(torch.bool) & response_mask.to(torch.bool)
+    elif loss_config.get("top_perception_quantile", 1.0) < 1.0:
         if perception_scores is None:
             raise ValueError(
                 "top_perception_quantile requires either decremental_old_log_probs or "
@@ -296,7 +390,7 @@ def compute_perception_reasoning_policy_loss(
             values=perception_scores,
             response_mask=response_mask,
             quantile=loss_config["top_perception_quantile"],
-            granularity=loss_config.get("perception_thr_granularity", "batch"),
+            granularity=_mask_granularity(loss_config.get("perception_thr_granularity", "micro_batch")),
         )
         del perception_fraction
         metrics["algo/token_selection/perception_threshold"] = to_float(perception_threshold)

@@ -2358,7 +2358,7 @@ def test_log_metrics_diagnostics_emit_overlap_and_rank_corr():
         "visual_sensitivity_log_metrics": ("sampled_low_var_kl",),
         "visual_sensitivity_loss_coef": 0.05,
         "top_perception_quantile": 0.5,
-        "perception_thr_granularity": "batch",
+        "perception_thr_granularity": "micro_batch",
         "entropy_loss_type": "sampled",
     }
     _, metrics = compute_perception_reasoning_policy_loss(loss_config=loss_config, **base_kwargs)
@@ -2414,7 +2414,7 @@ def test_log_metrics_diagnostics_use_consumed_signal_name():
         "visual_sensitivity_log_metrics": ("sampled_boxcox",),
         "visual_sensitivity_boxcox_alpha": 1.0,
         "top_perception_quantile": 0.5,
-        "perception_thr_granularity": "batch",
+        "perception_thr_granularity": "micro_batch",
         "entropy_loss_type": "sampled",
     }
     _, metrics = compute_perception_reasoning_policy_loss(
@@ -3342,9 +3342,9 @@ def test_cgpo_advantage_shaping_context_and_region_mask_metrics():
     tensors = _make_common_tensors()
     loss_config = {
         "top_entropy_quantile": 0.5,
-        "entropy_thr_granularity": "batch",
+        "entropy_thr_granularity": "micro_batch",
         "top_perception_quantile": 0.5,
-        "perception_thr_granularity": "batch",
+        "perception_thr_granularity": "micro_batch",
         "response_advantage_scaling_method": "cgpo",
         "cgpo_response_scaling_coef": 0.1,
         "include_region_tokens_in_perception_mask": True,

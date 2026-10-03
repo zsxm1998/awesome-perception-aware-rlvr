@@ -99,6 +99,24 @@ def entropy_from_logits(logits: torch.Tensor, chunk_size: int = 128) -> torch.Te
     return torch.cat(entropies, dim=0).reshape(original_shape)
 
 
+def top_p_entropy_from_logits(logits: torch.Tensor, top_p: float, chunk_size: int = 128) -> torch.Tensor:
+    """Entropy of the top-p (nucleus) distribution, i.e. the distribution top-p sampling draws from: the
+    smallest set of most likely tokens whose probability reaches ``top_p``, renormalized. A token is kept when
+    the probability of the tokens ranked above it is below ``top_p`` (the same rule as vLLM), so at least the
+    most likely token is always kept. ``top_p >= 1`` is the full-vocabulary entropy."""
+    if top_p >= 1.0:
+        return entropy_from_logits(logits, chunk_size=chunk_size)
+    original_shape = logits.shape[:-1]
+    flat_logits = logits.reshape(-1, logits.shape[-1])
+    entropies = []
+    for chunk in flat_logits.split(chunk_size, dim=0):
+        sorted_probs, _ = torch.sort(F.softmax(chunk.float(), dim=-1), dim=-1, descending=True)
+        kept = sorted_probs * ((sorted_probs.cumsum(dim=-1) - sorted_probs) < top_p)
+        kept = kept / kept.sum(dim=-1, keepdim=True)
+        entropies.append(-(kept * torch.log(kept.clamp(min=torch.finfo(kept.dtype).tiny))).sum(dim=-1))
+    return torch.cat(entropies, dim=0).reshape(original_shape)
+
+
 def masked_mean(values: torch.Tensor, mask: torch.Tensor, dim: int = None, eps: float = 1e-8) -> torch.Tensor:
     """Compute mean of tensor with a masked values."""
     return (values * mask).sum(dim=dim) / (mask.sum(dim=dim) + eps)

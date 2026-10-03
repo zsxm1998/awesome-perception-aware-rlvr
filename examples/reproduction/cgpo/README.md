@@ -39,7 +39,7 @@ evidence is removed. It needs only answer-level supervision:
 | Counterfactual image | `algorithm.corrupt_image=cgpo_flat`, `corrupt_image_kwargs={"fill_type":"local_mean"}`, `corrupt_image_position=response` | `verl/trainer/perception_reasoning_data.py::cgpo_flat` |
 | Evidence dependence *S_t* | `algorithm.visual_sensitivity_reference=old` (sampled KL estimator) | `verl/trainer/visual_sensitivity.py` |
 | Response scaling (`lambda`) | `algorithm.advantage_scaling_method=cgpo`, `cgpo_response_scaling_coef` | `perception_reasoning_loss.py::_compute_cgpo_response_scaling` |
-| Token selection (`rho_r`, `rho_p`, Span_E) | `top_entropy_quantile`, `top_perception_quantile`, `*_thr_granularity=batch`, `include_region_tokens_in_perception_mask=true` | `perception_reasoning_loss.py` |
+| Token selection (`rho_r`, `rho_p`, Span_E) | `top_entropy_quantile`, `top_perception_quantile`, `*_thr_granularity=micro_batch` (thresholds within each update micro-batch, as in the paper experiments), `include_region_tokens_in_perception_mask=true` | `perception_reasoning_loss.py` |
 | GCR (`gamma`) | `use_grounding_consistency_reward=true`, `grounding_consistency_reward_weight` (`grounding_consistency_detector=self`; `grounding-dino` is available as an external detector) | `verl/trainer/grounding_consistency.py`, `examples/reward_function/xml_grounded_reasoning.py` |
 
 ## Reproduction in this repository (natural images)

@@ -125,8 +125,10 @@ class AlgorithmConfig:
     """log current-policy token entropy statistics."""
     top_entropy_quantile: float = 1.0
     """fraction of highest-entropy tokens to keep for entropy-mask modulation. Used by ToR and CGPO; VPPO/PAPO leave it at 1.0."""
-    entropy_thr_granularity: str = "batch"
-    """whether top-entropy thresholds are computed over the whole batch or per response. ToR/CGPO use `batch`, VPPO use `response`."""
+    entropy_thr_granularity: str = "micro_batch"
+    """where the top-entropy threshold is taken. `batch`: over every response token of the rollout batch, before the update, from the rollout (old) policy's entropy (ToR). `micro_batch`: within each update micro-batch, from the entropy of the policy being updated (CGPO, as in its paper). `response`: within each response."""
+    entropy_top_p: float = 1.0
+    """entropy of the top-p truncated (renormalized) distribution for `entropy_thr_granularity=batch`; 1.0 is the full vocabulary. ToR uses 0.95 (paper Eq. 5)."""
     corrupt_image: Optional[str] = None
     """auxiliary visual corruption. `random_patch` is used by PAPO/VPPO/DVRP, `no_image` by ToR, `cgpo_flat|cgpo_hierarchical` by CGPO, `mask_visual_attention` by PGPO, `pixelation` removes fine image details while preserving image size, and `cross_modal_attention_value_mean` applies a scoped model-level intervention."""
     corrupt_image_kwargs: Any = None
@@ -159,8 +161,8 @@ class AlgorithmConfig:
     """how entropy regularization terms are computed: sampled `-log_prob` (PAPO/VPPO/DVRP defaults) or full entropy (research/debug setting)."""
     top_perception_quantile: float = 1.0
     """fraction of highest-perception-shift tokens kept for perception-mask modulation. Used by VPPO, ToR, and CGPO."""
-    perception_thr_granularity: str = "batch"
-    """whether top-perception thresholds are computed batch-wise or per response. VPPO often uses `response`; ToR/CGPO use `batch`."""
+    perception_thr_granularity: str = "micro_batch"
+    """where the top-perception threshold is taken: `batch` (every response token of the rollout batch, before the update; ToR), `micro_batch` (within each update micro-batch; CGPO) or `response` (within each response; VPPO, VEPO)."""
     advantage_scaling_method: Optional[str] = None
     """advantage-scaling formula. `None` disables scaling, `vppo` and `cgpo` preserve the existing response-level rules as token matrices, and `pgpo` applies token-level perception-grounded scaling."""
     response_advantage_scaling_method: Optional[str] = None
@@ -317,7 +319,7 @@ class AlgorithmConfig:
         _validate_choice(
             "visual_sensitivity_entropy_gate", self.visual_sensitivity_entropy_gate, {"none", "normal_entropy"}
         )
-        _validate_choice("entropy_thr_granularity", self.entropy_thr_granularity, {"batch", "response"})
+        _validate_choice("entropy_thr_granularity", self.entropy_thr_granularity, {"batch", "micro_batch", "response"})
         _validate_choice(
             "advantage_scaling_method",
             self.advantage_scaling_method,
@@ -361,7 +363,37 @@ class AlgorithmConfig:
             {"vp_diffusion"},
             allow_none=True,
         )
-        _validate_choice("perception_thr_granularity", self.perception_thr_granularity, {"batch", "response"})
+        _validate_choice(
+            "perception_thr_granularity", self.perception_thr_granularity, {"batch", "micro_batch", "response"}
+        )
+        if not 0.0 < self.entropy_top_p <= 1.0:
+            raise ValueError(f"entropy_top_p must be in (0, 1], but got {self.entropy_top_p}.")
+        uses_batch_entropy_mask = self.top_entropy_quantile < 1.0 and self.entropy_thr_granularity == "batch"
+        uses_batch_perception_mask = self.top_perception_quantile < 1.0 and self.perception_thr_granularity == "batch"
+        if self.entropy_top_p < 1.0 and not uses_batch_entropy_mask:
+            raise ValueError(
+                "entropy_top_p only applies to batch-level entropy masks "
+                "(top_entropy_quantile < 1 with entropy_thr_granularity=batch)."
+            )
+        if uses_batch_entropy_mask and self.visual_sensitivity_metric in full_vocab_sensitivity_metrics:
+            raise ValueError(
+                "entropy_thr_granularity=batch is not supported with full-vocab visual_sensitivity_metric values; "
+                "use micro_batch or response."
+            )
+        if uses_batch_perception_mask:
+            if self.visual_sensitivity_metric == "hidden_state_similarity":
+                raise ValueError(
+                    "perception_thr_granularity=batch needs the perception scores before the update; "
+                    "hidden_state_similarity scores only exist during the update (use micro_batch or response)."
+                )
+            if (
+                self.visual_sensitivity_metric not in full_vocab_sensitivity_metrics
+                and self.visual_sensitivity_reference != "old"
+            ):
+                raise ValueError(
+                    "perception_thr_granularity=batch scores tokens before the update and therefore requires "
+                    "visual_sensitivity_reference=old."
+                )
         for field_name, quantile in {
             "top_entropy_quantile": self.top_entropy_quantile,
             "top_perception_quantile": self.top_perception_quantile,

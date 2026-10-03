@@ -432,6 +432,7 @@ def build_perception_reasoning_loss_config(
         "visual_sensitivity_jsd_weight": config.visual_sensitivity_jsd_weight,
         "visual_sensitivity_entropy_gate": config.visual_sensitivity_entropy_gate,
         "entropy_thr_granularity": config.entropy_thr_granularity,
+        "entropy_top_p": config.entropy_top_p,
         "advantage_scaling_method": config.advantage_scaling_method,
         "response_advantage_scaling_method": config.response_advantage_scaling_method,
         "vppo_response_scaling_min": config.vppo_response_scaling_min,

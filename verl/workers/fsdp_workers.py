@@ -799,13 +799,22 @@ class FSDPWorker(Worker):
 
         # we should always recompute old_log_probs when it is HybridEngine
         data.meta_info["temperature"] = self.config.rollout.temperature
+        # the rollout policy's entropy is returned for batch-level entropy masks (entropy_thr_granularity=batch)
+        return_entropy = bool(data.meta_info.get("return_old_entropies", False))
         # perform recompute log_prob
         with self.ulysses_sharding_manager:
             data = self.ulysses_sharding_manager.preprocess_data(data)
-            output = self.actor.compute_log_prob(data=data)
-            output = DataProto.from_dict(
-                tensors={"old_log_probs": output}, meta_info={"temperature": self.config.rollout.temperature}
+            output = self.actor.compute_log_prob(
+                data=data,
+                return_entropy=return_entropy,
+                entropy_top_p=float(data.meta_info.get("old_entropy_top_p", 1.0)),
             )
+            tensors = (
+                {"old_log_probs": output[0], "old_entropies": output[1]}
+                if return_entropy
+                else {"old_log_probs": output}
+            )
+            output = DataProto.from_dict(tensors=tensors, meta_info={"temperature": self.config.rollout.temperature})
             output = self.ulysses_sharding_manager.postprocess_data(output)
 
         # https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes
