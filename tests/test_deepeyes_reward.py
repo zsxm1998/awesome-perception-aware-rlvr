@@ -298,6 +298,7 @@ def test_text_only_reward_extracts_answer_span():
         ("No, it is not.", "No, the car is not red.", "Is the car red?", True),
         ("Yes", "No, the car is not red.", "Is the car red?", False),
         ("(B) 42", "B", "Which option?", True),
+        ("C.\nBecause the curve rises.\nSo C.", "C", "Which option?", True),  # explanation on further lines
         ("C", "B", "Which option?", False),
         (
             "left",

@@ -242,7 +242,7 @@ def _rule_match(prediction: str, reference: str, question: str = "") -> bool:
     boxed = extract_boxed_content(prediction)
     if boxed and boxed != "None":
         prediction = boxed
-    letter = re.fullmatch(r"\(?([A-Ha-h])\)?[.:)]?(\s.*)?", prediction)
+    letter = re.fullmatch(r"\(?([A-Ha-h])\)?[.:)]?(\s.*)?", prediction, flags=re.DOTALL)
     if re.fullmatch(r"[A-Ha-h]", reference):  # multiple-choice reference (chart data)
         return letter is not None and letter.group(1).upper() == reference.upper()
     reference_words = _rule_words(reference)
