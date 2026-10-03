@@ -25,8 +25,8 @@ weight 0 and are excluded from optimization. Variants: ToR-GRPO and ToR-DAPO.
 | Optimization | AdamW (bf16), lr 1e-6 constant, token-level loss, vision tower trainable, 4 epochs, max prompt 8,192 |
 | GPUs | 8 |
 | Perception pass | `algorithm.corrupt_image=no_image` (image removed), `algorithm.visual_sensitivity_reference=old` |
-| Reasoning set T_r | `algorithm.top_entropy_quantile=0.3`, `algorithm.entropy_thr_granularity=batch` |
-| Perception set T_p | `algorithm.top_perception_quantile=0.3`, `algorithm.perception_thr_granularity=batch` |
+| Reasoning set T_r | `algorithm.top_entropy_quantile=0.3`, `algorithm.entropy_thr_granularity=batch` (over all tokens of the rollout batch), `algorithm.entropy_top_p=0.95` (entropy of the top-p 0.95 set, Eq. 5) |
+| Perception set T_p | `algorithm.top_perception_quantile=0.3`, `algorithm.perception_thr_granularity=batch`, `algorithm.visual_sensitivity_metric=sampled_abs_log_ratio` (\|log π(o_t \| I, q) − log π(o_t \| ∅, q)\|, Eq. 8) |
 | Token weights | `algorithm.tor_use_token_weighting=true`, `algorithm.tor_rsn_weight=1.0` (γ_r), `algorithm.tor_prcp_weight=0.5` (γ_p) |
 
 See [docs/algorithm_parameters.md](../../../docs/algorithm_parameters.md) for the full list of `algorithm.*` switches.
@@ -59,11 +59,10 @@ validation split) and set `N_GPUS_PER_NODE`, `MODEL_PATH`, `DATA_ROOT`, `LOGGER`
   coefficient, clip ratios, maximum response length, number of epochs and rollout temperature above
   are our choices.
 - Validation uses the Geometry3K test split (601) instead of the 300-item validation split.
-- The perception score is the sampled-token k3 estimator of the log-ratio between the passes with
-  and without the image (clamped to [0, 10]), not the absolute log-probability difference
-  |log π(o_t | I, q) − log π(o_t | ∅, q)| of the paper; the two can rank tokens differently.
-- Token entropy for T_r is computed over the full vocabulary; the paper truncates to the top-p 0.95
-  set.
+- Both thresholds are taken over every response token of the rollout batch, before the update
+  (Eq. 6, 7, 9), with the entropy and the perception score of the rollout policy. The entropy of
+  the top-p 0.95 set is that of the renormalized distribution top-p sampling draws from; the paper
+  does not say whether it renormalizes.
 - The ToR-DAPO run on ViRL-39K and the 3B runs are not scripted.
 - Evaluation (suite `tor`) uses the PAPO-Eval protocol (rule-based `\boxed{}` match, avg@8, T=1.0)
   instead of NoisyRollout's greedy decoding with a Gemini-2.0-Flash judge. MathVerse is the

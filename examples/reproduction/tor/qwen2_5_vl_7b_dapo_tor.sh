@@ -9,12 +9,14 @@ ALGO_ARGS=(
     "algorithm.corrupt_image=no_image"
     "algorithm.top_entropy_quantile=0.3"
     "algorithm.entropy_thr_granularity=batch"
+    "algorithm.entropy_top_p=0.95"
     "algorithm.top_perception_quantile=0.3"
     "algorithm.perception_thr_granularity=batch"
     "algorithm.tor_use_token_weighting=true"
     "algorithm.tor_rsn_weight=1.0"
     "algorithm.tor_prcp_weight=0.5"
     "algorithm.visual_sensitivity_reference=old"
+    "algorithm.visual_sensitivity_metric=sampled_abs_log_ratio"
 )
 EXTRA_ARGS=(
     "data.max_response_length=5120"
