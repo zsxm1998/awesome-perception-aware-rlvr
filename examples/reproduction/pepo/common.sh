@@ -61,8 +61,8 @@ launch_pepo_geometry3k() {
         "trainer.project_name=PEPO-Reproduce"
         "trainer.n_gpus_per_node=8"
         "trainer.total_epochs=1"
-        "trainer.val_freq=400"
-        "trainer.save_freq=400"
+        "trainer.val_freq=400"  # PEPO's Qwen2.5-VL GRPO-based scripts: eval_steps 400, no validation within the epoch
+        "trainer.save_freq=25"  # a checkpoint every 25 steps all the same (it does not change training)
         "trainer.val_generations_to_log=5"
         "trainer.val_before_train=true"
         "trainer.find_last_checkpoint=true"
