@@ -252,6 +252,22 @@ def test_official_reward_routes_by_data_source(monkeypatch):
     assert scores[4]["tool"] == 0.0 and scores[4]["overall"] == pytest.approx(1.2)  # math route
 
 
+def test_official_reward_zeroes_answers_of_1000_characters(monkeypatch):
+    """vl_agent.py: an answer of 1,000 characters or more gets no accuracy (hence no tool reward) and a format error."""
+    monkeypatch.delenv("DEEPEYES_JUDGE_BASE_URL", raising=False)
+    question, reference = "What color is the chair?", "The chair is white."
+    long_answer = "white " * 200
+    short, long = deepeyes_reward.compute_score_official(
+        [
+            _official_input("white", reference, "vstar", 1, question),
+            _official_input(long_answer, reference, "vstar", 1, question),
+        ]
+    )
+    assert short["overall"] == pytest.approx(2.0)
+    assert (long["accuracy"], long["tool"], long["format"]) == (0.0, 0.0, -1.0)
+    assert long["overall"] == pytest.approx(-0.2)
+
+
 def test_text_only_reward_extracts_answer_span():
     (score,) = deepeyes_reward.compute_score_text_only(
         [

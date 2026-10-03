@@ -397,7 +397,9 @@ def compute_score_official(reward_inputs: list[dict[str, Any]]) -> list[dict[str
                 return 1.0 if _math_rule_fallback(answer, reference, reward_input.get("question", "")) else 0.0
             return 1.0 if _judge_math(client, reward_input.get("question", ""), reference, answer) else 0.0
         final_answer = finals[index]
-        if final_answer is None:
+        # as the official reward, an answer of 1,000 characters or more is wrong (and a format error), so that a long
+        # answer cannot talk the judge into a match; the math rows have no such check
+        if final_answer is None or len(final_answer) >= _MAX_ANSWER_CHARS:
             return 0.0
         if client is None:
             return 1.0 if _rule_match(final_answer, reference, reward_input.get("question", "")) else 0.0
