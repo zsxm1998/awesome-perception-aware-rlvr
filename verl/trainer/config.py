@@ -170,7 +170,7 @@ class AlgorithmConfig:
     decremental_entropy_coef: float = 0.0
     """coefficient for entropy regularization on the decremental auxiliary view. Introduced by PAPO and also reused by DVRP."""
     entropy_loss_type: str = "sampled"
-    """how entropy regularization terms are computed: sampled `-log_prob` (PAPO/VPPO/DVRP defaults) or full entropy (research/debug setting)."""
+    """how entropy regularization terms are computed: sampled `-log_prob` (PAPO/VPPO/DVRP defaults) or the full-vocabulary entropy (`full`; VEPO's entropy bonus and the shared comparison scripts)."""
     top_perception_quantile: float = 1.0
     """fraction of highest-perception-shift tokens kept for perception-mask modulation. Used by VPPO, ToR, and CGPO."""
     perception_thr_granularity: str = "micro_batch"
