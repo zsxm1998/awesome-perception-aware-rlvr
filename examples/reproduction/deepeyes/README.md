@@ -108,8 +108,9 @@ list; in "A or B" questions A and B count) must be non-empty, all appear in the 
 the reference's keywords, so naming an object of the question is not enough; `mathruler`'s
 equivalence check is the last resort. The rule also stands in for the math judge on ThinkLite
 references that are words (5,501 of 11,031, e.g. "brick"), which `math_verify` cannot check;
-references with a digit fall back to `mathruler`'s equivalence check instead, which, unlike the
-keyword rule, keeps signs, decimal points and the order of terms. Rewards without a judge are not directly comparable with the paper's.
+math references (with a digit, LaTeX, an operator or a math symbol) fall back to `mathruler`'s
+equivalence check instead, which, unlike the keyword rule, keeps signs, decimal points and the
+order of terms. Rewards without a judge are not directly comparable with the paper's.
 
 ## Coordinates
 

@@ -405,9 +405,15 @@ def test_thinklite_rule_fallback_keeps_signs_and_order_of_numbers(monkeypatch):
         ("<think>a</think>\\boxed{brick}", "brick"),
         ("<think>a</think>\\boxed{the underground lake}", "underground lake"),
         ("<think>a</think>\\boxed{stone}", "brick"),
+        # math references without a digit
+        ("<think>a</think>\\boxed{-\\pi}", "\\pi"),
+        ("<think>a</think>\\boxed{y-x}", "x-y"),
+        ("<think>a</think>\\boxed{y/x}", "x/y"),
+        ("<think>a</think>\\boxed{\\frac{x}{y}}", "x/y"),
+        ("<think>a</think>\\boxed{red-tailed hawk}", "red-tailed hawk"),  # hyphenated words stay words
     ]
     scores = deepeyes_reward.compute_score_official([_math_input(*case) for case in cases])
-    assert [score["accuracy"] for score in scores] == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0]
+    assert [score["accuracy"] for score in scores] == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0]
 
 
 def test_thinklite_answers_with_nested_braces_are_read_whole(monkeypatch):

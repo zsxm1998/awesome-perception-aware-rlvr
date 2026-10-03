@@ -128,7 +128,7 @@ def compute_score(
 # and optionally DEEPEYES_JUDGE_API_KEY to use a judge; otherwise a rule-based matcher
 # (_rule_match) takes the judge's place, also for ThinkLite answers to word references that
 # math_verify rejects (about half of the ThinkLite references are words, such as "brick"), while
-# ThinkLite references with a digit fall back to mathruler's equivalence check.
+# ThinkLite math references (a digit, LaTeX, an operator) fall back to mathruler's equivalence check.
 # ---------------------------------------------------------------------------
 
 
@@ -332,12 +332,17 @@ def _math_verify(reference: str, answer: str) -> bool:
     )
 
 
+# a digit, LaTeX, an operator or a math symbol; or a minus sign, i.e. a "-" that does not join two words (x-y, -x)
+_MATH_REFERENCE = re.compile(r"[\d\\^_=+*/<>{}|π√°∞]|(?<![A-Za-z]{2})-|-(?![A-Za-z]{2})")
+
+
 def _math_rule_fallback(answer: str, reference: str, question: str) -> bool:
     """Stands in for the math judge without one, after math_verify rejected the answer. About half of the ThinkLite
-    references are words ("brick"), which math_verify cannot check: they go to the keyword rule. References with a
-    digit go to mathruler's equivalence check, which keeps signs, decimal points and the order of the terms that the
-    keyword rule ignores (it would take 2 for -2 and 2/1 for 1/2)."""
-    if re.search(r"\d", reference):
+    references are words ("brick", "red-tailed hawk"), which math_verify cannot check: they go to the keyword rule.
+    Math references (a digit, LaTeX, an operator or a math symbol) go to mathruler's equivalence check, which keeps
+    signs, decimal points and the order of the terms that the keyword rule ignores (it would take 2 for -2, 2/1 for
+    1/2 and y-x for x-y)."""
+    if _MATH_REFERENCE.search(reference):
         try:
             return bool(grade_answer(answer, reference))
         except Exception:
