@@ -205,6 +205,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--agent-max-tokens-per-turn", type=int, default=10240)
     parser.add_argument("--agent-max-images-per-prompt", type=int, default=16)
     parser.add_argument(
+        "--agent-observation-min-pixels",
+        type=int,
+        default=None,
+        help="Lower pixel bound of tool crops (default: --min-pixels), as worker.rollout.agent_observation_min_pixels "
+        "in training (DeepEyes: 3136).",
+    )
+    parser.add_argument(
         "--agent-tool-image-mode",
         choices=["original", "fixed_gray", "text_skipped"],
         default="original",
@@ -1242,6 +1249,7 @@ def build_eval_backend(args: argparse.Namespace):
         agent_profile=getattr(args, "agent_profile", "deepeyes"),
         agent_config=agent_loop_config_from_args(args),
         agent_max_images_per_prompt=int(getattr(args, "agent_max_images_per_prompt", 16)),
+        agent_observation_min_pixels=getattr(args, "agent_observation_min_pixels", None),
         agent_max_batch_images=int(args.max_batch_images),
         agent_tool_image_mode=getattr(
             args,
@@ -1460,6 +1468,12 @@ def _agent_fingerprint_fields(args: argparse.Namespace) -> dict[str, Any]:
         "agent_max_response_tokens": config.max_response_tokens,
         "agent_max_tokens_per_turn": config.max_tokens_per_turn,
         "agent_max_images_per_prompt": int(getattr(args, "agent_max_images_per_prompt", 16)),
+        # only when set, so runs without it keep their fingerprints
+        **(
+            {"agent_observation_min_pixels": args.agent_observation_min_pixels}
+            if getattr(args, "agent_observation_min_pixels", None) is not None
+            else {}
+        ),
         "agent_tool_image_mode": getattr(
             args,
             "agent_tool_image_mode",

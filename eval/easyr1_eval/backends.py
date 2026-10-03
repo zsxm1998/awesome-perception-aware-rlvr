@@ -657,6 +657,7 @@ def build_backend(name: str, model: str, **kwargs) -> Backend:
     agent_max_batch_images = kwargs.pop("agent_max_batch_images", None)
     agent_tool_image_mode = kwargs.pop("agent_tool_image_mode", "original")
     agent_bbox_format = kwargs.pop("agent_bbox_format", "norm1000")
+    agent_observation_min_pixels = kwargs.pop("agent_observation_min_pixels", None)
     if interaction_mode == "agentic":
         if name != "vllm":
             raise ValueError("agentic interaction currently requires the vllm backend")
@@ -674,6 +675,7 @@ def build_backend(name: str, model: str, **kwargs) -> Backend:
             agent_max_batch_images=agent_max_batch_images,
             agent_tool_image_mode=agent_tool_image_mode,
             agent_bbox_format=agent_bbox_format,
+            agent_observation_min_pixels=agent_observation_min_pixels,
             **kwargs,
         )
     if interaction_mode != "one_shot":

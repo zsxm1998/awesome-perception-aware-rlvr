@@ -74,6 +74,7 @@ class AgenticVLLMBackend:
         agent_max_images_per_prompt: int,
         agent_max_batch_images: int,
         agent_tool_image_mode: str = "original",
+        agent_observation_min_pixels: int | None = None,
         tensor_parallel_size: int = 1,
         max_model_len: int | None = None,
         gpu_memory_utilization: float = 0.9,
@@ -113,6 +114,7 @@ class AgenticVLLMBackend:
         self.agent_max_images_per_prompt = agent_max_images_per_prompt
         self.agent_max_batch_images = agent_max_batch_images
         self.agent_tool_image_mode = agent_tool_image_mode
+        self.agent_observation_min_pixels = agent_observation_min_pixels
         # Coordinate convention of the zoom-in tool's bbox_2d: 0-1000 of the source image, or
         # absolute pixels of the frame a Qwen2-VL / Qwen2.5-VL model sees.
         self.agent_bbox_format = agent_bbox_format
@@ -191,6 +193,7 @@ class AgenticVLLMBackend:
             min_pixels=self.min_pixels,
             max_pixels=self.max_pixels,
             limit_images=self.agent_max_images_per_prompt,
+            observation_min_pixels=getattr(self, "agent_observation_min_pixels", None),
         )
 
         source_images_by_sample: list[tuple[list[Any] | None, BaseException | None]] = []

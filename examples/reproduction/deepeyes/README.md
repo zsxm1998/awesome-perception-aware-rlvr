@@ -45,7 +45,11 @@ bash scripts/prepare_data.sh deepeyes
 DEEPEYES_JUDGE_BASE_URL=http://<judge-host>:8000/v1 DEEPEYES_JUDGE_MODEL=judge \
     bash examples/reproduction/deepeyes/qwen2_5_vl_7b_grpo_deepeyes.sh
 bash scripts/prepare_eval_data.sh deepeyes
-bash scripts/eval.sh checkpoints/DeepEyes-Reproduce/qwen2_5_vl_7b_grpo_deepeyes --suite deepeyes
+bash scripts/eval.sh checkpoints/DeepEyes-Reproduce/qwen2_5_vl_7b_grpo_deepeyes --suite deepeyes \
+    --agent-observation-min-pixels 3136
+# DeepEyes' own input resolution (up to 16384·28·28 pixels)
+bash scripts/eval.sh checkpoints/DeepEyes-Reproduce/qwen2_5_vl_7b_grpo_deepeyes --suite deepeyes \
+    --agent-observation-min-pixels 3136 --max-pixels 12845056
 ```
 
 The `deepeyes` suite runs the agent loop by default. For the text-only baseline, append
