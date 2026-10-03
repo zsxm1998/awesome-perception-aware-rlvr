@@ -181,6 +181,8 @@ class vLLMRollout(BaseRollout):
             engine_kwargs["mm_processor_cache_gb"] = config.mm_processor_cache_gb
             if config.limit_images:
                 engine_kwargs["limit_mm_per_prompt"] = {"image": config.limit_images}
+            if config.max_dynamic_patch is not None:  # InternVL: the same tiles as the trainer's processor
+                engine_kwargs["mm_processor_kwargs"] = {"max_dynamic_patch": config.max_dynamic_patch}
 
         VLLMHijack.hijack()
 

@@ -175,11 +175,23 @@ class RLHFDataset(Dataset):
                 self.system_prompt = f.read().strip()
 
         if filter_overlong_prompts:
+            num_prompts = len(self.dataset)
             self.dataset = self.dataset.filter(
                 self._filter_overlong_prompts,
                 desc="Filtering overlong prompts",
                 num_proc=filter_overlong_prompts_workers,
             )
+            if len(self.dataset) < num_prompts:
+                print(
+                    f"{data_path}: {num_prompts - len(self.dataset)} of {num_prompts} prompts are longer than "
+                    f"max_prompt_length={max_prompt_length} (text and image tokens) and were removed."
+                )
+            if len(self.dataset) == 0:
+                raise ValueError(
+                    f"{data_path}: all {num_prompts} prompts are longer than data.max_prompt_length="
+                    f"{max_prompt_length} (text and image tokens). Raise data.max_prompt_length, or lower "
+                    "data.max_pixels (or worker.actor.model.max_dynamic_patch for InternVL)."
+                )
 
     def _build_messages(self, example: dict[str, Any]) -> list[dict[str, Any]]:
         prompt_str: str = example[self.prompt_key]

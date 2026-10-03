@@ -581,6 +581,7 @@ class PPOConfig:
         self.worker.rollout.prompt_length = self.data.max_prompt_length
         self.worker.rollout.response_length = self.data.max_response_length
         self.worker.rollout.trust_remote_code = self.worker.actor.model.trust_remote_code
+        self.worker.rollout.max_dynamic_patch = self.worker.actor.model.max_dynamic_patch
         # the agentic rollout renders multi-turn prompts with the worker's processor, so it must use the same template
         self.worker.actor.model.override_chat_template = self.data.override_chat_template
         self.worker.actor.disable_kl = self.algorithm.disable_kl

@@ -55,6 +55,11 @@ def create_dataloader(config: DataConfig, tokenizer: PreTrainedTokenizer, proces
         train_batch_size = config.mini_rollout_batch_size
     else:
         train_batch_size = config.rollout_batch_size
+    if len(train_dataset) < train_batch_size:  # drop_last=True would leave no batch at all
+        raise ValueError(
+            f"The training set has {len(train_dataset)} prompts after filtering, fewer than one batch "
+            f"({train_batch_size}); see the filtering message above."
+        )
 
     train_dataloader = StatefulDataLoader(
         dataset=train_dataset,

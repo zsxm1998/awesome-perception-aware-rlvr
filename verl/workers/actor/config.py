@@ -51,6 +51,10 @@ class ModelConfig:
     # auto | true | false: tokenize <think>/</think> as plain text when they are untrained added tokens
     # (Qwen3-VL Instruct); see verl/utils/plain_think.py
     plain_think_tokens: Any = "auto"
+    # InternVL only: maximum number of tiles per image (a thumbnail is added when an image has more than one);
+    # None keeps the model config's max_dynamic_patch. Applies to the trainer's processor and the vLLM rollout;
+    # pass the same value to the evaluation (--max-dynamic-patch).
+    max_dynamic_patch: Optional[int] = None
     # below are auto keys
     override_chat_template: Optional[str] = field(default=None, init=False)  # copied from data.override_chat_template
 
@@ -58,6 +62,8 @@ class ModelConfig:
         from ...utils.plain_think import normalize_plain_think_tokens
 
         self.plain_think_tokens = normalize_plain_think_tokens(self.plain_think_tokens)
+        if self.max_dynamic_patch is not None and self.max_dynamic_patch < 1:
+            raise ValueError(f"model.max_dynamic_patch must be a positive integer, but got {self.max_dynamic_patch}.")
         if self.tokenizer_path is None:
             self.tokenizer_path = self.model_path
 

@@ -49,9 +49,16 @@ def get_tokenizer(
 
 
 def get_processor(
-    model_path: str, override_chat_template: Optional[str] = None, plain_think_tokens: Any = "auto", **kwargs
+    model_path: str,
+    override_chat_template: Optional[str] = None,
+    plain_think_tokens: Any = "auto",
+    max_dynamic_patch: Optional[int] = None,
+    **kwargs,
 ) -> Optional[ProcessorMixin]:
-    """Create a huggingface pretrained processor (see verl/utils/plain_think.py for ``plain_think_tokens``)."""
+    """Create a huggingface pretrained processor (see verl/utils/plain_think.py for ``plain_think_tokens``).
+
+    ``max_dynamic_patch`` caps the tiles per image of an InternVL processor (None: the model config's value).
+    """
     register_qwen3_5()
     config = None
     source = plain_think_tokenizer_path(model_path, plain_think_tokens, **kwargs) or model_path
@@ -80,6 +87,13 @@ def get_processor(
             for name in ("image_token_id", "video_token_id", "vision_start_token_id", "vision_end_token_id"):
                 if not hasattr(processor, name) and hasattr(config, name):
                     setattr(processor, name, getattr(config, name))
+
+    if max_dynamic_patch is not None:
+        if not isinstance(processor, InternVLProcessorAdapter):
+            raise ValueError("max_dynamic_patch only applies to InternVL models.")
+        if max_dynamic_patch < processor.min_dynamic_patch:
+            raise ValueError(f"max_dynamic_patch must be at least min_dynamic_patch ({processor.min_dynamic_patch}).")
+        processor.max_dynamic_patch = int(max_dynamic_patch)
 
     if processor is not None and override_chat_template is not None:
         with open(override_chat_template) as f:

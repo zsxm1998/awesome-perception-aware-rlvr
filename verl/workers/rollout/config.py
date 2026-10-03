@@ -57,6 +57,7 @@ class RolloutConfig:
     prompt_length: int = field(default=-1, init=False)
     response_length: int = field(default=-1, init=False)
     trust_remote_code: bool = field(default=False, init=False)
+    max_dynamic_patch: Optional[int] = field(default=None, init=False)  # copied from worker.actor.model
 
     def post_init(self):
         if self.interaction_mode not in {"one_shot", "agentic"}:

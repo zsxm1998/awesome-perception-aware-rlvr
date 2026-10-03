@@ -187,6 +187,7 @@ class FSDPWorker(Worker):
                 model_config.tokenizer_path,
                 override_chat_template=model_config.override_chat_template,
                 plain_think_tokens=model_config.plain_think_tokens,
+                max_dynamic_patch=model_config.max_dynamic_patch,
                 trust_remote_code=model_config.trust_remote_code,
                 use_fast=True,
             )

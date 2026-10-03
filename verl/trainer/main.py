@@ -48,6 +48,7 @@ class Runner:
             config.worker.actor.model.model_path,
             override_chat_template=config.data.override_chat_template,
             plain_think_tokens=config.worker.actor.model.plain_think_tokens,
+            max_dynamic_patch=config.worker.actor.model.max_dynamic_patch,
             trust_remote_code=config.worker.actor.model.trust_remote_code,
             use_fast=True,
         )
