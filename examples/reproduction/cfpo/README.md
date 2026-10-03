@@ -59,6 +59,22 @@ described in [eval/README.md](../../../eval/README.md).
 - Re-implemented on EasyR1 with the shared perception-reasoning modules of this repository;
   hyper-parameters follow the scripts `examples/qwen2_5_vl_3b_CFPO-{G,D}-math.sh` of the official
   repository.
+- The saliency mask is computed per sample with a causal mask, as the paper describes. In the
+  official configuration (`padding_free: true`), as we read its code, the samples of a
+  micro-batch are packed into one sequence and the hand-computed attention used for the saliency
+  statistics receives no attention mask, so it is not causal, spans the packed samples, and the
+  image-value mean V̄ is taken over them. We do not reproduce this.
+- Where the paper and the official code differ, we follow the code:
+  - V̄ (Eq. 12) is the mean image-token value vector in the paper; the code averages over the
+    image tokens and the hidden dimensions, one scalar per head.
+  - The saliency statistics use the text query tokens of the input in the paper (App. A); the
+    code uses every position after the image, the response included.
+  - The paper writes KL_cf = KL(π(o | Z) ‖ π(o | do(Z = Z_cf))); the code uses the sampled-token
+    k3 estimator, whose gradient as a loss is that of the reverse KL, KL(π_cf ‖ π).
+  - The paper describes the entropy term of CFPO_D as entropy maximization; the code adds
+    η·(−log π) to the loss, which lowers the entropy of the sampled tokens.
+  - The counterfactual log-probabilities are computed once with the rollout policy before the
+    update (no gradient through them); the paper writes them with the current parameters.
 - Validation during training uses the MMK12 test set; the official scripts monitor `*_val_V3`
   files (Geometry3K, LogicVista, MathVerse, C-VQA-Real, MARS-Bench) that are subsets of the
   corresponding test sets.
