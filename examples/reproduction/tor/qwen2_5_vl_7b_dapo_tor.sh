@@ -19,7 +19,6 @@ ALGO_ARGS=(
     "algorithm.visual_sensitivity_metric=sampled_abs_log_ratio"
 )
 EXTRA_ARGS=(
-    "data.max_response_length=5120"
     "data.mini_rollout_batch_size=128"
     "worker.actor.clip_ratio_high=0.28"
     "algorithm.use_kl_loss=false"

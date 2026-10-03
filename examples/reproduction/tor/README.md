@@ -19,10 +19,10 @@ weight 0 and are excluded from optimization. Variants: ToR-GRPO and ToR-DAPO.
 | Training data | Geometry3K train (`hiyouga/geometry3k`, 2,101) — `bash scripts/prepare_data.sh tor` |
 | Validation | Geometry3K test (601), every 20 steps, 8 samples at T=1.0, top-p 0.9 |
 | Prompt / reward | `<think>` + `\boxed{}` (`math_perception.jinja`); binary accuracy (`math.py:compute_score_wo_format`) |
-| Rollout | 512 prompts x 12 rollouts per step, T=0.95, top-p 1.0; update batch 128 prompts; vLLM tensor parallel 4 |
-| GRPO arms | low-var KL loss 0.04; clip 0.2 / 0.2; max response 4,096 |
-| DAPO arms | no KL; clip 0.2 / 0.28; online filtering on accuracy in (0.01, 0.99) with unlimited regeneration, `data.mini_rollout_batch_size=128`; max response 5,120 |
-| Optimization | AdamW (bf16), lr 1e-6 constant, token-level loss, vision tower trainable, 4 epochs, max prompt 8,192 |
+| Rollout | 512 prompts x 12 rollouts per step, T=1.0, top-p 1.0; update batch 128 prompts; vLLM tensor parallel 4 |
+| GRPO arms | low-var KL loss 0.01; clip 0.2 / 0.2 |
+| DAPO arms | no KL; clip 0.2 / 0.28; online filtering on accuracy in (0.01, 0.99) with unlimited regeneration, `data.mini_rollout_batch_size=128` |
+| Optimization | AdamW (bf16), lr 1e-6 constant, token-level loss, vision tower trainable, 15 epochs (60 steps), max prompt 8,192, max response 2,048, images 262,144–4,194,304 pixels |
 | GPUs | 8 |
 | Perception pass | `algorithm.corrupt_image=no_image` (image removed), `algorithm.visual_sensitivity_reference=old` |
 | Reasoning set T_r | `algorithm.top_entropy_quantile=0.3`, `algorithm.entropy_thr_granularity=batch` (over all tokens of the rollout batch), `algorithm.entropy_top_p=0.95` (entropy of the top-p 0.95 set, Eq. 5) |
@@ -45,6 +45,8 @@ bash scripts/prepare_data.sh tor
 bash examples/reproduction/tor/qwen2_5_vl_7b_grpo_tor.sh
 bash scripts/prepare_eval_data.sh tor
 bash scripts/eval.sh checkpoints/ToR-Reproduce/qwen2_5_vl_7b_grpo_tor --suite tor
+# greedy decoding, as the paper (which also scores with a Gemini-2.0-Flash judge)
+bash scripts/eval.sh checkpoints/ToR-Reproduce/qwen2_5_vl_7b_grpo_tor --suite tor --temperature 0 --num-samples 1
 ```
 
 Checkpoints go to `checkpoints/ToR-Reproduce/<script name>`. Append `key=value` overrides to the
@@ -54,10 +56,12 @@ validation split) and set `N_GPUS_PER_NODE`, `MODEL_PATH`, `DATA_ROOT`, `LOGGER`
 
 ## Differences from the paper
 
-- No official code exists; the method is re-implemented from the paper text. The paper only states
-  "the default settings in EasyR1" (lr 1e-6, rollout batch 512, update batch 128, n=12); the KL
-  coefficient, clip ratios, maximum response length, number of epochs and rollout temperature above
-  are our choices.
+- No official code exists; the method is re-implemented from the paper text. The paper states
+  "the default settings in EasyR1" (lr 1e-6, rollout batch 512, update batch 128, n=12); for the
+  rest we use EasyR1's defaults when the paper appeared, which NoisyRollout's GRPO baseline (the
+  paper's GRPO row) also uses: T=1.0, top-p 1.0, KL 0.01, max response 2,048, images of
+  262,144–4,194,304 pixels and 15 epochs (60 steps on Geometry3K). The clip ratios above are our
+  choices.
 - Validation uses the Geometry3K test split (601) instead of the 300-item validation split.
 - Both thresholds are taken over every response token of the rollout batch, before the update
   (Eq. 6, 7, 9), with the entropy and the perception score of the rollout policy. The entropy of
