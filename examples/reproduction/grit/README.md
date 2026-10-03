@@ -44,11 +44,12 @@ bash scripts/prepare_data.sh grit
 bash examples/reproduction/grit/qwen2_5_vl_3b_grpo_grit.sh
 bash scripts/prepare_eval_data.sh grit
 bash scripts/eval.sh checkpoints/GRIT-Reproduce/qwen2_5_vl_3b_grpo_grit --suite grit \
-    --format-prompt examples/format_prompt/grit.jinja --system-prompt none
+    --format-prompt examples/format_prompt/grit.jinja --system-prompt none --min-pixels 3136 --max-pixels 200704
 ```
 
-The `grit` suite defaults to the JSON-evidence system prompt used by `examples/comparison/qwen3_vl_4b/grit.sh`;
-models trained here should be evaluated with the official GRIT prompt as shown above. Checkpoints go
+The `grit` suite defaults to the JSON-evidence system prompt and image size used by
+`examples/comparison/qwen3_vl_4b/grit.sh`; models trained here should be evaluated with the official
+GRIT prompt and GRIT's image size (at most 256·28·28 pixels) as shown above. Checkpoints go
 to `checkpoints/GRIT-Reproduce/<script name>`. Append `key=value` overrides to the training command
 and set `N_GPUS_PER_NODE`, `MODEL_PATH`, `DATA_ROOT`, `LOGGER` or `EXPERIMENT_NAME` in the
 environment. Evaluation is described in [eval/README.md](../../../eval/README.md).
