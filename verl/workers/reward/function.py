@@ -31,6 +31,7 @@ class RewardInput(TypedDict):
     response: str
     response_length: int
     ground_truth: str
+    response_ids: NotRequired[list[int]]  # the model's response tokens (those in response_mask)
     num_images: NotRequired[int]
     grounding_consistency: NotRequired[float]
     grounding_consistency_raw: NotRequired[float]
@@ -87,6 +88,11 @@ def _add_dataset_fields(reward_input: RewardInput, data: DataProto, idx: int) ->
         values = data.non_tensor_batch.get(key)
         if values is not None and values[idx] is not None:
             reward_input[key] = str(values[idx])
+
+
+def _add_response_ids(reward_input: RewardInput, data: DataProto, idx: int) -> None:
+    response_mask = data.batch["response_mask"][idx].to(torch.bool)
+    reward_input["response_ids"] = data.batch["responses"][idx][response_mask].tolist()
 
 
 def _get_optional_scalar(data: DataProto, idx: int, key: str) -> float | None:
@@ -213,6 +219,7 @@ class SequentialFunctionRewardManagerMixin:
             }
             _attach_agent_reward_fields(reward_input, data, i)
             _add_dataset_fields(reward_input, data, i)
+            _add_response_ids(reward_input, data, i)
             num_images = _get_num_images(data, i)
             if num_images is not None:
                 reward_input["num_images"] = num_images
@@ -250,6 +257,7 @@ class BatchFunctionRewardManagerMixin:
             }
             _attach_agent_reward_fields(reward_input, data, i)
             _add_dataset_fields(reward_input, data, i)
+            _add_response_ids(reward_input, data, i)
             num_images = _get_num_images(data, i)
             if num_images is not None:
                 reward_input["num_images"] = num_images

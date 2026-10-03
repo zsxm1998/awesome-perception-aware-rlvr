@@ -328,6 +328,7 @@ def test_reward_manager_passes_num_images_to_reward_function():
         {
             "response": "abc",
             "response_length": 3,
+            "response_ids": [97, 98, 99],
             "ground_truth": "abc",
             "num_images": 3,
         }
@@ -351,6 +352,7 @@ def test_reward_manager_passes_grounding_consistency_to_reward_function():
         {
             "response": "abc",
             "response_length": 3,
+            "response_ids": [97, 98, 99],
             "ground_truth": "abc",
             "grounding_consistency": 0.25,
         }
@@ -375,6 +377,7 @@ def test_reward_manager_forwards_raw_grounding_keys():
         {
             "response": "abc",
             "response_length": 3,
+            "response_ids": [97, 98, 99],
             "ground_truth": "abc",
             "grounding_consistency": 0.1,
             "grounding_consistency_raw": 1.0,
@@ -404,6 +407,7 @@ def test_reward_manager_canonicalizes_qwen35_prefilled_think_response():
         {
             "response": "<think>\nreasoning</think>\\boxed{A}",
             "response_length": len(response_ids),
+            "response_ids": response_ids,
             "ground_truth": "A",
         }
     ]
