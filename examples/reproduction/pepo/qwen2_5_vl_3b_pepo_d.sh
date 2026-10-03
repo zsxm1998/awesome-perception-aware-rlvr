@@ -15,12 +15,13 @@ ALGO_ARGS=(
     "algorithm.pepo_gate_alpha=0.05"
     "algorithm.pepo_gate_temperature=1.8"
     "algorithm.online_filtering=true"
-    "algorithm.filter_key=accuracy"
-    "algorithm.filter_low=0.01"
-    "algorithm.filter_high=0.99"
+    "algorithm.filter_key=overall"
+    "algorithm.filter_criterion=std"
+    "algorithm.online_filtering_fallback=first_round"
 )
 EXTRA_ARGS=(
     "worker.actor.loss_avg_mode=token"
+    "trainer.max_try_make_batch=3"
     "trainer.val_freq=25"
     "trainer.save_freq=25"
 )

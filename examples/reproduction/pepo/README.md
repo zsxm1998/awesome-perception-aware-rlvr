@@ -23,7 +23,7 @@ from 0 to 1 over training. Variants: PEPO_G (on GRPO) and PEPO_D (on DAPO).
 | Validation | Geometry3K test (601), 8 samples at T=1.0, top-p 1.0 (`trainer.val_freq=400` in `common.sh`, 25 in the DAPO / PEPO_D / InternVL leaves) |
 | Prompt / reward | the problem followed by PEPO's instruction "First output the thinking process in <think> </think> tags and then output the final answer in <answer> </answer> tags." (`examples/format_prompt/pepo.jinja`); 0.5 accuracy + 0.5 format as PEPO's reward plugin (`examples/reward_function/r1v.py`: exactly one `<think>` and one `<answer>` pair; the answer NFKC-normalized and case-folded, then graded with mathruler) |
 | Rollout | 8 prompts x 8 rollouts per step (`data.rollout_batch_size=8`, one update per step, as PEPO's 2 responses per GPU x 4 accumulation steps x 8 GPUs), T=1.0, top-p 1.0 |
-| RL | low-var KL loss 0.001; clip 0.2 / 0.2; GRPO arms: sequence-level loss averaging (`worker.actor.loss_avg_mode=seq`); DAPO arms: token-level averaging and online filtering on accuracy in (0.01, 0.99) |
+| RL | low-var KL loss 0.001; clip 0.2 / 0.2; GRPO arms: sequence-level loss averaging (`worker.actor.loss_avg_mode=seq`); DAPO arms: token-level averaging and online filtering as ms-swift's dynamic sampling (keep the groups whose total reward varies, at most 3 rounds, then train on the first round unfiltered) |
 | Optimization | AdamW (bf16), lr 1e-6 with cosine decay to 0 and no warmup, vision tower trainable, 1 epoch (262 steps) |
 | Lengths / pixels | max prompt 1,024, max response 1,024; 200,704-1,003,520 pixels |
 | GPUs | 8 |
@@ -68,7 +68,8 @@ environment. Evaluation is described in [eval/README.md](../../../eval/README.md
 - Only the geometry task is scripted (the official repository also releases only this pipeline);
   the grounding, few-shot classification, puzzle and ViRL39K-scaling settings are not included.
 - The DAPO variants keep the upper clip ratio at 0.2, as in the released script (the paper's table
-  lists 0.28), and allow up to 20 regeneration rounds (the paper: at most 3 resamples).
+  lists 0.28). ms-swift's dynamic sampling checks the first round and two resamples; it also
+  generates a third resample that it does not use, which we skip.
 - `pepo_gate_temperature=1.8` follows the released script; the paper does not mention it.
 - Evaluation scores every benchmark with rule-based exact match (falling back to `<answer>` when no
   `\boxed{}` is present) instead of the official MathVista checker; the Geometry3K validation
