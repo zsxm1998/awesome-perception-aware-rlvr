@@ -18,7 +18,6 @@ ALGO_ARGS=(
 EXTRA_ARGS=(
     "worker.actor.clip_ratio_low=0.2"
     "worker.actor.clip_ratio_high=0.28"
-    "worker.actor.clip_ratio_dual=10.0"
 )
 
 launch_pgpo_matrix "$@"

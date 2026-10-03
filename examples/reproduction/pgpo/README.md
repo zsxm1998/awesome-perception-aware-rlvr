@@ -22,7 +22,7 @@ their sum equal to the response length, and multiply the DAPO advantage token by
 | Validation | MMK12 test (2,000), every 5 steps, 8 samples at T=1.0, top-p 0.99 |
 | Prompt / reward | `<think>` + `\boxed{}` (`math_perception.jinja`); 0.9 accuracy + 0.1 format (`math.py:compute_score`) |
 | Rollout | 384 prompts x 5 rollouts per step (generated in chunks of 128 prompts), T=1.0, top-p 0.99; update batch 128 prompts |
-| RL (DAPO recipe) | no KL; clip 0.2 / 0.28 with dual-clip bound 10.0 (`worker.actor.clip_ratio_dual=10.0`); online filtering on accuracy in (0.01, 0.99); token-level loss |
+| RL (DAPO recipe) | no KL; clip 0.2 / 0.28 with the default dual-clip bound 3.0; online filtering on accuracy in (0.01, 0.99); token-level loss |
 | Optimization | AdamW (bf16), lr 1e-6 constant, vision tower trainable, 2 epochs |
 | Lengths / pixels | max prompt 4,096, max response 2,048; 200,704-1,003,520 pixels |
 | GPUs | 4 |
