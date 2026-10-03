@@ -721,6 +721,9 @@ def _compute_advantage_scaling(
             response_mask=response_mask,
             threshold=loss_config.get("pgpo_token_scaling_threshold", 0.4),
             boost=loss_config.get("pgpo_token_scaling_boost", 2.0),
+            threshold_mode=loss_config.get("pgpo_threshold_mode", "absolute"),
+            low_weight_floor=loss_config.get("pgpo_low_weight_floor", 0.0),
+            mass_normalization=loss_config.get("pgpo_mass_normalization", True),
         )
     if scaling_method == "pepo":
         if entropy is None:
@@ -778,26 +781,48 @@ def _compute_pgpo_token_scaling(
     response_mask: torch.Tensor,
     threshold: float,
     boost: float,
+    threshold_mode: str = "absolute",
+    low_weight_floor: float = 0.0,
+    mass_normalization: bool = True,
     eps: float = 1e-8,
 ) -> tuple[torch.Tensor, dict[str, float]]:
+    """PGPO token weights. The defaults follow the paper (Eq. 6-7); `threshold_mode="quantile"`,
+    `low_weight_floor=0.1` and `mass_normalization=False` follow the authors' development code."""
     valid_mask = response_mask.to(torch.bool)
     scores = torch.log1p(torch.clamp(per_token_sensitivity.float(), min=0.0))
     normalized_scores = minmax_normalize_by_response(scores, valid_mask, eps=eps)
 
-    threshold_tensor = scores.new_tensor(threshold)
+    metrics = {}
+    if threshold_mode == "quantile":
+        # the ascending normalized score at index floor(length * threshold), within [0, length - 1]
+        lengths = valid_mask.sum(dim=-1, keepdim=True)
+        index = torch.minimum((lengths.float() * threshold).long(), (lengths - 1).clamp(min=0))
+        sorted_scores = normalized_scores.masked_fill(~valid_mask, float("inf")).sort(dim=-1).values
+        threshold_tensor = torch.where(lengths > 0, sorted_scores.gather(-1, index), 0.0)
+        metrics["algo/pgpo/threshold_mean"] = to_float(threshold_tensor[lengths > 0].mean())
+    elif threshold_mode == "absolute":
+        threshold_tensor = scores.new_tensor(threshold)
+    else:
+        raise ValueError(f"Unknown pgpo_threshold_mode: {threshold_mode}")
     below = normalized_scores / threshold_tensor.clamp(min=eps)
+    if low_weight_floor > 0.0:
+        below = below.clamp(min=low_weight_floor)
     above = 1.0 + boost * (normalized_scores - threshold_tensor) / (1.0 - threshold_tensor).clamp(min=eps)
     raw_scaling = torch.where(normalized_scores < threshold_tensor, below, above)
     raw_scaling = raw_scaling.masked_fill(~valid_mask, 0.0)
 
-    token_counts = valid_mask.sum(dim=-1, keepdim=True).to(raw_scaling.dtype)
-    raw_sums = raw_scaling.sum(dim=-1, keepdim=True)
-    mass_normalized = raw_scaling * token_counts / raw_sums.clamp(min=eps)
-    fallback = valid_mask.to(raw_scaling.dtype)
-    scaling = torch.where(raw_sums > eps, mass_normalized, fallback)
-    scaling = scaling.masked_fill(~valid_mask, 0.0)
+    if mass_normalization:
+        token_counts = valid_mask.sum(dim=-1, keepdim=True).to(raw_scaling.dtype)
+        raw_sums = raw_scaling.sum(dim=-1, keepdim=True)
+        mass_normalized = raw_scaling * token_counts / raw_sums.clamp(min=eps)
+        fallback = valid_mask.to(raw_scaling.dtype)
+        scaling = torch.where(raw_sums > eps, mass_normalized, fallback)
+        scaling = scaling.masked_fill(~valid_mask, 0.0)
+    else:
+        scaling = raw_scaling
 
     metrics = {
+        **metrics,
         "algo/pgpo/token_importance_mean": to_float(VF.masked_mean(normalized_scores, response_mask)),
         "algo/advantage_scaling/factor_mean": to_float(VF.masked_mean(scaling, response_mask)),
         "algo/advantage_scaling/factor_min": to_float(masked_vector_min(scaling, valid_mask)),

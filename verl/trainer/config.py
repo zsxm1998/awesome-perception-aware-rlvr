@@ -184,6 +184,12 @@ class AlgorithmConfig:
     """PGPO token-scaling threshold; corresponds to tau in the paper."""
     pgpo_token_scaling_boost: float = 2.0
     """PGPO token-scaling boost factor; corresponds to beta in the paper."""
+    pgpo_threshold_mode: str = "absolute"
+    """what `pgpo_token_scaling_threshold` is. `absolute`: a value of the min-max normalized score (paper Eq. 6). `quantile`: a fraction of each response's tokens; the threshold is the response's ascending normalized score at index floor(length * threshold) (the authors' development code, Yzk1114/EasyR1)."""
+    pgpo_low_weight_floor: float = 0.0
+    """lower bound of the weight of the tokens below the threshold. The paper has none (0.0); the authors' development code uses 0.1."""
+    pgpo_mass_normalization: bool = True
+    """rescale each response's token weights to sum to its length (paper Eq. 7). The authors' development code does not (false)."""
     advantage_scaling_schedule: str = "none"
     """generic interpolation for token/response advantage scaling. `linear` applies 1 + progress * (factor - 1)."""
     pepo_gate_alpha: float = 0.05
@@ -442,6 +448,9 @@ class AlgorithmConfig:
             raise ValueError(
                 f"pgpo_token_scaling_boost must be non-negative, but got {self.pgpo_token_scaling_boost}."
             )
+        _validate_choice("pgpo_threshold_mode", self.pgpo_threshold_mode, {"absolute", "quantile"})
+        if not 0.0 <= self.pgpo_low_weight_floor <= 1.0:
+            raise ValueError(f"pgpo_low_weight_floor must be in [0, 1], but got {self.pgpo_low_weight_floor}.")
 
         uses_hidden_state_visual_sensitivity = self.visual_sensitivity_metric == "hidden_state_similarity"
         requires_decremental_view = (
