@@ -380,9 +380,28 @@ def boxed_exact_match(response: str, ground_truth: Any) -> float:
     return 1.0 if _grade_answer_cached(answer, str(ground_truth).strip()) else 0.0
 
 
-def boxed_row_scores(row: dict[str, Any]) -> list[float]:
-    target = row.get("target")
-    return [boxed_exact_match(str(response), target) for response in row.get("responses") or []]
+def boxed_row_answers(row: dict[str, Any], benchmark: str | None = None) -> list[tuple[str, float, str]]:
+    """(answer, score, source) per response of a boxed_exact_match row, the one reading that the scorer, the run
+    comparison and the perturbation diagnostics share. ``source`` is boxed, answer_tag, none, or pepo_letter for
+    LogicVista items read with --answer-protocol pepo. ``benchmark`` defaults to the row's own."""
+    target = str(row.get("target")).strip()
+    benchmark = benchmark if benchmark is not None else str(row.get("benchmark") or "")
+    pepo_letter = (
+        benchmark == "logicvista" and _row_answer_protocol(row) == "pepo" and re.fullmatch(r"[A-Za-z]", target)
+    )
+    answers = []
+    for response in row.get("responses") or []:
+        if pepo_letter:
+            letter = pepo_logicvista_letter(str(response))
+            answers.append((letter or "", 1.0 if letter == target.upper() else 0.0, "pepo_letter"))
+            continue
+        answer, source = boxed_answer(str(response))
+        answers.append((answer, 1.0 if _grade_answer_cached(answer, target) else 0.0, source))
+    return answers
+
+
+def boxed_row_scores(row: dict[str, Any], benchmark: str | None = None) -> list[float]:
+    return [score for _, score, _ in boxed_row_answers(row, benchmark)]
 
 
 def pepo_logicvista_letter(text: str) -> str | None:
@@ -421,22 +440,15 @@ def score_boxed_exact_match(
     pepo_letter_rows = 0
     for row in rows:
         target = str(row.get("target")).strip()
-        answers, scores = [], []
         # --answer-protocol pepo: LogicVista items with a single-letter answer are read as PEPO reads them
-        pepo_letter = (
-            spec.key == "logicvista" and _row_answer_protocol(row) == "pepo" and re.fullmatch(r"[A-Za-z]", target)
-        )
-        pepo_letter_rows += int(bool(pepo_letter))
-        for response in row.get("responses") or []:
-            if pepo_letter:
-                letter = pepo_logicvista_letter(str(response))
-                answers.append(letter or "")
-                scores.append(1.0 if letter == target.upper() else 0.0)
-                continue
-            answer, source = boxed_answer(str(response))
-            source_counts[source] += 1
-            answers.append(answer)
-            scores.append(1.0 if _grade_answer_cached(answer, target) else 0.0)
+        read = boxed_row_answers(row, spec.key)
+        answers = [answer for answer, _, _ in read]
+        scores = [score for _, score, _ in read]
+        sources = [source for _, _, source in read]
+        pepo_letter_rows += int("pepo_letter" in sources)
+        for source in sources:
+            if source in source_counts:
+                source_counts[source] += 1
         k_values.add(len(scores))
         per_sample.append(
             {
@@ -1841,7 +1853,7 @@ def _sample_score_and_correct(spec: BenchmarkSpec, row: dict[str, Any]) -> tuple
         correct = _parse_yes_no(response) == _parse_yes_no(str(row.get("target")))
         return float(correct), correct
     if spec.scorer == "boxed_exact_match":
-        values = boxed_row_scores(row)
+        values = boxed_row_scores(row, spec.key)
         score = sum(values) / len(values) if values else 0.0
         return score, score >= 0.5
     if spec.scorer == "mcq":

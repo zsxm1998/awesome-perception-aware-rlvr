@@ -218,7 +218,7 @@ def _extract_cfpo_match(spec: BenchmarkSpec, rows: list[dict[str, Any]], results
 def _extract_boxed_exact_match(spec: BenchmarkSpec, rows: list[dict[str, Any]], results_dir: Path) -> BenchmarkSamples:
     values = []
     for row in rows:
-        scores = S.boxed_row_scores(row)
+        scores = S.boxed_row_scores(row, spec.key)
         values.append(sum(scores) / len(scores) if scores else 0.0)
     return mean_samples(_row_ids(rows), values)
 

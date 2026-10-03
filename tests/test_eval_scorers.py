@@ -926,3 +926,31 @@ def test_pepo_protocol_reads_logicvista_letters(tmp_path):
     pepo = score_boxed_exact_match(spec, pepo_rows, None, tmp_path)
     assert default.raw_score == 50.0 and pepo.raw_score == 100.0  # multi-letter answers keep the default rule
     assert pepo.details["pepo_letter_items"] == 1
+
+
+def test_pepo_protocol_scores_agree_across_scorer_comparison_and_diagnostics(tmp_path):
+    """The run comparison and the perturbation diagnostics must read a row as the scorer does."""
+    from easyr1_eval import compare
+    from easyr1_eval.scorers import _sample_score_and_correct, score_boxed_exact_match
+
+    spec = BenchmarkSpec(
+        key="logicvista",
+        label="LogicVista",
+        group="Reasoning",
+        loader="sharegpt",
+        scorer="boxed_exact_match",
+        primary_metric="mean_acc_at_k",
+    )
+    row = {
+        "benchmark": "logicvista",
+        "sample_id": "0",
+        "target": "B",
+        "responses": ["<answer>The correct option is B.</answer>"],
+        "eval_metadata": {"answer_protocol": "pepo"},
+    }
+    assert score_boxed_exact_match(spec, [row], None, tmp_path).raw_score == 100.0
+    assert compare._extract_boxed_exact_match(spec, [row], tmp_path).payload["value"].tolist() == [1.0]
+    assert _sample_score_and_correct(spec, row) == (1.0, True)
+    default_row = {**row, "eval_metadata": {}}
+    assert score_boxed_exact_match(spec, [default_row], None, tmp_path).raw_score == 0.0
+    assert _sample_score_and_correct(spec, default_row) == (0.0, False)
