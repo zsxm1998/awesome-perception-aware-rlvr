@@ -14,10 +14,12 @@
 """Top-quantile token masks over the whole rollout batch, micro-batch masks and the top-p entropy."""
 
 import math
+from types import SimpleNamespace
 
 import pytest
 import torch
 
+from verl.protocol import DataProto
 from verl.trainer.config import AlgorithmConfig
 from verl.trainer.perception_reasoning_data import build_perception_reasoning_loss_config
 from verl.trainer.perception_reasoning_loss import (
@@ -27,6 +29,7 @@ from verl.trainer.perception_reasoning_loss import (
 )
 from verl.utils.torch_functional import entropy_from_logits, top_p_entropy_from_logits
 from verl.workers.actor.config import ActorConfig
+from verl.workers.actor.dp_actor import DataParallelPPOActor
 
 
 def _tor_config(**overrides) -> AlgorithmConfig:
@@ -166,3 +169,42 @@ def test_top_p_entropy():
 def test_config_validation(overrides, message):
     with pytest.raises(ValueError, match=message):
         _tor_config(**overrides)
+
+
+class _TableActor(torch.nn.Module):
+    """Logits looked up from a fixed random table by the input token."""
+
+    def __init__(self, vocab_size: int = 16):
+        super().__init__()
+        self.table = torch.nn.Parameter(
+            torch.randn(vocab_size, vocab_size, generator=torch.Generator().manual_seed(0))
+        )
+
+    def forward(self, input_ids, attention_mask=None, position_ids=None, **kwargs):
+        return SimpleNamespace(logits=self.table[input_ids])
+
+
+@pytest.mark.parametrize("top_p", [1.0, 0.9])
+def test_compute_log_prob_returns_the_rollout_policy_entropy(top_p):
+    """The entropy behind batch-level entropy masks comes from compute_log_prob, without gradient."""
+    config = ActorConfig(padding_free=False, use_torch_compile=False, micro_batch_size_per_device_for_experience=2)
+    actor = DataParallelPPOActor(config=config, actor_module=_TableActor())
+    actor.log_probs_from_logits = lambda logits, labels: (  # the default kernel needs CUDA tensors
+        torch.log_softmax(logits.float(), dim=-1).gather(-1, labels.unsqueeze(-1)).squeeze(-1)
+    )
+    input_ids = torch.randint(0, 16, (3, 7), generator=torch.Generator().manual_seed(1))
+    data = DataProto.from_dict(
+        tensors={
+            "input_ids": input_ids,
+            "attention_mask": torch.ones_like(input_ids),
+            "position_ids": torch.arange(7).expand(3, -1),
+            "responses": input_ids[:, -4:],
+        },
+        meta_info={"temperature": 1.0},
+    )
+    _, entropy = actor.compute_log_prob(data, return_entropy=True, entropy_top_p=top_p)
+
+    logits = actor.actor_module.table[input_ids[:, -5:-1]].detach()
+    expected = top_p_entropy_from_logits(logits, top_p) if top_p < 1 else entropy_from_logits(logits)
+    torch.testing.assert_close(entropy, expected)
+    assert not entropy.requires_grad

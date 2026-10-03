@@ -705,6 +705,7 @@ class DataParallelPPOActor(BasePPOActor):
                 model_inputs,
                 temperature=temperature,
                 return_entropy=return_entropy,
+                entropy_requires_grad=False,
                 entropy_top_p=entropy_top_p,
                 model_level_visual_corruption=model_level_visual_corruption,
             )
