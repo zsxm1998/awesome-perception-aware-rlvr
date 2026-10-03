@@ -46,6 +46,7 @@ launch_pepo_geometry3k() {
         "worker.rollout.n=8"
         "worker.rollout.temperature=1.0"
         "worker.rollout.top_p=1.0"
+        "worker.rollout.top_k=50"
         "worker.rollout.tensor_parallel_size=1"
         "worker.rollout.gpu_memory_utilization=0.6"
         "worker.rollout.enable_chunked_prefill=false"
