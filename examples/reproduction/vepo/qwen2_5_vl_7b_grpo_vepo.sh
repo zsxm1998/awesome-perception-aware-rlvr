@@ -8,7 +8,7 @@ pr_default EXPERIMENT_NAME "qwen2_5_vl_7b_grpo_vepo"
 ALGO_ARGS=(
     "algorithm.corrupt_image=gaussian_noise"
     "algorithm.corrupt_image_position=prompt"
-    "algorithm.corrupt_image_kwargs={\"std\":6.928}"
+    "algorithm.corrupt_image_kwargs={\"std\":2.0}"
     "algorithm.visual_sensitivity_metric=vepo"
     "algorithm.visual_sensitivity_jsd_weight=0.7"
     "algorithm.visual_sensitivity_entropy_gate=normal_entropy"
