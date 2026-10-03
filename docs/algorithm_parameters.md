@@ -17,7 +17,7 @@ Used by the DAPO arms.
 
 - `algorithm.online_filtering`, `algorithm.filter_key`, `algorithm.filter_low`, `algorithm.filter_high`, `trainer.max_try_make_batch`
 - `algorithm.filter_criterion`: `mean_range` (default: group mean of `filter_key` in (`filter_low`, `filter_high`)) or `std` (the group's values differ, as ms-swift; PEPO)
-- `algorithm.online_filtering_fallback`: `error` (default), `keep_round` (a round that keeps no group is kept whole, as PAPO's code), `first_round` (after the last round, train on the first round unfiltered, as ms-swift; PEPO)
+- `algorithm.online_filtering_fallback`: `error` (default), `keep_round` (a round that keeps no group is kept whole, as PAPO's code), `first_round` (after the last round, train on the first round unfiltered, as ms-swift; PEPO; needs `data.mini_rollout_batch_size` unset or at least `data.rollout_batch_size`)
 
 ## Shared Entropy Controls
 

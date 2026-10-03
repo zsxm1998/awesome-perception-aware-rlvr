@@ -608,6 +608,16 @@ class PPOConfig:
             raise ValueError(
                 "algorithm.online_filtering_fallback=first_round requires trainer.max_try_make_batch > 0."
             )
+        if (
+            self.algorithm.online_filtering
+            and self.algorithm.online_filtering_fallback == "first_round"
+            and self.data.mini_rollout_batch_size is not None
+            and self.data.mini_rollout_batch_size < self.data.rollout_batch_size
+        ):
+            raise ValueError(
+                "algorithm.online_filtering_fallback=first_round trains on the first round unfiltered, which needs a "
+                "whole rollout batch: data.mini_rollout_batch_size must be unset or at least data.rollout_batch_size."
+            )
         if self.worker.rollout.interaction_mode == "agentic":
             unsupported_interventions = []
             intervention_fields = {

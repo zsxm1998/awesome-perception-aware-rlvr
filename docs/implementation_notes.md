@@ -100,4 +100,5 @@ the batch is full:
   `trainer.max_try_make_batch` rounds do not fill the batch: `error` raises in both cases;
   `keep_round` keeps such a round whole and still raises after the last round, as PAPO's code;
   `first_round` drops such a round and trains on the first round unfiltered once the rounds run out,
-  as ms-swift (`max_resample_times=3` checks the first round and two resamples).
+  as ms-swift (`max_resample_times=3` checks the first round and two resamples); it needs whole
+  rounds, so `data.mini_rollout_batch_size` must be unset or at least `data.rollout_batch_size`.

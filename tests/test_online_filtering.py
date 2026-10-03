@@ -149,3 +149,20 @@ def test_first_round_needs_a_round_limit():
         config.post_init()
     with pytest.raises(ValueError, match="online_filtering_fallback"):
         _config(fallback="retry").algorithm.post_init()
+
+
+def test_first_round_needs_whole_rounds():
+    """With rounds smaller than the rollout batch, the first round alone cannot fill a training batch."""
+    config = _config(fallback="first_round", max_try=3)
+    config.trainer.n_gpus_per_node = 1
+    config.worker.actor.global_batch_size = ROLLOUT_BATCH_SIZE
+    config.worker.actor.micro_batch_size_per_device_for_update = 1
+    config.worker.actor.micro_batch_size_per_device_for_experience = 1
+    config.data.mini_rollout_batch_size = ROLLOUT_BATCH_SIZE // 2
+    with pytest.raises(ValueError, match="mini_rollout_batch_size"):
+        config.post_init()
+    config.data.mini_rollout_batch_size = ROLLOUT_BATCH_SIZE
+    config.post_init()
+    config.algorithm.online_filtering_fallback = "keep_round"  # accumulates rounds; partial rounds are fine
+    config.data.mini_rollout_batch_size = ROLLOUT_BATCH_SIZE // 2
+    config.post_init()
