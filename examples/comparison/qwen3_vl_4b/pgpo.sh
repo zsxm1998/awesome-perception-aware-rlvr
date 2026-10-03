@@ -13,6 +13,9 @@ ALGO_ARGS=(
     "algorithm.advantage_scaling_method=pgpo"
     "algorithm.pgpo_token_scaling_threshold=0.4"
     "algorithm.pgpo_token_scaling_boost=2.0"
+    "algorithm.pgpo_threshold_mode=quantile"
+    "algorithm.pgpo_low_weight_floor=0.1"
+    "algorithm.pgpo_mass_normalization=false"
 )
 EXTRA_ARGS=()
 
