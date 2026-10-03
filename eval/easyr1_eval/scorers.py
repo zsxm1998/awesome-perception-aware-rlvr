@@ -385,16 +385,54 @@ def boxed_row_scores(row: dict[str, Any]) -> list[float]:
     return [boxed_exact_match(str(response), target) for response in row.get("responses") or []]
 
 
+def pepo_logicvista_letter(text: str) -> str | None:
+    """PEPO's LogicVista reading (evaluate_logicvista.py: extract_answer, normalize_prediction_to_letter): the
+    <answer> span (or the text after <answer>, or the whole response), unwrapped from \\boxed{}, then its last
+    standalone letter."""
+    span = re.search(r"<\s*answer\s*>(.*?)<\s*/\s*answer\s*>", text, flags=re.IGNORECASE | re.DOTALL)
+    if span and span.group(1).strip():
+        answer = span.group(1).strip()
+    else:
+        opening = re.search(r"<\s*answer\s*>", text, flags=re.IGNORECASE)
+        answer = text[opening.end() :].strip() if opening else text.strip()
+    boxed = re.search(r"\\boxed\s*\{(.*)\}\s*$", answer, flags=re.DOTALL)
+    if boxed:
+        answer = boxed.group(1).strip()
+    if answer and answer[-1] in (".", "\u3002"):
+        answer = answer[:-1].strip()
+    letters = re.findall(r"\b([A-Za-z])\b", answer)
+    if letters:
+        return letters[-1].upper()
+    first = re.search(r"[A-Za-z]", answer)
+    return first.group(0).upper() if first else None
+
+
+def _row_answer_protocol(row: dict[str, Any]) -> str:
+    metadata = row.get("eval_metadata")
+    return str(metadata.get("answer_protocol") or "default") if isinstance(metadata, dict) else "default"
+
+
 def score_boxed_exact_match(
     spec: BenchmarkSpec, rows: PredictionRows, judge_config: JudgeConfig | None, output_dir: Path
 ) -> MetricResult:
     per_sample = []
     source_counts = {"boxed": 0, "answer_tag": 0, "none": 0}
     k_values = set()
+    pepo_letter_rows = 0
     for row in rows:
         target = str(row.get("target")).strip()
         answers, scores = [], []
+        # --answer-protocol pepo: LogicVista items with a single-letter answer are read as PEPO reads them
+        pepo_letter = (
+            spec.key == "logicvista" and _row_answer_protocol(row) == "pepo" and re.fullmatch(r"[A-Za-z]", target)
+        )
+        pepo_letter_rows += int(bool(pepo_letter))
         for response in row.get("responses") or []:
+            if pepo_letter:
+                letter = pepo_logicvista_letter(str(response))
+                answers.append(letter or "")
+                scores.append(1.0 if letter == target.upper() else 0.0)
+                continue
             answer, source = boxed_answer(str(response))
             source_counts[source] += 1
             answers.append(answer)
@@ -427,6 +465,7 @@ def score_boxed_exact_match(
             "mean_acc_at_k": mean_acc,
             "pass_at_k": pass_at_k,
             "answer_source_counts": source_counts,
+            **({"pepo_letter_items": pepo_letter_rows} if pepo_letter_rows else {}),
         },
     )
 

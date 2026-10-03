@@ -699,3 +699,23 @@ def test_grit_suite_asks_the_bare_question(monkeypatch):
     (bare,) = runner.apply_grounding_instruction([sample], grit_args)
     (kept,) = runner.apply_grounding_instruction([sample], cgpo_args)
     assert bare.prompt == "Is the cat left of the dog?" and kept.prompt == sample.prompt
+
+
+def test_pepo_geometry_suite_uses_the_pepo_answer_protocol(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["run_all_benchmarks.py", "--model", "model", "--suite", "pepo_geometry"])
+    args = runner.parse_args()
+    assert args.answer_protocol == "pepo"
+    mathverse = BenchmarkSpec(
+        key="mathverse",
+        label="MathVerse",
+        group="Reasoning",
+        loader="sharegpt",
+        scorer="boxed_exact_match",
+        primary_metric="mean_acc_at_k",
+    )
+    sample = EvalSample(benchmark="mathverse", sample_id="mathverse:0", prompt="Which angle? A: 30 B: 60", target="B")
+    (asked,) = runner.apply_answer_protocol([sample], mathverse, args)
+    assert asked.prompt.endswith("Answer with the option's letter from the given choices directly.")
+    args.perturbation, args.perturbation_seed = None, 42  # resolved later by the CLI
+    monkeypatch.setattr(runner, "perturbation_metadata", lambda *_: {})
+    assert runner.metric_metadata_for(mathverse, args)["answer_protocol"] == "pepo"  # read by the scorers

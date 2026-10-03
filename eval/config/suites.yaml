@@ -8,8 +8,8 @@
 #   include:    other suites whose benchmarks are prepended (order preserved, no duplicates)
 #   defaults:   runner options applied only when the flag is NOT given on the command line
 #               (format_prompt, system_prompt, interaction_mode, agent_profile, min_pixels,
-#               max_pixels, grounding_instruction). Paths are relative to the repository root;
-#               `none` disables the format prompt.
+#               max_pixels, grounding_instruction, answer_protocol). Paths are relative to the
+#               repository root; `none` disables the format prompt.
 #   notes:      where our protocol differs from the paper's own evaluation
 #
 # Every reasoning benchmark is scored with the PAPO-Eval protocol (rule-based exact match on
@@ -63,6 +63,7 @@ suites:
       format_prompt: examples/format_prompt/pepo.jinja
       min_pixels: 3136  # images at their resolution, as examples/reproduction/pepo trains
       max_pixels: 12845056
+      answer_protocol: pepo  # MathVerse asks for the option letter; LogicVista reads the last standalone letter
 
   vepo:
     description: VEPO Table 1 (2 in-domain + 5 out-of-domain benchmarks)

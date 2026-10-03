@@ -280,6 +280,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "question only, for models trained to answer it as is (the grit suite's default).",
     )
     parser.add_argument(
+        "--answer-protocol",
+        choices=["default", "pepo"],
+        default=None,
+        help="pepo (the pepo_geometry suite's default): as PEPO's evaluation scripts, MathVerse asks for the "
+        "option letter and LogicVista reads the last standalone letter of the answer.",
+    )
+    parser.add_argument(
         "--prompt-mode",
         choices=["raw", "chat"],
         default="chat",
@@ -423,6 +430,8 @@ def apply_prompt_defaults(args: argparse.Namespace) -> None:
     args.suite_defaults_applied = applied
     if getattr(args, "grounding_instruction", None) is None:
         args.grounding_instruction = "append"
+    if getattr(args, "answer_protocol", None) is None:
+        args.answer_protocol = "default"
     if getattr(args, "min_pixels", None) is None:
         args.min_pixels = DEFAULT_MIN_PIXELS
     if getattr(args, "max_pixels", None) is None:
@@ -670,6 +679,11 @@ def write_run_summaries(results, args: argparse.Namespace, run_id: str) -> None:
             if getattr(args, "grounding_instruction", "append") != "append"
             else {}
         ),
+        **(
+            {"answer_protocol": args.answer_protocol}
+            if getattr(args, "answer_protocol", "default") != "default"
+            else {}
+        ),
         "batch_size": args.batch_size,
         "max_batch_images": args.max_batch_images,
         "max_model_len": args.max_model_len,
@@ -728,6 +742,8 @@ def format_results_table(results, *, title: str = "Results") -> str:
 
 def metric_metadata_for(spec: BenchmarkSpec, args: argparse.Namespace) -> dict[str, Any]:
     metadata = {"max_model_len": args.max_model_len, "box_format": getattr(args, "box_format", "norm1000")}
+    if getattr(args, "answer_protocol", "default") != "default":
+        metadata["answer_protocol"] = args.answer_protocol
     if getattr(args, "chat_template", None):
         metadata["chat_template"] = args.chat_template
     if getattr(args, "plain_think_tokens", "auto") != "auto":
@@ -967,6 +983,7 @@ def infer_benchmark_shard(
     samples = shard_samples(load_samples(spec, args.data_root, limit=args.limit), shard_index, num_shards)
     samples = apply_interaction_prompt_contract(samples, args)
     samples = apply_grounding_instruction(samples, args)
+    samples = apply_answer_protocol(samples, spec, args)
     samples = apply_box_format_to_prompts(samples, getattr(args, "box_format", "norm1000"))
     samples = apply_prompt_config(samples, prompt_config_from_args(args))
     output = shard_prediction_path(args.output_dir, spec, shard_index)
@@ -1042,6 +1059,18 @@ def apply_interaction_prompt_contract(
         (replace(sample, prompt=sample.native_agentic_prompt) if sample.native_agentic_prompt is not None else sample)
         for sample in samples
     ]
+
+
+PEPO_MATHVERSE_INSTRUCTION = "\nAnswer with the option's letter from the given choices directly."
+
+
+def apply_answer_protocol(
+    samples: list[EvalSample], spec: BenchmarkSpec, args: argparse.Namespace
+) -> list[EvalSample]:
+    """--answer-protocol pepo: MathVerse questions ask for the option letter, as PEPO's evaluate_mathverse.py."""
+    if getattr(args, "answer_protocol", "default") != "pepo" or spec.key != "mathverse":
+        return samples
+    return [replace(sample, prompt=sample.prompt + PEPO_MATHVERSE_INSTRUCTION) for sample in samples]
 
 
 def apply_grounding_instruction(samples: list[EvalSample], args: argparse.Namespace) -> list[EvalSample]:
@@ -1271,6 +1300,11 @@ def task_fingerprint(
             **(
                 {"grounding_instruction": args.grounding_instruction}
                 if getattr(args, "grounding_instruction", "append") != "append"
+                else {}
+            ),
+            **(
+                {"answer_protocol": args.answer_protocol}
+                if getattr(args, "answer_protocol", "default") != "default"
                 else {}
             ),
             "box_format": getattr(args, "box_format", "norm1000"),

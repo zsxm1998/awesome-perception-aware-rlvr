@@ -76,8 +76,10 @@ environment. Evaluation is described in [eval/README.md](../../../eval/README.md
   PEPO_D.
 - Evaluation scores every benchmark with rule-based exact match (falling back to `<answer>` when no
   `\boxed{}` is present) instead of the official MathVista checker; the Geometry3K validation
-  column of Table 1 is not included, and LogicVista has 447 items (PEPO keeps 443 single-letter
-  items).
+  column of Table 1 is not included. As PEPO's scripts, the `pepo_geometry` suite asks MathVerse
+  for the option letter and reads LogicVista's answers by their last standalone letter; LogicVista
+  keeps all 447 items (PEPO keeps the 443 with a single-letter answer; the others use the default
+  rule).
 
 ## Results
 

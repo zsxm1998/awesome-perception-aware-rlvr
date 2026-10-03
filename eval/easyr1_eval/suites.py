@@ -32,6 +32,7 @@ SUITE_DEFAULT_KEYS = (
     "min_pixels",
     "max_pixels",
     "grounding_instruction",
+    "answer_protocol",
 )
 
 

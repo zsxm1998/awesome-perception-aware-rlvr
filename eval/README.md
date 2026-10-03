@@ -95,7 +95,7 @@ also set prompt defaults (see [Prompts](#prompts)); explicit flags always win.
 | `dvrp` | geo3k, mathvista, wemath, mathverse, mathverse_v, mmk12 | DVRP Table 1, general columns; medical columns not included; DVRP reports top_p 0.9/0.99, we use 1.0 |
 | `pgpo` | geo3k, mmk12, mathverse, dynamath, mathvision, logicvista, mmmu_pro, mathverse_v | PGPO Table 1; PGPO evaluates DynaMath "sample variant1", we use the VPPO-Eval DynaMath file |
 | `pepo` | geo3k, mathvista, wemath, mathverse, logicvista, clevr_count, mmmu_pro | PEPO Table 1 + Table 5 (ViRL39K scaling); Geometry3K val is not included |
-| `pepo_geometry` | geo3k, mathvista, mathverse, logicvista | PEPO Table 1 with the prompt of the Geometry3K-trained models (`pepo.jinja`, `<answer>` tags) |
+| `pepo_geometry` | geo3k, mathvista, mathverse, logicvista | PEPO Table 1 with the prompt of the Geometry3K-trained models (`pepo.jinja`, `<answer>` tags), their image size, and PEPO's answer protocol (`--answer-protocol pepo`: MathVerse asks for the option letter, LogicVista reads the last standalone letter of the answer) |
 | `vepo` | geo3k, mmk12, hallusionbench, mathvista, wemath, mathverse, mathvision | VEPO Table 1; the paper uses greedy decoding and a gpt-4o-mini judge for 4 benchmarks, we use rule-based avg@8 |
 | `tor` | mathverse, mathvision, mathvista, wemath, hallusionbench | ToR Table 4; the paper follows NoisyRollout (greedy + Gemini answer parsing), we use rule-based avg@8 |
 | `cfpo` | cvqa_real, mars_bench, pope, textvqa, mmmu_pro, geo3k, wemath, mmk12, mathverse, logicvista | CFPO Table 1; CFPO reports POPE as pooled accuracy with avg@8 (same 9,000 questions; our primary is greedy macro F1, pooled accuracy in the details); CFPO's LogicVista file has 448 items, PAPO-Eval's 447 |

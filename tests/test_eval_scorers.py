@@ -887,3 +887,42 @@ def test_judge_config_uses_resolved_max_tokens_for_deepseek():
     assert config.max_tokens == 1024
     assert config.concurrency == 4
     assert config.thinking == "enabled"
+
+
+@pytest.mark.parametrize(
+    "response,letter",
+    [
+        ("<think>x</think><answer>B</answer>", "B"),
+        ("<answer>The answer is C.</answer>", "C"),
+        ("<answer>\\boxed{D}</answer>", "D"),
+        ("<answer>Option (A) is right", "A"),
+        ("no tags, so B", "B"),
+        ("<answer>42</answer>", None),
+    ],
+)
+def test_pepo_logicvista_letter(response, letter):
+    from easyr1_eval.scorers import pepo_logicvista_letter
+
+    assert pepo_logicvista_letter(response) == letter
+
+
+def test_pepo_protocol_reads_logicvista_letters(tmp_path):
+    from easyr1_eval.scorers import score_boxed_exact_match
+
+    spec = BenchmarkSpec(
+        key="logicvista",
+        label="LogicVista",
+        group="Reasoning",
+        loader="sharegpt",
+        scorer="boxed_exact_match",
+        primary_metric="mean_acc_at_k",
+    )
+    rows = [
+        {"sample_id": "0", "target": "B", "responses": ["<answer>The answer is B</answer>"]},
+        {"sample_id": "1", "target": "A, C", "responses": ["\\boxed{A, C}"]},
+    ]
+    default = score_boxed_exact_match(spec, rows, None, tmp_path)
+    pepo_rows = [{**row, "eval_metadata": {"answer_protocol": "pepo"}} for row in rows]
+    pepo = score_boxed_exact_match(spec, pepo_rows, None, tmp_path)
+    assert default.raw_score == 50.0 and pepo.raw_score == 100.0  # multi-letter answers keep the default rule
+    assert pepo.details["pepo_letter_items"] == 1
