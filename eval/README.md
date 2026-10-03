@@ -396,8 +396,11 @@ results directory and the data root.
 
 ## Robustness evaluation (optional)
 
-`--perturbation.type random_patch|gaussian_noise|vp_diffusion` (pixel space, same functions
-as training) and `feature_divergence|feature_consistency` (vision-feature space) re-run the
+`--perturbation.type random_patch|gaussian_noise|vp_diffusion` (pixel space; `random_patch`
+and `vp_diffusion` use the training functions, while `gaussian_noise` adds its `std` to [0, 1]
+pixels and clips, unlike the training-side `gaussian_noise`, which adds it to the image
+processor's normalized `pixel_values`) and `feature_divergence|feature_consistency`
+(vision-feature space) re-run the
 evaluation on perturbed inputs. Comma-separated values and `--seeds 1,2,3` expand into one
 sub-directory per configuration plus a `perturbation_summary.csv` with deltas against the
 clean run of the same backend. See `python eval/run_all_benchmarks.py --help` for the

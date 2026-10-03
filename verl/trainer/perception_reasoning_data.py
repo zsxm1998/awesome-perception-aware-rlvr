@@ -30,11 +30,11 @@ from ..protocol import DataProto
 from ..utils.dataset import ProcessedImageInput, process_image
 from ..utils.perturbations.pixel import (
     compute_noise_schedule,
-    gaussian_noise_image,
     pixelate_image,
     random_patch_blackening,
     vp_diffusion_noise,
 )
+from ..utils.perturbations.pixel_values import PIXEL_VALUES_NOISE_KEY
 from .config import MODEL_LEVEL_VISUAL_CORRUPTIONS, AlgorithmConfig
 from .visual_sensitivity import is_full_vocab_sensitivity_metric
 
@@ -997,6 +997,7 @@ class PerceptionReasoningCorruptionBuilder:
             corruption_group_key=corruption_group_key,
             global_step=global_step,
             total_training_steps=total_training_steps,
+            sample_idx=sample_idx,
         )
         sample_tensors = {
             "input_ids": full_input_ids.clone(),
@@ -1116,6 +1117,7 @@ class PerceptionReasoningCorruptionBuilder:
         corruption_group_key: str,
         global_step: int,
         total_training_steps: int | None,
+        sample_idx: int = 0,
     ) -> tuple[dict[str, Any] | None, dict[str, float]]:
         if multi_modal_data is None:
             return None, {}
@@ -1179,6 +1181,9 @@ class PerceptionReasoningCorruptionBuilder:
             return transformed, {}
 
         if transform_name == "gaussian_noise":
+            # As VEPO's code, the noise goes on the image processor's normalized pixel_values, without clipping:
+            # the view keeps the clean images and carries the noise, which the worker adds after the processor
+            # (see add_pixel_values_noise). One noise draw per prompt, or per response for position=response.
             gaussian_kwargs = dict(transform_kwargs or {})
             cache_descriptor = self._cache_descriptor(transform_name, gaussian_kwargs, global_step)
             if transform_position == "prompt":
@@ -1187,34 +1192,16 @@ class PerceptionReasoningCorruptionBuilder:
                     cache_entry = self._prompt_cache[cache_key]
                     return deepcopy(cache_entry.multi_modal_data), dict(cache_entry.stats)
 
-                seed_base = _stable_prompt_seed(cache_descriptor + ":" + corruption_group_key)
-                transformed["images"] = self._mark_processed_images(
-                    [
-                        gaussian_noise_image(
-                            self._load_image(image),
-                            seed=seed_base + image_idx,
-                            **gaussian_kwargs,
-                        )
-                        for image_idx, image in enumerate(raw_images)
-                    ]
+                seed = _stable_prompt_seed(cache_descriptor + ":" + corruption_group_key, salt="pixel_values_noise_v1")
+            else:
+                seed = _stable_prompt_seed(
+                    f"{cache_descriptor}:{corruption_group_key}:{sample_idx}:{response_text}",
+                    salt="pixel_values_noise_response_v1",
                 )
+            transformed["images"] = self._mark_processed_images([self._load_image(image) for image in raw_images])
+            transformed[PIXEL_VALUES_NOISE_KEY] = {"std": float(gaussian_kwargs.get("std", 2.0)), "seed": seed}
+            if transform_position == "prompt":
                 self._prompt_cache[cache_key] = CachedAuxiliaryMedia(multi_modal_data=deepcopy(transformed), stats={})
-                return transformed, {}
-
-            seed_base = _stable_prompt_seed(
-                cache_descriptor + ":" + corruption_group_key + ":" + response_text,
-                salt="gaussian_response_v1",
-            )
-            transformed["images"] = self._mark_processed_images(
-                [
-                    gaussian_noise_image(
-                        self._load_image(image),
-                        seed=seed_base + image_idx,
-                        **gaussian_kwargs,
-                    )
-                    for image_idx, image in enumerate(raw_images)
-                ]
-            )
             return transformed, {}
 
         if transform_name == "vp_diffusion":

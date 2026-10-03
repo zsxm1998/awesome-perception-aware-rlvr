@@ -58,6 +58,7 @@ from ..utils.fsdp_utils import (
     offload_fsdp_optimizer,
 )
 from ..utils.model_utils import print_gpu_memory_usage, print_model_size
+from ..utils.perturbations.pixel_values import PIXEL_VALUES_NOISE_KEY, add_pixel_values_noise
 from ..utils.tokenizer import get_processor, get_tokenizer
 from ..utils.torch_dtypes import PrecisionType
 from ..utils.torch_functional import (
@@ -610,6 +611,10 @@ class FSDPWorker(Worker):
                         )
                     else:
                         multi_modal_inputs = {}
+
+                    pixel_values_noise = multi_modal_data.get(PIXEL_VALUES_NOISE_KEY)
+                    if pixel_values_noise is not None:  # auxiliary gaussian_noise view
+                        multi_modal_inputs = add_pixel_values_noise(multi_modal_inputs, **pixel_values_noise)
 
                     multi_modal_inputs_cache[index] = multi_modal_inputs
 

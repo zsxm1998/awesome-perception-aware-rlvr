@@ -52,7 +52,6 @@ from verl.trainer.perception_reasoning_data import (
     build_perception_reasoning_loss_config,
     cgpo_flat,
     cgpo_hierarchical,
-    gaussian_noise_image,
     needs_auxiliary_log_probs,
     needs_decremental_auxiliary,
     needs_full_vocab_visual_sensitivity,
@@ -76,6 +75,7 @@ from verl.utils import torch_functional as VF
 from verl.utils.dataset import ProcessedImageInput, process_image
 from verl.utils.perturbations.pixel import (
     compute_noise_schedule,
+    gaussian_noise_image,
     pixelate_image,
     vp_diffusion_noise,
     vp_diffusion_noise_fixed_t,

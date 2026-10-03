@@ -141,7 +141,7 @@ class AlgorithmConfig:
     corrupt_image: Optional[str] = None
     """auxiliary visual corruption. `random_patch` is used by PAPO/VPPO/DVRP, `no_image` by ToR, `cgpo_flat|cgpo_hierarchical` by CGPO, `mask_visual_attention` by PGPO, `pixelation` removes fine image details while preserving image size, and `cross_modal_attention_value_mean` applies a scoped model-level intervention."""
     corrupt_image_kwargs: Any = None
-    """JSON/mapping kwargs passed to the selected `corrupt_image` transform, e.g. patch size, black probability, pixelation ratio, CGPO fill type, or saliency threshold multiplier. `random_patch` takes `patch_size`, `black_prob` and `mask_before_resize` (default false: mask the resized image, so the patches line up with the vision encoder's; true: mask the original image, then resize it, as PAPO's code)."""
+    """JSON/mapping kwargs passed to the selected `corrupt_image` transform, e.g. patch size, black probability, pixelation ratio, CGPO fill type, or saliency threshold multiplier. `random_patch` takes `patch_size`, `black_prob` and `mask_before_resize` (default false: mask the resized image, so the patches line up with the vision encoder's; true: mask the original image, then resize it, as PAPO's code). `gaussian_noise` takes `std` (default 2.0), added to the image processor's normalized pixel_values without clipping, as VEPO's code: one draw per prompt, or per response with `corrupt_image_position=response`."""
     corrupt_image_position: str = "prompt"
     """Whether corruption is built from the prompt side or from the generated response side. VPPO/CGPO mostly use response; PAPO/DVRP uses prompt."""
     visual_sensitivity_loss_coef: float = 0.0
@@ -278,6 +278,16 @@ class AlgorithmConfig:
                 raise ValueError(f"random_patch received unsupported corrupt_image_kwargs: {sorted(unknown_kwargs)}.")
             if not isinstance(corruption_kwargs.get("mask_before_resize", False), bool):
                 raise ValueError("corrupt_image_kwargs.mask_before_resize must be true or false.")
+        if self.corrupt_image == "gaussian_noise":
+            corruption_kwargs = self.corrupt_image_kwargs or {}
+            unknown_kwargs = set(corruption_kwargs) - {"std"}
+            if unknown_kwargs:
+                raise ValueError(
+                    f"gaussian_noise received unsupported corrupt_image_kwargs: {sorted(unknown_kwargs)}."
+                )
+            std = corruption_kwargs.get("std", 2.0)
+            if isinstance(std, bool) or not isinstance(std, (int, float)) or std <= 0.0:
+                raise ValueError(f"corrupt_image_kwargs.std must be a positive number, but got {std!r}.")
         if self.corrupt_image == "pixelation":
             corruption_kwargs = self.corrupt_image_kwargs or {}
             unknown_kwargs = set(corruption_kwargs) - {"ratio"}
