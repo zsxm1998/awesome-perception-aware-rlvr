@@ -22,9 +22,9 @@ sequence-level advantage is unchanged.
 | Training data | Geometry3K train (`hiyouga/geometry3k`, 2,101) + `xyliu6/k12-freeform` mini_train (2,100), 4,201 problems — `bash scripts/prepare_data.sh vepo` |
 | Validation | `xyliu6/k12-freeform` test (808), every 20 steps, 8 samples at T=1.0, top-p 0.9 |
 | Prompt / reward | `<think>` + `\boxed{}` (`math_perception.jinja`); binary accuracy (`math.py:compute_score_wo_format`) |
-| Rollout | 512 prompts x 12 rollouts per step, T=1.0, top-p 1.0; update batch 128 prompts; vLLM tensor parallel 4 |
+| Rollout | 512 prompts x 12 rollouts per step, T=1.0, top-p 1.0; update batch 256 prompts (2 updates per step); vLLM tensor parallel 4 |
 | RL | GRPO; low-var KL loss 0.01; clip 0.2 / 0.3 (EasyR1 defaults); token-level loss |
-| Optimization | AdamW (bf16), lr 1e-6 constant, vision tower frozen, 4 epochs |
+| Optimization | AdamW (bf16), lr 1e-6 constant, vision tower frozen, 20 epochs (160 steps) |
 | Lengths / pixels | max prompt 8,192, max response 4,096; 200,704-1,003,520 pixels |
 | GPUs | 8 |
 | Perturbed view | `algorithm.corrupt_image=gaussian_noise`, `algorithm.corrupt_image_kwargs={"std":2.0}`, `algorithm.corrupt_image_position=prompt` |
@@ -62,9 +62,14 @@ command (e.g. `algorithm.disable_kl=true`) and set `N_GPUS_PER_NODE`, `MODEL_PAT
   confirmed by the authors. Validation uses `xyliu6/k12-freeform` test (808), as the official
   script.
 - **RL recipe.** The official recipe is GRPO without KL, symmetric clip 0.2, max response 2,048,
-  `total_episodes=20`, reward 0.9 accuracy + 0.1 format, and an entropy bonus of 1e-3 that the
-  paper does not mention. Our scripts use a low-var KL loss 0.01, clip 0.2 / 0.3, max response
-  4,096, 4 epochs, an accuracy-only reward and no entropy bonus.
+  reward 0.9 accuracy + 0.1 format, and an entropy bonus of 1e-3 that the paper does not mention.
+  Our scripts use a low-var KL loss 0.01, clip 0.2 / 0.3, max response 4,096, an accuracy-only
+  reward and no entropy bonus. As the official `total_episodes=20`, we train for 20 epochs (160
+  steps).
+- **Update batch.** The paper (Table 5) lists a global batch size of 128. The official script sets
+  128 together with `worker.actor.is_noisy=true`, a NoisyRollout option that doubles it, so every
+  update uses 256 prompts and each step updates twice. We follow the official code; set
+  `worker.actor.global_batch_size=128` for the paper's setting.
 - **Perturbation.** We add N(0, 2²) noise to the image in [0, 1] pixel space and clip to [0, 1]. The
   official code adds N(0, 2²) noise to the processor-normalized pixel values without clipping; the
   paper describes diffusion-step-500 noise with a sigmoid decay schedule.
