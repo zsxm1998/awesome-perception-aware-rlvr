@@ -305,6 +305,28 @@ def test_text_only_reward_extracts_answer_span():
             "On which side of the picture is the barrier?",
             True,
         ),
+        # options after an article or a preposition, lists, "how <adjective>" questions
+        (
+            "right",
+            "The pizza is on the right side of the bowl.",
+            "Is the pizza on the left or on the right side of the bowl?",
+            True,
+        ),
+        (
+            "left",
+            "The pizza is on the right side of the bowl.",
+            "Is the pizza on the left or on the right side of the bowl?",
+            False,
+        ),
+        ("bed", "The bed is made of wood.", "What type of furniture is made of wood, the table or the bed?", True),
+        ("table", "The bed is made of wood.", "What type of furniture is made of wood, the table or the bed?", False),
+        ("small", "The boat is small.", "Which size is the boat, small or large?", True),
+        ("boat", "The boat is small.", "Which size is the boat, small or large?", False),
+        ("black", "The jacket is black.", "Is the jacket black, white or red?", True),
+        ("red", "The jacket is black.", "Is the jacket black, white or red?", False),
+        ("tall", "The trees are tall.", "How tall are the green trees?", True),
+        ("trees", "The trees are tall.", "How tall are the green trees?", False),
+        ("white", "I believe the telephone is white.", "Do you believe the telephone is white or green?", True),
     ],
 )
 def test_rule_match_needs_the_reference_keywords(prediction, reference, question, expected):

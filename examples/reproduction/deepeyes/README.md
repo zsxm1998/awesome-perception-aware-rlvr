@@ -104,7 +104,8 @@ the math judge counts the answer as wrong.
 
 Without a judge, a rule decides: option letters for multiple-choice references, the first yes/no
 for yes/no references, and otherwise the answer's keywords (words outside the question and a stop
-list; in "A or B" questions A and B count) must be non-empty, all appear in the reference and cover
+list; the options a question names, as in "the left or on the right", "black, white or red" or
+"How tall ...", count) must be non-empty, all appear in the reference and cover
 the reference's keywords, so naming an object of the question is not enough; `mathruler`'s
 equivalence check is the last resort. The rule also stands in for the math judge on ThinkLite
 references that are words (5,501 of 11,031, e.g. "brick"), which `math_verify` cannot check;

@@ -180,7 +180,7 @@ _RULE_STOP_WORDS = set(
     "a an the is are was were be been being it its this that these those of to in on at by for with from and or as "
     "there here which what who whom whose where when how why do does did has have had can could would should will "
     "shall may might must appear appears appeared seem seems seemed look looks looked located placed positioned side "
-    "image picture photo shown visible one".split()
+    "image picture photo shown visible one part portion situated color colour colored i you we they he she believe think".split()
 )
 
 
@@ -188,10 +188,46 @@ def _rule_words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", str(text).lower())
 
 
+# words that can stand between "or" and an option: "the left or on the right", "a dishwasher or a refrigerator"
+_RULE_OPTION_FILLERS = frozenset("the a an on in at to of by from with into onto".split())
+_RULE_DETERMINERS = frozenset("the a an this that these those".split())
+
+
+def _rule_options(question: str) -> set[str]:
+    """Answer words that the question itself names: the options of "A or B" and "A, B or C" questions, also when
+    an article or a preposition follows "or" ("the top or in the bottom"), and the adjective of "How tall/small ..."
+    questions."""
+    tokens = re.findall(r"[a-z0-9]+|,", question.lower())
+    options = set()
+    for index, token in enumerate(tokens):
+        if token != "or":
+            continue
+        skip = _RULE_OPTION_FILLERS | _RULE_STOP_WORDS  # "the right side or on the left": right and left
+        after = index + 1
+        while after < len(tokens) and tokens[after] in skip:
+            after += 1
+        if after < len(tokens) and tokens[after] != ",":
+            options.add(tokens[after])
+        before = index - 1
+        while before >= 0 and tokens[before] in skip:
+            before -= 1
+        while before >= 0 and tokens[before] != ",":  # the option before "or", then a list "A, B or C" before it
+            options.add(tokens[before])
+            # a list item follows a comma and is not a noun phrase ("the boat, small or large": boat is no option)
+            item = before - 2
+            if item >= 0 and tokens[before - 1] == "," and (item == 0 or tokens[item - 1] not in _RULE_DETERMINERS):
+                before = item
+                continue
+            break
+    how = re.match(r"\s*how\s+([a-z]+)", question.lower())
+    if how and how.group(1) not in {"many", "much", "is", "are", "does", "do"}:
+        options.add(how.group(1))
+    return options
+
+
 def _rule_keywords(text: str, question: str) -> list[str]:
-    """Words of ``text`` that are neither stop words nor in the question; in "A or B" questions A and B stay."""
-    options = re.search(r"\b(\w+)\s+or\s+(\w+)\b", question.lower())
-    question_words = set(_rule_words(question)) - ({options.group(1), options.group(2)} if options else set())
+    """Words of ``text`` that are neither stop words nor in the question; the options the question names stay."""
+    question_words = set(_rule_words(question)) - _rule_options(question)
     return [word for word in _rule_words(text) if word not in _RULE_STOP_WORDS and word not in question_words]
 
 
