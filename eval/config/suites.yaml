@@ -45,7 +45,8 @@ suites:
     benchmarks: [geo3k, mmk12, mathverse, dynamath, mathvision, logicvista, mmmu_pro, mathverse_v]
     notes: >-
       PGPO evaluates DynaMath "sample variant1" (501 items); we use the VPPO-Eval DynaMath
-      file (3,666 verifiable items across variants).
+      file (3,666 verifiable items across variants). MathVision is VPPO-Eval's 2,907-item
+      verifiable subset (PGPO lists 3,040).
 
   pepo:
     description: PEPO Table 1 (Geometry3K training) + Table 5 (ViRL39K scaling)

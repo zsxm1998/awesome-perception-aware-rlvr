@@ -143,7 +143,7 @@ temperature 1.0, top_p 1.0 and 2048 new tokens; "greedy" = 1 sample at temperatu
 | `mathvision` | MathVision (verifiable subset) | `chamber111/VPPO-Eval` | 2907 | boxed exact match | avg@8 | VPPO, PGPO, VEPO, ToR |
 | `pope` | POPE random/popular/adversarial | `lmms-lab/POPE` | 9000 | macro F1 over the 3 splits (accuracy in details) | greedy | CFPO, DeepEyes |
 | `hallusionbench` | HallusionBench (image questions) | `lmms-lab/HallusionBench` | 951 | question accuracy aAcc (fAcc, qAcc in details) | greedy | VEPO, ToR |
-| `mme` | MME | `lmms-lab/MME` | 2374 | total score (acc + acc+); /2800 in averages | greedy | PGPO |
+| `mme` | MME | `lmms-lab/MME` | 2374 | total score (acc + acc+); /2800 in averages | greedy (PGPO averages 8 samples) | PGPO |
 | `gqa` | GQA testdev-balanced | `lmms-lab/GQA` | 12578 | exact match (EM→judge cascade with a judge) | greedy | general |
 | `mm_vet` | MM-Vet | `lmms-lab/MMVet` | 218 | LLM-judge score; **skipped without a judge** | greedy | general |
 | `cvqa_real` | C-VQA-Real (counterfactual VQA on COCO) | `RavenInJuly/CFPO_Datasets` + COCO val2014 | 6288 | CFPO match, mean acc@k | avg@8 | CFPO |
