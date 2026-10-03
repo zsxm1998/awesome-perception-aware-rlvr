@@ -225,7 +225,8 @@ of PEPO, and GRIT's GPT-judged MathVista/MME subsets.
   list are skipped and samples without a predicted box score 0. It reads boxes written in
   square brackets; GRIT's script takes any four comma-separated integers (also in parentheses or
   JSON), which `grounding/grit_iou_grit_pattern` uses. Both map the boxes onto the original image
-  (GRIT's script compares Qwen pixel boxes with the original image's boxes without rescaling).
+  and clip them to it (GRIT's script compares Qwen pixel boxes with the original image's boxes
+  without rescaling or clipping).
   Box precision/recall/F1 at IoU 0.5 (one-to-one matching) and box counts are also reported.
   For agentic runs the predicted boxes are the zoom-in regions the agent committed.
 - **OVDEval** reports only the GRIT grounding IoU (as GRIT does), with Acc@0.5 IoU and
