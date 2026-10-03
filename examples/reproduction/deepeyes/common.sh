@@ -8,15 +8,15 @@
 # reward 0.8 acc + 0.2 format + 1.2 tool (tool only when correct; ThinkLite: 1.2 acc + 0.4 format).
 #
 # Backbones: qwen2_5_vl_7b_* use the paper's Qwen2.5-VL-7B-Instruct, which grounds in absolute pixel
-# coordinates of the resized image it sees (QWEN25_VL_ARGS); qwen3_vl_8b_* use Qwen3-VL-8B-Instruct
-# with its native 0-1000 coordinates and tool-call chat template.
+# coordinates of the resized image it sees, with DeepEyes' own prompts (OFFICIAL_PROMPT_ARGS; the
+# *_native script uses our rewritten prompts, QWEN25_VL_ARGS); qwen3_vl_8b_* use Qwen3-VL-8B-Instruct
+# with its native 0-1000 coordinates, tool-call chat template and our rewritten prompts. ThinkLite
+# rows are rolled out once without the tool, with their official prompts, as in the official env.
 #
 # Differences from the official release (see examples/reproduction/deepeyes/README.md):
 #   * answer judging: set DEEPEYES_JUDGE_BASE_URL / DEEPEYES_JUDGE_MODEL to an OpenAI-compatible
 #     judge (the paper uses Qwen2.5-72B-Instruct served by vLLM); without it a rule-based
-#     matcher is used;
-#   * ThinkLite samples go through the same tool-enabled rollout (the official env disables the
-#     tool for them) but keep the math reward without tool bonus.
+#     matcher is used.
 # The official setup recommends >= 32 GPUs for the 7B model; on one 8-GPU node expect long steps.
 set -euo pipefail
 
@@ -29,6 +29,7 @@ launch_deepeyes() {
         "data.train_files=$DATA_ROOT/deepeyes/train.parquet"
         "data.val_files=$DATA_ROOT/deepeyes/val.parquet"
         "data.prompt_key=problem"
+        "data.system_prompt_key=row_system_prompt"
         "data.answer_key=answer"
         "data.image_key=images"
         "data.video_key=videos"
@@ -103,6 +104,18 @@ DEEPEYES_AGENT_ARGS=(
 QWEN25_VL_ARGS=(
     "data.system_prompt=$ROOT_DIR/examples/system_prompt/deepeyes_pixel.txt"
     "data.override_chat_template=$ROOT_DIR/examples/chat_template/qwen2_5_vl_tool_call.jinja"
+    "worker.rollout.agent_bbox_format=pixel"
+)
+
+# DeepEyes' own prompts (worker.rollout.agent_prompt_style=official), all from the data: the system prompt with
+# the tool schema written out, the user text with its format instruction, and tool results returned as
+# "<tool_response><image>{format instruction}</tool_response>". The stock chat template renders them, and the
+# policy writes absolute pixel coordinates (Qwen2-VL / Qwen2.5-VL). Append after DEEPEYES_AGENT_ARGS.
+OFFICIAL_PROMPT_ARGS=(
+    "data.prompt_key=official_prompt"
+    "data.system_prompt_key=official_system_prompt"
+    "data.system_prompt=null"
+    "worker.rollout.agent_prompt_style=official"
     "worker.rollout.agent_bbox_format=pixel"
 )
 

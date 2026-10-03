@@ -20,9 +20,9 @@ zoom-in was used.
 | Base model | Qwen2.5-VL-7B-Instruct (as in the paper) or Qwen3-VL-8B-Instruct |
 | Training data | DeepEyes-Datasets-47k (`ChenShawn/DeepEyes-Datasets-47k`, 47,052 = 22,362 V*-derived + 13,659 ArxivQA charts + 11,031 ThinkLite-VL) — `bash scripts/prepare_data.sh deepeyes` |
 | Validation | none during training (`trainer.val_freq=-1`); the prepared `val.parquet` (100 training rows per source) is for monitoring only |
-| Interaction | agentic rollout (`worker.rollout.interaction_mode=agentic`); Qwen2.5-VL: `bbox_2d` in absolute pixels of the image the model sees, system prompt `examples/system_prompt/deepeyes_pixel.txt`, chat template `examples/chat_template/qwen2_5_vl_tool_call.jinja`; Qwen3-VL: `bbox_2d` in 0-1000 coordinates, `examples/system_prompt/deepeyes.txt` through the native tool-call template (see [Coordinates](#coordinates)); at most 6 tool calls (`worker.rollout.agent_max_tool_calls=6`), 10,240 tokens per turn, 20,480 tokens per trajectory, at most 16 images per sample |
-| Reward | `examples/reward_function/deepeyes.py:compute_score_official`: V* / chart samples 0.8·acc + 0.2·format (0 / −1) + 1.2·tool (tool only if correct and ≥ 1 successful zoom-in); ThinkLite samples 1.2·acc + 0.4·format, no tool bonus |
-| Answer judge | OpenAI-compatible judge when `DEEPEYES_JUDGE_BASE_URL`, `DEEPEYES_JUDGE_MODEL` (and optionally `DEEPEYES_JUDGE_API_KEY`) are set (the paper uses Qwen2.5-72B-Instruct served by vLLM); otherwise a rule-based matcher. ThinkLite answers are first checked with `mathruler` |
+| Interaction | agentic rollout (`worker.rollout.interaction_mode=agentic`); at most 6 tool calls (`worker.rollout.agent_max_tool_calls=6`), 10,240 tokens per turn, 20,480 tokens per trajectory, at most 16 images per sample. Qwen2.5-VL: DeepEyes' own prompts (see [Prompts](#prompts)), `bbox_2d` in absolute pixels of the image the model sees; Qwen3-VL: our rewritten prompt `examples/system_prompt/deepeyes.txt` through the native tool-call template, `bbox_2d` in 0-1000 coordinates (see [Coordinates](#coordinates)). ThinkLite rows are rolled out once without the tool, as in the official environment |
+| Reward | `examples/reward_function/deepeyes.py:compute_score_official`: V* / chart samples 0.8·acc + 0.2·format (0 / −1) + 1.2·tool (tool only if correct and ≥ 1 successful zoom-in); ThinkLite samples 1.2·acc + 0.4·format, no tool bonus, as the official `compute_score_math`: the answer is the last `\boxed{}` after `</think>`, and the format is wrong unless the think tags balance and there is exactly one boxed answer |
+| Answer judge | the official few-shot judge prompt when `DEEPEYES_JUDGE_BASE_URL` and `DEEPEYES_JUDGE_MODEL` are set (the paper uses Qwen2.5-72B-Instruct served by vLLM; see [Answer judge](#answer-judge)); otherwise a rule-based matcher. ThinkLite answers are first checked with `math_verify` and go to the judge (official math prompt) only when it rejects them |
 | Rollout | 256 prompts x 16 rollouts per step, T=1.0, top-p 1.0; one policy update per step (update batch 256 prompts) |
 | RL | GRPO; no KL; clip 0.2 / 0.2; no entropy term |
 | Optimization | AdamW (bf16), lr 1e-6 constant, vision tower trainable, 80 steps (`trainer.max_steps=80`) |
@@ -36,7 +36,8 @@ DeepEyes changes the rollout mode and the reward; no `algorithm.*` switch is use
 | Script | Run |
 | --- | --- |
 | `qwen2_5_vl_7b_grpo.sh` | "RL with text-only CoT" baseline on Qwen2.5-VL-7B: same data and reward, no tool (`examples/system_prompt/deepeyes_text_only.txt`, max response 10,240, `compute_score_text_only`) |
-| `qwen2_5_vl_7b_grpo_deepeyes.sh` | DeepEyes on Qwen2.5-VL-7B (the paper's backbone; absolute pixel coordinates) |
+| `qwen2_5_vl_7b_grpo_deepeyes.sh` | DeepEyes on Qwen2.5-VL-7B (the paper's backbone; absolute pixel coordinates; DeepEyes' own prompts) |
+| `qwen2_5_vl_7b_grpo_deepeyes_native.sh` | the same with our rewritten prompt (`examples/system_prompt/deepeyes_pixel.txt` through `examples/chat_template/qwen2_5_vl_tool_call.jinja`) |
 | `qwen3_vl_8b_grpo.sh` | text-only CoT baseline on Qwen3-VL-8B |
 | `qwen3_vl_8b_grpo_deepeyes.sh` | DeepEyes on Qwen3-VL-8B (0-1000 coordinates) |
 
@@ -57,6 +58,55 @@ The `deepeyes` suite runs the agent loop by default. For the text-only baseline,
 Checkpoints go to `checkpoints/DeepEyes-Reproduce/<script name>`. Append `key=value` overrides to
 the training command and set `N_GPUS_PER_NODE`, `NNODES`, `MODEL_PATH`, `DATA_ROOT`, `LOGGER` or
 `EXPERIMENT_NAME` in the environment. Evaluation is described in [eval/README.md](../../../eval/README.md).
+
+## Prompts
+
+`worker.rollout.agent_prompt_style` decides how the tool is presented. The prepared data keeps both
+forms (`bash scripts/prepare_data.sh deepeyes`):
+
+- `official` (Qwen2.5-VL scripts): the dataset's own messages, `official_system_prompt` (the tool
+  schema and a call example written into the system prompt) and `official_prompt` (the question
+  followed by "Think first, call **image_zoom_in_tool** if needed, then answer. Format strictly
+  as: ..."). A crop comes back as the user turn `<tool_response><image>` + the same format
+  instruction + `</tool_response>`, a failed call as `Error: ...`; the stock chat template renders
+  them, and the strings match DeepEyes' `visual_toolbox_v2.py`.
+- `native` (Qwen3-VL scripts and `*_native`): the question alone (`problem`) with our rewritten
+  system prompt, which also states the coordinate convention, the tool-call budget and `image_idx`
+  for several source images; the tool schema and the tool role go through the model's tool-call
+  chat template.
+
+Rows without a tool environment in the official data (`env_name` empty: the 11,031 ThinkLite
+rows) are rolled out in a single turn without the tool in both styles, with their official system
+prompt (`row_system_prompt`) and user text, which asks for `<answer>` tags and a `\boxed{}` answer.
+
+## Answer judge
+
+The official reward asks Qwen2.5-72B-Instruct (served by vLLM) whether the answer matches the
+reference, with a few-shot prompt (system "You are a helpful assistant.", temperature 0.3), and
+for ThinkLite rows that `math_verify` rejects, a second prompt (`MATH_VERIFY_PROMPT`,
+temperature 0). Both prompts are reproduced verbatim. Any OpenAI-compatible endpoint works:
+
+```bash
+# a local judge with vLLM (Qwen2.5-72B-Instruct needs about 4 x 80 GB in bf16)
+vllm serve Qwen/Qwen2.5-72B-Instruct --tensor-parallel-size 4 --served-model-name judge --port 8000
+export DEEPEYES_JUDGE_BASE_URL=http://<judge-host>:8000/v1 DEEPEYES_JUDGE_MODEL=judge
+
+# or a paid API
+export DEEPEYES_JUDGE_BASE_URL=https://<provider>/v1 DEEPEYES_JUDGE_MODEL=<model> DEEPEYES_JUDGE_API_KEY=<key>
+```
+
+`DEEPEYES_JUDGE_WORKERS` sets the number of concurrent judge requests (default 32). A failed request
+is tried up to 3 times for the answer judge (the official code calls it once) and 8 times for the
+math judge (as the official code); after that the answer judge falls back to the rule below and
+the math judge counts the answer as wrong.
+
+Without a judge, a rule decides: option letters for multiple-choice references, the first yes/no
+for yes/no references, and otherwise the answer's keywords (words outside the question and a stop
+list; in "A or B" questions A and B count) must be non-empty, all appear in the reference and cover
+the reference's keywords, so naming an object of the question is not enough; `mathruler`'s
+equivalence check is the last resort. The rule also stands in for the math judge: about half of
+the ThinkLite references are words (5,501 of 11,031, e.g. "brick"), which `math_verify` cannot
+check. Rewards without a judge are not directly comparable with the paper's.
 
 ## Coordinates
 
@@ -110,10 +160,18 @@ python scripts/check_bbox_mapping.py --model Qwen/Qwen2.5-VL-7B-Instruct
   the original resolution explicitly (see [Coordinates](#coordinates)). As in the official tool,
   a box whose shorter side is at most 30 pixels of the original image is rejected with a tool error.
 - **Judge.** The official reward uses a Qwen2.5-72B-Instruct judge; here the judge is optional and a
-  rule-based matcher is used when no judge is configured. Results without a judge are not directly
-  comparable.
-- **ThinkLite samples** go through the same tool-enabled rollout (the official environment disables
-  the tool for them) but keep the math reward without tool bonus.
+  rule-based matcher is used when no judge is configured (see [Answer judge](#answer-judge)).
+  Results without a judge are not directly comparable.
+- **Prompts.** The Qwen3-VL scripts and `qwen2_5_vl_7b_grpo_deepeyes_native.sh` use our rewritten
+  prompt (see [Prompts](#prompts)): Qwen3-VL grounds in 0-1000 coordinates and has its own
+  tool-call template, and the rewritten prompt covers several source images.
+- **Parsing of model turns.** The official environment executes the last `<tool_call>` of a turn
+  and words its error messages after the Python exception; here a turn with more than one tool
+  call, an empty answer or an answer inside unclosed reasoning is a tool or format error, and the
+  error messages are the tool's own.
+- **ThinkLite answers with nested braces.** The official `\boxed{([^}]+)}` stops at the first `}`,
+  so a reference such as `\frac{4}{3}` cannot be matched by `math_verify` (174 of 11,031 rows);
+  this is kept.
 - **Length of training.** 80 steps with at most 6 tool calls, following the paper ("80
   iterations", "up to 6" active perceptions); the released 7B script uses `total_epochs=32` and
   `max_turns=5`.
@@ -121,7 +179,9 @@ python scripts/check_bbox_mapping.py --model Qwen/Qwen2.5-VL-7B-Instruct
   7B model, so expect long steps.
 - **Evaluation** (suite `deepeyes`) covers V* Bench, HR-Bench 4K / 8K, MME-RealWorld-Lite and POPE
   with rule-based option-letter matching instead of rule-based matching followed by a Qwen2.5-72B
-  judge. Tables 3-4 are not in the suite: refCOCO / refCOCO+ / refCOCOg are available as
+  judge. V* questions keep the shuffled option letters of `test_questions.jsonl`; in the prompts
+  of DeepEyes' evaluation script the correct option is A in 190 of 191 questions, which would
+  reward a bias towards A. Tables 3-4 are not in the suite: refCOCO / refCOCO+ / refCOCOg are available as
   `--suite refcoco` and the reasoning benchmarks through their own keys (e.g. `mathvista`), while
   ReasonSeg is not included. DeepEyes feeds
   images of up to 16384·28·28 pixels (`--max-pixels 12845056` to match). POPE's primary metric is
