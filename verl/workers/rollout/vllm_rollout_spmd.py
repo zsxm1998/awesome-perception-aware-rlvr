@@ -181,8 +181,10 @@ class vLLMRollout(BaseRollout):
             engine_kwargs["mm_processor_cache_gb"] = config.mm_processor_cache_gb
             if config.limit_images:
                 engine_kwargs["limit_mm_per_prompt"] = {"image": config.limit_images}
-            if config.max_dynamic_patch is not None:  # InternVL: the same tiles as the trainer's processor
-                engine_kwargs["mm_processor_kwargs"] = {"max_dynamic_patch": config.max_dynamic_patch}
+            if config.max_dynamic_patch is not None:
+                # InternVL: the same tiles as the trainer's processor. Set through the model config, which vLLM's
+                # image processor reads; mm_processor_kwargs would also reach its video processor, which rejects it.
+                engine_kwargs["hf_overrides"] = {"max_dynamic_patch": config.max_dynamic_patch}
 
         VLLMHijack.hijack()
 
