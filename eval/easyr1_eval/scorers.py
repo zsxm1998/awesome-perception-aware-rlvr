@@ -791,6 +791,91 @@ def predicted_boxes(text: str, row: dict[str, Any]) -> list[Box]:
     return extract_normalized_boxes(text)
 
 
+# GRIT's training-reward answer rule (examples/reward_function/grit.py: _official_answer_text and
+# _answers_match; tests/test_eval_scorers.py checks that the two agree). The reward module is not imported here
+# because it pulls in the training code.
+_GRIT_NUMBER_WORDS = {
+    "zero": "0",
+    "none": "0",
+    "no": "no",
+    "one": "1",
+    "two": "2",
+    "three": "3",
+    "four": "4",
+    "five": "5",
+    "six": "6",
+    "seven": "7",
+    "eight": "8",
+    "nine": "9",
+    "ten": "10",
+}
+
+
+def _grit_words(text: str) -> list[str]:
+    words = re.sub(r"[^a-zA-Z0-9\s]", " ", str(text).lower()).split()
+    return [_GRIT_NUMBER_WORDS.get(word, word) for word in words if word not in {"a", "an", "the"}]
+
+
+def grit_rule_answer_correct(response: str, target: str) -> bool:
+    """The text after <answer> (up to </answer>) matched as GRIT's training reward does."""
+    if "<answer>" not in response:
+        return False
+    prediction = response.split("<answer>", 1)[1].split("</answer>", 1)[0].strip()
+    pred_words, gt_words = _grit_words(prediction), _grit_words(target)
+    if not pred_words or not gt_words:
+        return False
+    if pred_words == gt_words:
+        return True
+    if len(gt_words) == 1 and gt_words[0] in {"yes", "no"}:
+        return next((word for word in pred_words if word in {"yes", "no"}), None) == gt_words[0]
+    if len(gt_words) == 1 and gt_words[0].isdigit():
+        number = next((word for word in pred_words if word.isdigit()), None)
+        return number is not None and int(number) == int(gt_words[0])
+    gt_phrase, pred_phrase = " ".join(gt_words), " ".join(pred_words)
+    if len(pred_words) <= len(gt_words) + 3 and f" {gt_phrase} " in f" {pred_phrase} ":
+        return True
+    try:
+        return _grade_answer_cached(prediction, str(target).strip())
+    except Exception:
+        return False
+
+
+_GRIT_BOX_PATTERN = re.compile(r"\b\d+,\s*\d+,\s*\d+,\s*\d+\b")
+
+
+def grit_regex_boxes(text: str, row: dict[str, Any]) -> list[Box]:
+    """Boxes found by GRIT's own pattern (extract_eval_results.py: any four comma-separated integers, with or
+    without brackets), mapped onto the original image like ``predicted_boxes``."""
+    size = model_input_size(row) if row_box_format(row) == "pixel" else None
+    boxes = []
+    for match in _GRIT_BOX_PATTERN.findall(text):
+        x1, y1, x2, y2 = (float(value) for value in match.split(","))
+        if size is not None:
+            box = (x1 / size[0], y1 / size[1], x2 / size[0], y2 / size[1])
+        else:
+            box = (x1 / 1000.0, y1 / 1000.0, x2 / 1000.0, y2 / 1000.0)
+        box = tuple(min(max(value, 0.0), 1.0) for value in box)
+        if box[0] < box[2] and box[1] < box[3]:
+            boxes.append(box)
+    return boxes
+
+
+def _grit_regex_iou(rows: PredictionRows) -> float | None:
+    """GRIT grounding IoU with the boxes GRIT's pattern finds (one-shot rows only)."""
+    ious = []
+    for row in rows:
+        if is_native_agentic_row(row):
+            continue
+        gt_boxes = _ground_truth_boxes(row.get("extra_info") or {})
+        if gt_boxes:
+            ious.append(
+                score_box_sets(
+                    validate_normalized_boxes(grit_regex_boxes(first_response(row), row)), gt_boxes
+                ).grounding_iou
+            )
+    return sum(ious) / len(ious) if ious else None
+
+
 def _answer_correctness(spec: BenchmarkSpec, row: dict[str, Any], response: str) -> tuple[bool, bool]:
     """(exact match, relaxed match) of the final answer; a truncated response without one is wrong."""
     if is_truncated_without_final_answer(row, 0, response):
@@ -818,15 +903,21 @@ def score_answer_bbox(
     tool_records = []
     exact_answer_correct = 0
     relaxed_answer_correct = 0
+    grit_rule_correct = 0
     for row in rows:
         response = first_response(row)
         exact_correct, relaxed_correct = _answer_correctness(spec, row, response)
         exact_answer_correct += int(exact_correct)
         relaxed_answer_correct += int(relaxed_correct)
+        grit_correct = not is_truncated_without_final_answer(row, 0, response) and grit_rule_answer_correct(
+            response, str(row.get("target"))
+        )
+        grit_rule_correct += int(grit_correct)
         record: dict[str, Any] = {
             "sample_id": row.get("sample_id"),
             "answer_correct": exact_correct,
             "answer_relaxed_correct": relaxed_correct,
+            "answer_grit_rule_correct": grit_correct,
         }
         if is_native_agentic_row(row):
             tool_boxes = committed_tool_boxes(row)
@@ -842,6 +933,9 @@ def score_answer_bbox(
     details = _aggregate_box_samples(box_samples, rows)
     details["answer/exact_match_accuracy"] = exact_answer_correct / len(rows) if rows else 0.0
     details["answer/relaxed_accuracy"] = relaxed_answer_correct / len(rows) if rows else 0.0
+    # GRIT's training-reward rule on the <answer> text (GRIT reports a GPT-4o judgement)
+    details["answer/grit_rule_accuracy"] = grit_rule_correct / len(rows) if rows else 0.0
+    details["grounding/grit_iou_grit_pattern"] = _grit_regex_iou(rows)
     if tool_records:
         details.update(_aggregate_tool_evidence_records(tool_records))
         details["grounding/box_source"] = "committed_tool_regions"
@@ -871,6 +965,7 @@ def score_grounding_iou(
     details["grounding/acc_at_0_5_iou"] = (
         sum(sample.boxes.threshold_match_count > 0 for sample in samples) / len(samples) if samples else 0.0
     )
+    details["grounding/grit_iou_grit_pattern"] = _grit_regex_iou(rows)
     raw = (details["grounding/grit_iou"] or 0.0) * 100.0
     write_jsonl(output_dir / f"{spec.key}_per_sample_grounding.jsonl", per_sample)
     return MetricResult(spec.key, spec.group, spec.primary_metric, raw, raw, len(rows), details=details)

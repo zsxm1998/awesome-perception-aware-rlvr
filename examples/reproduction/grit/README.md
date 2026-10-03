@@ -77,10 +77,13 @@ environment. Evaluation is described in [eval/README.md](../../../eval/README.md
 - **Validation** runs on the VSR and TallyQA test sets only (the official scripts validate on all six
   test sets).
 - **Evaluation** (suite `grit`) covers VSR, TallyQA, GQA and OVDEval-position; MathVista and MME are
-  not included. Answers are scored with rule-based relaxed exact match instead of GPT-4o. The
-  suite's primary metric is answer-gated GT-box coverage at IoU 0.5; answer accuracy and the
-  paper's grounding IoU (union of predicted boxes vs. union of GT boxes) are reported in the metric
-  details (`grounding/grit_iou`). The released OVDEval file has 2,146 items (the paper lists 2,164).
+  not included. Answers are scored with rules instead of GPT-4o: the primary metric is answer
+  accuracy with relaxed exact match, and `answer/grit_rule_accuracy` uses the answer rule of the
+  training reward. The paper's grounding IoU (union of predicted boxes vs. union of GT boxes) is in
+  the metric details: `grounding/grit_iou` reads bracketed boxes, `grounding/grit_iou_grit_pattern`
+  any four comma-separated integers, as GRIT's `extract_eval_results.py`. The questions are asked
+  without the box instruction other suites append, as the models are trained. The released
+  OVDEval file has 2,146 items (the paper lists 2,164).
 
 ## Results
 

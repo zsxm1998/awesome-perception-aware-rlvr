@@ -214,15 +214,20 @@ of PEPO, and GRIT's GPT-judged MathVista/MME subsets.
 - **MM-Vet** uses the official few-shot grading prompt with the configured judge model.
 - **GRIT sets (`answer_bbox`)** report the two GRIT-paper metrics. The primary is answer
   accuracy: the final answer is checked with relaxed exact match (articles, number words and
-  punctuation normalized; GRIT itself uses a GPT-4o judge). The GRIT grounding IoU
-  (`grounding/grit_iou`, also the `<key>_giou` column of the global summary) mirrors
-  `extract_eval_results.py` of UCSB-AI/GRIT: per sample, the IoU between the union of *all*
-  boxes written in the response and the union of the GT boxes; samples with an empty GT list
-  are skipped and samples without a predicted box score 0. Box precision/recall/F1 at IoU 0.5
-  (one-to-one matching) and box counts are also reported. For agentic runs the predicted boxes
-  are the zoom-in regions the agent committed.
-- **OVDEval** reports only the GRIT grounding IoU (as GRIT does), with Acc@0.5 IoU in the
-  details. **RefCOCO** reports Acc@0.5 IoU of the best box of the final answer
+  punctuation normalized; GRIT itself uses a GPT-4o judge). `answer/grit_rule_accuracy` checks
+  the `<answer>` text with the rule of GRIT's training reward in this repository
+  (`examples/reward_function/grit.py`), the closest rule-based stand-in for GRIT's judge. The
+  GRIT grounding IoU (`grounding/grit_iou`, also the `<key>_giou` column of the global summary)
+  follows `extract_eval_results.py` of UCSB-AI/GRIT: per sample, the IoU between the union of
+  *all* boxes written in the response and the union of the GT boxes; samples with an empty GT
+  list are skipped and samples without a predicted box score 0. It reads boxes written in
+  square brackets; GRIT's script takes any four comma-separated integers (also in parentheses or
+  JSON), which `grounding/grit_iou_grit_pattern` uses. Both map the boxes onto the original image
+  (GRIT's script compares Qwen pixel boxes with the original image's boxes without rescaling).
+  Box precision/recall/F1 at IoU 0.5 (one-to-one matching) and box counts are also reported.
+  For agentic runs the predicted boxes are the zoom-in regions the agent committed.
+- **OVDEval** reports only the GRIT grounding IoU (as GRIT does), with Acc@0.5 IoU and
+  `grounding/grit_iou_grit_pattern` in the details. **RefCOCO** reports Acc@0.5 IoU of the best box of the final answer
   (`\boxed{}` / `<answer>`, falling back to the whole response).
 - **Box coordinates** (`--box-format`, default `auto`): `norm1000` reads `[x1, y1, x2, y2]` in
   0-1000 (values in 0-1 are also accepted), the convention of Qwen3-VL and of every

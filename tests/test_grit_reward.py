@@ -292,3 +292,29 @@ def test_repetition_can_be_negative_and_uses_the_reward_input_ids():
     assert grit._repetition_reward(response, ids) < 0
     (score,) = grit.compute_score_official([{"response": response, "ground_truth": "cat", "response_ids": ids}])
     assert score["repetition"] == pytest.approx(grit._repetition_reward(response, ids))
+
+
+def test_eval_grit_rule_matches_the_training_reward():
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "eval"))
+    from easyr1_eval.scorers import grit_regex_boxes, grit_rule_answer_correct
+
+    cases = [
+        ("<think>x</think><answer>yes</answer>", "yes"),
+        ("<answer>No, it is not.</answer>", "no"),
+        ("<answer>There are three dogs.</answer>", "3"),
+        ("<answer>2</answer>", "3"),
+        ("<answer>hot dog", "hot dog"),
+        ("<answer>a big red hot dog on a plate today</answer>", "hot dog"),
+        ("no answer tag", "yes"),
+        ("<answer>cows</answer>", "cow"),
+    ]
+    for response, target in cases:
+        answer = grit._official_answer_text(response)
+        expected = answer is not None and grit._answers_match(answer, target)
+        assert grit_rule_answer_correct(response, target) == expected, (response, target)
+
+    row = {"eval_metadata": {"box_format": "norm1000"}}
+    boxes = grit_regex_boxes('{"bbox_2d": (100, 200, 300, 400)} and [500, 600, 700, 800]', row)
+    assert boxes == [(0.1, 0.2, 0.3, 0.4), (0.5, 0.6, 0.7, 0.8)]
