@@ -26,7 +26,7 @@ changes), and adds an entropy penalty on both auxiliary views (λ_ent) (paper Eq
 | Lengths / pixels | max prompt 4,096, max response 2,048; 200,704-1,003,520 pixels |
 | GPUs | 4 |
 | Masked view (−Δ) | `algorithm.corrupt_image=random_patch`, `algorithm.corrupt_image_kwargs={"patch_size":14,"black_prob":0.6}`, `algorithm.corrupt_image_position=prompt` |
-| Noised view (+Δ) | `algorithm.incremental_image_transform=vp_diffusion`, `algorithm.noise_t_init=500`, `algorithm.noise_gamma=10`, `algorithm.noise_t_max=1000` |
+| Noised view (+Δ) | `algorithm.incremental_image_transform=vp_diffusion`, `algorithm.noise_t_init=500`, `algorithm.noise_gamma=10`, `algorithm.noise_t_max=1000`; x_t = √ᾱ_t·x + √(1−ᾱ_t)·ε on [0, 1] pixels with NoisyRollout's 1,000-step schedule |
 | λ_nec / λ_rob | `algorithm.visual_sensitivity_loss_coef=0.01` / `algorithm.visual_robustness_loss_coef=0.01` |
 | λ_ent | `algorithm.decremental_entropy_coef=0.05`, `algorithm.incremental_entropy_coef=0.05`, `algorithm.entropy_loss_type=sampled` |
 
@@ -56,8 +56,12 @@ described in [eval/README.md](../../../eval/README.md).
 ## Differences from the paper
 
 - No official code exists; the method is re-implemented from the paper text. Values the paper
-  does not give are our choices: diffusion `T_max=1000`, training max response length 2,048, clip
-  ratios (EasyR1 defaults for GRPO, 0.2 / 0.28 for DAPO) and the MMK12 validation set.
+  does not give are our choices: training max response length 2,048, clip ratios (EasyR1 defaults
+  for GRPO, 0.2 / 0.28 for DAPO) and the MMK12 validation set.
+- The noised view follows NoisyRollout, as the paper states (Sec. 4.1): step t of its
+  forward-diffusion schedule (β_i = sigmoid(linspace(−6, 6, 1000))_i · (5e-3 − 1e-5) + 1e-5,
+  ᾱ_t = ∏(1 − β_i)), clipped to [0, 1], with t annealed by Eq. 6. At t = 250 the noise std is
+  0.15 in pixel units.
 - Only the math / general-domain half is reproduced. The medical training composite (Slake,
   PathVQA, VQA-RAD, PMC-VQA) is released without dataset ids, so the medical columns and the
   medical settings (P_mask 0.2, T_init 100) are not included.
