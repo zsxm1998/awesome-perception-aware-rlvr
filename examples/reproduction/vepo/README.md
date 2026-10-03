@@ -22,7 +22,7 @@ sequence-level advantage is unchanged.
 | Training data | Geometry3K train (`hiyouga/geometry3k`, 2,101) + `xyliu6/k12-freeform` mini_train (2,100), 4,201 problems — `bash scripts/prepare_data.sh vepo` |
 | Validation | `xyliu6/k12-freeform` test (808), every 20 steps, 8 samples at T=1.0, top-p 0.9 |
 | Prompt / reward | the official system prompt (`examples/system_prompt/vepo.txt`: `<think>` + `\boxed{}`), the problem as the user message; 0.9 accuracy + 0.1 format (`math.py:compute_score`) |
-| Rollout | 512 prompts x 12 rollouts per step, T=1.0, top-p 1.0; update batch 256 prompts (2 updates per step); vLLM tensor parallel 4 |
+| Rollout | 512 prompts x 12 rollouts per step, T=1.0, top-p 1.0; update batch 128 prompts (4 updates per step); vLLM tensor parallel 4 |
 | RL | GRPO without KL; clip 0.2 / 0.2; entropy bonus 1e-3 on the full-vocabulary entropy of all response tokens (`algorithm.invariant_entropy_coef=-0.001`, `algorithm.entropy_loss_type=full`); token-level loss; data seed 42 |
 | Optimization | AdamW (bf16), lr 1e-6 constant, vision tower frozen, 20 epochs (160 steps) |
 | Lengths / pixels | max prompt 2,048, max response 2,048; 262,144-1,000,000 pixels |
@@ -67,10 +67,12 @@ command (e.g. `algorithm.disable_kl=true`) and set `N_GPUS_PER_NODE`, `MODEL_PAT
   2,048, reward 0.9 accuracy + 0.1 format, its system prompt, data seed 42, and an entropy bonus of
   1e-3 that the paper does not mention; all three scripts use it. As the official
   `total_episodes=20`, we train for 20 epochs (160 steps).
-- **Update batch.** The paper (Table 5) lists a global batch size of 128. The official script sets
-  128 together with `worker.actor.is_noisy=true`, a NoisyRollout option that doubles it, so every
-  update uses 256 prompts and each step updates twice. We follow the official code; set
-  `worker.actor.global_batch_size=128` for the paper's setting.
+- **Update batch.** We follow the paper (Table 5): a global batch size of 128 prompts, so each step
+  of 512 prompts updates the policy four times. The official script also sets 128, together with
+  `worker.actor.is_noisy=true`, a NoisyRollout option that doubles the global batch size
+  (`verl/workers/fsdp_workers.py`), so in the official runs every update uses 256 prompts and each
+  step updates twice; the noisy images enter only the JSD computation, not the update. Set
+  `worker.actor.global_batch_size=256` to match the official code.
 - **Perturbation.** As the official code, the noise is added to the image processor's normalized
   pixel values without clipping, and all responses of a prompt are scored against the same noisy
   image (as in the paper's Algorithm 1). In the official code the 12 responses of a prompt share

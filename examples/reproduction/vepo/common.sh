@@ -34,7 +34,7 @@ launch_full_vocab_sensitivity_geo3k() {
         "worker.actor.model.freeze_vision_tower=true"
         "worker.actor.optim.lr=1e-6"
         "worker.actor.optim.strategy=adamw_bf16"
-        "worker.actor.global_batch_size=256"
+        "worker.actor.global_batch_size=128"
         "worker.actor.clip_ratio_high=0.2"
         "worker.actor.micro_batch_size_per_device_for_update=4"
         "worker.actor.micro_batch_size_per_device_for_experience=4"
