@@ -121,6 +121,15 @@ class AlgorithmConfig:
     """filter out low reward samples if online filtering"""
     filter_high: float = 0.99
     """filter out high reward samples if online filtering"""
+    filter_criterion: str = "mean_range"
+    """which groups online filtering keeps. `mean_range`: the group mean of `filter_key` lies strictly between
+    `filter_low` and `filter_high`. `std`: the `filter_key` values of the group differ (unbiased std > 0), as
+    ms-swift's dynamic sampling. For a 0/1 key such as accuracy the two agree."""
+    online_filtering_fallback: str = "error"
+    """what online filtering does when a round keeps no group, and when `trainer.max_try_make_batch` rounds do not
+    fill the batch. `error`: raise in both cases. `keep_round`: keep such a round whole, still raise after the last
+    round (PAPO's code). `first_round`: drop such a round, and after the last round train on the first round
+    unfiltered (ms-swift's dynamic sampling)."""
     log_entropy: bool = False
     """log current-policy token entropy statistics."""
     top_entropy_quantile: float = 1.0
@@ -239,6 +248,10 @@ class AlgorithmConfig:
         )
         _validate_choice(
             "grounding_consistency_detector", self.grounding_consistency_detector, {"self", "grounding-dino"}
+        )
+        _validate_choice("filter_criterion", self.filter_criterion, {"mean_range", "std"})
+        _validate_choice(
+            "online_filtering_fallback", self.online_filtering_fallback, {"error", "keep_round", "first_round"}
         )
         _validate_choice("corrupt_image_position", self.corrupt_image_position, {"prompt", "response"})
         _validate_choice("entropy_loss_type", self.entropy_loss_type, {"sampled", "full"})
@@ -549,6 +562,14 @@ class PPOConfig:
         self.worker.actor.kl_penalty = self.algorithm.kl_penalty
         self.worker.actor.kl_coef = self.algorithm.kl_coef
         self._validate_batch_sizes()
+        if (
+            self.algorithm.online_filtering
+            and self.algorithm.online_filtering_fallback == "first_round"
+            and self.trainer.max_try_make_batch <= 0
+        ):
+            raise ValueError(
+                "algorithm.online_filtering_fallback=first_round requires trainer.max_try_make_batch > 0."
+            )
         if self.worker.rollout.interaction_mode == "agentic":
             unsupported_interventions = []
             intervention_fields = {

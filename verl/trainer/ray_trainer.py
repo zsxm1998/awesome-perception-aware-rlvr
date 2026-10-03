@@ -1057,24 +1057,33 @@ class RayPPOTrainer:
         metrics.update(global_balance_stats)
 
     def _select_filtered_sample_idxs(self, uids: Any, filter_scores: list[float]) -> list[int]:
+        """The samples of the groups that pass online filtering. When no group passes, the round is kept whole
+        (`keep_round`), dropped (`first_round`, an empty list) or an error."""
         uid2scores = defaultdict(list)
         for uid, score in zip(uids, filter_scores):
             uid2scores[uid].append(score)
 
-        uid2mean = {uid: np.mean(scores) for uid, scores in uid2scores.items()}
-        kept_uids = {
-            uid
-            for uid, avg_score in uid2mean.items()
-            if avg_score > self.config.algorithm.filter_low and avg_score < self.config.algorithm.filter_high
-        }
+        if self.config.algorithm.filter_criterion == "std":
+            kept_uids = {uid for uid, scores in uid2scores.items() if len(scores) > 1 and np.std(scores, ddof=1) > 0}
+        else:
+            uid2mean = {uid: np.mean(scores) for uid, scores in uid2scores.items()}
+            kept_uids = {
+                uid
+                for uid, avg_score in uid2mean.items()
+                if avg_score > self.config.algorithm.filter_low and avg_score < self.config.algorithm.filter_high
+            }
         kept_sample_idxs = [idx for idx, uid in enumerate(uids) if uid in kept_uids]
         if len(kept_sample_idxs) == 0:
-            raise RuntimeError("No sample is kept after filtering. Please check your data.")
+            if self.config.algorithm.online_filtering_fallback == "keep_round":
+                return list(range(len(uids)))
+            if self.config.algorithm.online_filtering_fallback == "error":
+                raise RuntimeError("No sample is kept after filtering. Please check your data.")
 
         return kept_sample_idxs
 
     def _make_batch_data(self, metrics: dict[str, Any]) -> DataProto:
         batch = None
+        first_round_batch = None  # online_filtering_fallback=first_round trains on it when the rounds run out
         all_metrics = defaultdict(list)
         scorer_metrics = defaultdict(list)
         num_try_make_batch = 0
@@ -1139,9 +1148,11 @@ class RayPPOTrainer:
                 # rule-based reward pass first and run detection only for the kept groups
                 # (skipping groups without a correct answer). Kept samples end up with the
                 # same token_level_scores as the detect-everything order.
+                # first_round may train on a round unfiltered, so that round needs every reward.
                 use_two_pass_reward = (
                     self.grounding_consistency_scorer is not None
                     and self.config.algorithm.filter_key in {"accuracy", "format"}
+                    and self.config.algorithm.online_filtering_fallback != "first_round"
                 )
                 if use_two_pass_reward:
                     _, pre_reward_metrics = ray.get(
@@ -1197,41 +1208,49 @@ class RayPPOTrainer:
                         new_batch.non_tensor_batch["uid"],
                         reward_metrics[self.config.algorithm.filter_key],
                     )
-                    new_batch = new_batch[kept_sample_idxs]
+                    if first_round_batch is None and self.config.algorithm.online_filtering_fallback == "first_round":
+                        first_round_batch = new_batch
+                    new_batch = new_batch[kept_sample_idxs] if kept_sample_idxs else None
 
                 if grounding_reward_result is not None:
                     for key, value in grounding_reward_result.metrics.items():
                         scorer_metrics[key].append(value)
 
-            batch = DataProto.concat([batch, new_batch]) if batch is not None else new_batch
-            current_batch_size = len(batch) // self.config.worker.rollout.n
+            if new_batch is not None:
+                batch = DataProto.concat([batch, new_batch]) if batch is not None else new_batch
+            current_batch_size = 0 if batch is None else len(batch) // self.config.worker.rollout.n
             rollout_batch_size = self.config.data.rollout_batch_size
             if current_batch_size < rollout_batch_size:
                 print(f"{current_batch_size=} < {rollout_batch_size=}")
                 max_try_make_batch = self.config.trainer.max_try_make_batch
                 if max_try_make_batch <= 0 or num_try_make_batch < max_try_make_batch:
                     print(f"{num_try_make_batch=}. Continue generating...")
-                else:
+                    continue
+                if first_round_batch is None:
                     raise RuntimeError(
                         f"{num_try_make_batch=} >= {max_try_make_batch=}. Generated too many. Please check your data."
                     )
+                print(f"{num_try_make_batch=} >= {max_try_make_batch=}. Train on the first round unfiltered.")
+                batch = first_round_batch
             else:
                 print(f"{current_batch_size=} >= {rollout_batch_size=}. Finish generating.")
-                if self.config.algorithm.online_filtering:
-                    metrics.update({f"reward/{k}": v for k, v in reduce_metrics(all_metrics).items()})
-                if scorer_metrics:
-                    metrics.update(
-                        {
-                            key: (
-                                float(np.sum(values))
-                                if "detection_time_s" in key or "detection_request_count" in key
-                                else float(np.mean(values))
-                            )
-                            for key, values in scorer_metrics.items()
-                        }
-                    )
+            if first_round_batch is not None:
+                metrics["reward/filter_first_round_fallback"] = float(batch is first_round_batch)
+            if self.config.algorithm.online_filtering:
+                metrics.update({f"reward/{k}": v for k, v in reduce_metrics(all_metrics).items()})
+            if scorer_metrics:
+                metrics.update(
+                    {
+                        key: (
+                            float(np.sum(values))
+                            if "detection_time_s" in key or "detection_request_count" in key
+                            else float(np.mean(values))
+                        )
+                        for key, values in scorer_metrics.items()
+                    }
+                )
 
-                return batch[: self.config.data.rollout_batch_size * self.config.worker.rollout.n]
+            return batch[: self.config.data.rollout_batch_size * self.config.worker.rollout.n]
 
     def fit(self):
         """
