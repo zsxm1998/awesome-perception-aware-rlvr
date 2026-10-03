@@ -6,8 +6,9 @@ ICLR 2026 (per the official README) · [arXiv:2507.06448](https://arxiv.org/abs/
 
 ## Method
 
-PAPO adds an *Implicit Perception Loss* to GRPO/DAPO: for every rollout it builds a masked copy of
-the image (random 14-px patches blackened with probability 0.6) and **maximizes**
+PAPO adds an *Implicit Perception Loss* to GRPO/DAPO: for every prompt it builds one masked copy of
+the image (random 14-px patches blackened with probability 0.6), shared by the prompt's rollouts,
+and **maximizes**
 KL(π(o | q, I) ‖ π(o | q, I_mask)) with weight γ, so that the policy's outputs depend on the
 visual input. Because maximizing this KL can be "hacked", PAPO adds a *Double Entropy Loss* (an
 entropy penalty on the original and on the masked view, weight η). The variants are PAPO-G (on
