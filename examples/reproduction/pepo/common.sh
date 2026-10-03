@@ -17,6 +17,8 @@ launch_pepo_geometry3k() {
         "data.video_key=videos"
         "data.format_prompt=$ROOT_DIR/examples/format_prompt/pepo.jinja"
         "data.filter_overlong_prompts=true"
+        "data.min_pixels=3136"
+        "data.max_pixels=12845056"
         "data.max_prompt_length=1024"
         "data.max_response_length=1024"
         "data.rollout_batch_size=8"

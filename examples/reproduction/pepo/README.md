@@ -25,7 +25,7 @@ from 0 to 1 over training. Variants: PEPO_G (on GRPO) and PEPO_D (on DAPO).
 | Rollout | 8 prompts x 8 rollouts per step (`data.rollout_batch_size=8`, one update per step, as PEPO's 2 responses per GPU x 4 accumulation steps x 8 GPUs), T=1.0, top-p 1.0, top-k 50 (ms-swift's default) |
 | RL | low-var KL loss 0.001; clip 0.2 / 0.2; GRPO arms: sequence-level loss averaging (`worker.actor.loss_avg_mode=seq`: each response's token mean, every response weighted equally, as ms-swift's GRPO loss); DAPO arms: token-level averaging and online filtering as ms-swift's dynamic sampling (keep the groups whose total reward varies, at most 3 rounds, then train on the first round unfiltered) |
 | Optimization | AdamW (bf16), lr 1e-6 with cosine decay to 0 and no warmup, vision tower trainable, 1 epoch (262 steps) |
-| Lengths / pixels | max prompt 1,024, max response 1,024; 262,144-4,194,304 pixels (the defaults of `examples/config.yaml`) |
+| Lengths / pixels | max prompt 1,024, max response 1,024; 3,136-12,845,056 pixels (the processor's range: images keep their resolution, as in PEPO's ms-swift training) |
 | GPUs | 8 |
 | Perception prior | `algorithm.visual_sensitivity_metric=hidden_state_similarity`, `algorithm.visual_sensitivity_hidden_metric=cosine`, `algorithm.visual_token` (`auto`, `<|image_pad|>` for Qwen, `<IMG_CONTEXT>` for InternVL) |
 | Token weighting | `algorithm.advantage_scaling_method=pepo`, `algorithm.advantage_scaling_schedule=linear` (λ: 0 → 1), `algorithm.pepo_gate_alpha=0.05` (α), `algorithm.pepo_gate_temperature=1.8` |
