@@ -66,7 +66,8 @@ described in [eval/README.md](../../../eval/README.md).
   PathVQA, VQA-RAD, PMC-VQA) is released without dataset ids, so the medical columns and the
   medical settings (P_mask 0.2, T_init 100) are not included.
 - The paper sums token-level KL divergences over the full output distributions; both KL terms here
-  use the sampled-token k3 estimator.
+  use the sampled-token k3 estimator, whose gradient as a loss is that of the reverse KL
+  ([docs/implementation_notes.md](../../../docs/implementation_notes.md#the-k3-estimator-used-as-a-loss)).
 - The masked and noised views are scored once with the rollout policy before the update (no
   gradient through those branches, as in PAPO's default implementation). The KL terms therefore
   only move the original-view policy, and the two view-entropy terms (λ_ent) do not contribute

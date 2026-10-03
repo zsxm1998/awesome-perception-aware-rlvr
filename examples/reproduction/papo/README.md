@@ -68,7 +68,9 @@ Evaluation is described in [eval/README.md](../../../eval/README.md).
 - Re-implemented on EasyR1 with the shared perception-reasoning modules of this repository, not a
   copy of the official fork. Hyper-parameters follow the official scripts and paper Table 3.
 - As in the official default (`RECOMPUTE_AUG_LOG_PROBS=False`), the masked-image log-probs are
-  computed once before the update and are not recomputed with gradient. Losses are averaged per
+  computed once before the update and are not recomputed with gradient. KL_prcp uses the
+  sampled-token k3 estimator, as the official code; used as a loss, its gradient is that of the
+  reverse KL ([docs/implementation_notes.md](../../../docs/implementation_notes.md#the-k3-estimator-used-as-a-loss)). Losses are averaged per
   token (EasyR1 default, also what the official configs use; the paper's Eq. 2 is written per
   sequence).
 - As PAPO's code, the 14-pixel patches are blackened on the image at its original resolution, which

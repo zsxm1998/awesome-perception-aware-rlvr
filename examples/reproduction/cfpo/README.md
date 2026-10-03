@@ -74,7 +74,8 @@ described in [eval/README.md](../../../eval/README.md).
   - The saliency statistics use the text query tokens of the input in the paper (App. A); the
     code uses every position after the image, the response included.
   - The paper writes KL_cf = KL(π(o | Z) ‖ π(o | do(Z = Z_cf))); the code uses the sampled-token
-    k3 estimator, whose gradient as a loss is that of the reverse KL, KL(π_cf ‖ π).
+    k3 estimator, whose gradient as a loss is that of the reverse KL, KL(π_cf ‖ π) (derivation in
+    [docs/implementation_notes.md](../../../docs/implementation_notes.md#the-k3-estimator-used-as-a-loss)).
   - The paper describes the entropy term of CFPO_D as entropy maximization; the code adds
     η·(−log π) to the loss, which lowers the entropy of the sampled tokens.
   - The counterfactual log-probabilities are computed once with the rollout policy before the
