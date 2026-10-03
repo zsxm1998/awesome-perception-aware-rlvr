@@ -44,7 +44,7 @@ launch_tor_matrix() {
         "worker.rollout.gpu_memory_utilization=0.4"
         "worker.rollout.enable_chunked_prefill=false"
         "worker.rollout.enforce_eager=true"
-        "worker.rollout.max_num_batched_tokens=2048"
+        "worker.rollout.max_num_batched_tokens=13312"
         "worker.rollout.val_override_config.n=8"
         "worker.rollout.val_override_config.temperature=1.0"
         "worker.rollout.val_override_config.top_p=0.9"
