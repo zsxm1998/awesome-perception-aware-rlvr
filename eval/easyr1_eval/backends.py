@@ -219,6 +219,7 @@ class VLLMBackend:
         force_vllm_feature_wrapper: bool = False,
         chat_template: str | None = None,
         plain_think_tokens: str = "auto",
+        max_dynamic_patch: int | None = None,
     ):
         from vllm import LLM
 
@@ -274,6 +275,9 @@ class VLLMBackend:
             "dtype": dtype,
             "limit_mm_per_prompt": {"image": limit_images},
         }
+        if max_dynamic_patch is not None:
+            # InternVL tiles per image, through the model config (as in the training rollout)
+            engine_kwargs["hf_overrides"] = {"max_dynamic_patch": max_dynamic_patch}
         if max_model_len is not None:
             engine_kwargs["max_model_len"] = max_model_len
         # vLLM V1 snapshots environment variables when EngineCore workers spawn.
@@ -288,6 +292,7 @@ class VLLMBackend:
             override_chat_template=chat_template,
             plain_think_tokens=plain_think_tokens,
             trust_remote_code=trust_remote_code,
+            max_dynamic_patch=max_dynamic_patch,
         )
         self.tokenizer = get_tokenizer(
             model, plain_think_tokens=plain_think_tokens, trust_remote_code=trust_remote_code
@@ -468,6 +473,7 @@ class TransformersBackend:
         save_perturbation_samples: int = 0,
         chat_template: str | None = None,
         plain_think_tokens: str = "auto",
+        max_dynamic_patch: int | None = None,
     ):
         import torch
         from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForImageTextToText
@@ -480,6 +486,7 @@ class TransformersBackend:
             override_chat_template=chat_template,
             plain_think_tokens=plain_think_tokens,
             trust_remote_code=trust_remote_code,
+            max_dynamic_patch=max_dynamic_patch,
         )
         self.tokenizer = get_tokenizer(
             model, plain_think_tokens=plain_think_tokens, trust_remote_code=trust_remote_code
@@ -687,6 +694,7 @@ def build_backend(name: str, model: str, **kwargs) -> Backend:
             "save_perturbation_samples",
             "chat_template",
             "plain_think_tokens",
+            "max_dynamic_patch",
         }
         return TransformersBackend(model, **{key: value for key, value in kwargs.items() if key in allowed})
     raise ValueError(f"unknown backend: {name}")

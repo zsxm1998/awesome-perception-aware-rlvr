@@ -45,6 +45,9 @@ bash examples/reproduction/grit/qwen2_5_vl_3b_grpo_grit.sh
 bash scripts/prepare_eval_data.sh grit
 bash scripts/eval.sh checkpoints/GRIT-Reproduce/qwen2_5_vl_3b_grpo_grit --suite grit \
     --format-prompt examples/format_prompt/grit.jinja --system-prompt none --min-pixels 3136 --max-pixels 200704
+# InternVL3-2B: images at their resolution, at most 2 tiles, as in training
+bash scripts/eval.sh checkpoints/GRIT-Reproduce/internvl3_2b_grpo_grit --suite grit \
+    --format-prompt examples/format_prompt/grit.jinja --system-prompt none --max-pixels 12845056 --max-dynamic-patch 2
 ```
 
 The `grit` suite defaults to the JSON-evidence system prompt and image size used by

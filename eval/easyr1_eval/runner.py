@@ -280,6 +280,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "question only, for models trained to answer it as is (the grit suite's default).",
     )
     parser.add_argument(
+        "--max-dynamic-patch",
+        type=int,
+        default=None,
+        help="InternVL only: maximum tiles per image (default: the model config's); pass the training value "
+        "(worker.actor.model.max_dynamic_patch).",
+    )
+    parser.add_argument(
         "--answer-protocol",
         choices=["default", "pepo"],
         default=None,
@@ -744,6 +751,8 @@ def metric_metadata_for(spec: BenchmarkSpec, args: argparse.Namespace) -> dict[s
     metadata = {"max_model_len": args.max_model_len, "box_format": getattr(args, "box_format", "norm1000")}
     if getattr(args, "answer_protocol", "default") != "default":
         metadata["answer_protocol"] = args.answer_protocol
+    if getattr(args, "max_dynamic_patch", None) is not None:
+        metadata["max_dynamic_patch"] = args.max_dynamic_patch
     if getattr(args, "chat_template", None):
         metadata["chat_template"] = args.chat_template
     if getattr(args, "plain_think_tokens", "auto") != "auto":
@@ -1242,6 +1251,7 @@ def build_eval_backend(args: argparse.Namespace):
         agent_bbox_format=getattr(args, "box_format", "norm1000"),
         chat_template=getattr(args, "chat_template", None),
         plain_think_tokens=getattr(args, "plain_think_tokens", "auto"),
+        max_dynamic_patch=getattr(args, "max_dynamic_patch", None),
     )
 
 
@@ -1305,6 +1315,11 @@ def task_fingerprint(
             **(
                 {"answer_protocol": args.answer_protocol}
                 if getattr(args, "answer_protocol", "default") != "default"
+                else {}
+            ),
+            **(
+                {"max_dynamic_patch": args.max_dynamic_patch}
+                if getattr(args, "max_dynamic_patch", None) is not None
                 else {}
             ),
             "box_format": getattr(args, "box_format", "norm1000"),

@@ -328,6 +328,7 @@ Common runner options:
 | `--temperature`, `--num-samples`, `--top-p`, `--top-k`, `--max-new-tokens` | override the registry decoding settings for every benchmark (`--top-k` is unset by default: no limit) |
 | `--gpus`, `--tp`, `--gpu-memory-utilization`, `--max-model-len` | engine placement and size |
 | `--min-pixels`, `--max-pixels` | image resizing (default: the suite's, else 200704 to 1003520 pixels, as in training; `pepo_geometry` uses 3136 to 12845056, PEPO's training range) |
+| `--max-dynamic-patch N` | InternVL only: at most N tiles per image (default: the model config's), as `worker.actor.model.max_dynamic_patch` in training |
 | `--box-format auto\|norm1000\|pixel` | how predicted boxes are read (see [Scoring protocols](#scoring-protocols)) |
 | `--batch-size`, `--max-batch-images` | request batching per engine |
 | `--data-root`, `--skip-missing-data` | data location / tolerate unprepared benchmarks |
