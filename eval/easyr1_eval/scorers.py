@@ -419,6 +419,7 @@ def pepo_logicvista_letter(text: str) -> str | None:
         answer = boxed.group(1).strip()
     if answer and answer[-1] in (".", "\u3002"):
         answer = answer[:-1].strip()
+    answer = answer.replace("\u03c0", "\\pi")  # as extract_answer
     letters = re.findall(r"\b([A-Za-z])\b", answer)
     if letters:
         return letters[-1].upper()

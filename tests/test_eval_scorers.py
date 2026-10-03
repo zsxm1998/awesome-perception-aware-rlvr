@@ -898,6 +898,7 @@ def test_judge_config_uses_resolved_max_tokens_for_deepseek():
         ("<answer>Option (A) is right", "A"),
         ("no tags, so B", "B"),
         ("<answer>42</answer>", None),
+        ("<answer>\u03c0a</answer>", "P"),  # PEPO replaces the pi sign by \\pi before reading letters
     ],
 )
 def test_pepo_logicvista_letter(response, letter):
