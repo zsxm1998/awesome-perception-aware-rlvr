@@ -175,6 +175,10 @@ python scripts/check_bbox_mapping.py --model Qwen/Qwen2.5-VL-7B-Instruct
   and words its error messages after the Python exception; here a turn with more than one tool
   call, an empty answer or an answer inside unclosed reasoning is a tool or format error, and the
   error messages are the tool's own.
+- **Responses without `<answer>`.** The official reward then judges the whole response (with
+  balanced think tags it is no format error, and one of 1,000 characters or more is wrong); here
+  such a trajectory has no final answer, so its accuracy is 0 and its format −1 (V* and chart
+  rows; ThinkLite rows read `\boxed{}` in either case).
 - **ThinkLite answers with nested braces.** The official `\boxed{([^}]+)}` stops at the first `}`,
   so an answer such as `\boxed{\frac{4}{3}}` is read as `\frac{4` and judged wrong, also by the
   judge, which sees the cut answer: even the reference answer itself fails on 174 of the 11,031
