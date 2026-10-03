@@ -78,13 +78,23 @@ environment. Evaluation is described in [eval/README.md](../../../eval/README.md
 - **Validation** runs on the VSR and TallyQA test sets only (the official scripts validate on all six
   test sets).
 - **Evaluation** (suite `grit`) covers VSR, TallyQA, GQA and OVDEval-position; MathVista and MME are
-  not included. Answers are scored with rules instead of GPT-4o: the primary metric is answer
-  accuracy with relaxed exact match, and `answer/grit_rule_accuracy` uses the answer rule of the
-  training reward. The paper's grounding IoU (union of predicted boxes vs. union of GT boxes) is in
-  the metric details: `grounding/grit_iou` reads bracketed boxes, `grounding/grit_iou_grit_pattern`
-  any four comma-separated integers, as GRIT's `extract_eval_results.py`. The questions are asked
-  without the box instruction other suites append, as the models are trained. The released
-  OVDEval file has 2,146 items (the paper lists 2,164).
+  not included. The questions are asked without the box instruction other suites append, as the
+  models are trained. The released OVDEval file has 2,146 items (the paper lists 2,164). The
+  metrics differ from the paper's:
+  - *Answer accuracy (ACC).* The paper has GPT-4o score the text after `<answer>` against the
+    reference with a score between 0 and 1 (the prompt of its answer-accuracy reward) and averages
+    the scores. We use no judge: an answer is correct or wrong by relaxed exact match (articles,
+    number words and punctuation normalized). Our ACC is therefore not comparable with the paper's.
+  - *Grounding IoU (GIoU).* Both take, per sample, the IoU between the union of all predicted boxes
+    and the union of the GT boxes, with 0 when the response has no box. GRIT's
+    `extract_eval_results.py` reads any four comma-separated integers in the response as a box and
+    compares Qwen2.5-VL's pixel coordinates, which refer to the resized input image, with GT boxes
+    on the original image without rescaling. We read boxes in square brackets and map them onto
+    the original image; `grounding/grit_iou_grit_pattern` in the metric details uses GRIT's box
+    pattern with the same mapping.
+  - The metric details also report `answer/grit_rule_accuracy`, the answer checked with the rule of
+    this repository's GRIT training reward. It is neither the paper's metric nor calibrated
+    against GPT-4o's scores.
 
 ## Results
 
@@ -96,7 +106,9 @@ environment. Evaluation is described in [eval/README.md](../../../eval/README.md
 > from the authors are welcome. See [About the results](../../../README.md#-about-the-results).
 
 Paper Table 1 (ACC = GPT-4o answer score ×100; GIoU = grounding IoU). InternVL3-2B's OVDEval GIoU is
-printed on a 0-100 scale in the paper. The paper reports no RL baseline without grounding.
+printed on a 0-100 scale in the paper. The paper reports no RL baseline without grounding. This
+repository's ACC is relaxed exact match ×100, so the ACC columns are not directly comparable (see
+the evaluation differences above).
 
 | Benchmark | Paper, Qwen2.5-VL-3B | This repo, Qwen2.5-VL-3B | Paper, InternVL3-2B | This repo, InternVL3-2B |
 | --- | --- | --- | --- | --- |

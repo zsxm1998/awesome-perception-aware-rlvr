@@ -213,10 +213,11 @@ of PEPO, and GRIT's GPT-judged MathVista/MME subsets.
   `scorers.py`); the exact-match score is always kept as `exact_match_accuracy`.
 - **MM-Vet** uses the official few-shot grading prompt with the configured judge model.
 - **GRIT sets (`answer_bbox`)** report the two GRIT-paper metrics. The primary is answer
-  accuracy: the final answer is checked with relaxed exact match (articles, number words and
-  punctuation normalized; GRIT itself uses a GPT-4o judge). `answer/grit_rule_accuracy` checks
-  the `<answer>` text with the rule of GRIT's training reward in this repository
-  (`examples/reward_function/grit.py`), the closest rule-based stand-in for GRIT's judge. The
+  accuracy: the final answer is correct or wrong by relaxed exact match (articles, number words
+  and punctuation normalized), while GRIT has GPT-4o score the answer between 0 and 1, so the two
+  are not comparable. `answer/grit_rule_accuracy` (details) checks the `<answer>` text with the
+  rule of GRIT's training reward in this repository (`examples/reward_function/grit.py`); it is
+  not GRIT's metric either. The
   GRIT grounding IoU (`grounding/grit_iou`, also the `<key>_giou` column of the global summary)
   follows `extract_eval_results.py` of UCSB-AI/GRIT: per sample, the IoU between the union of
   *all* boxes written in the response and the union of the GT boxes; samples with an empty GT
