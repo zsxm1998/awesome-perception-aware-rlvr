@@ -58,12 +58,14 @@ def get_fsdp_wrap_policy(model: PreTrainedModel, is_lora_model=False):
         is_lora_model: Whether to enable lambda policy for LoRA modules
     """
     transformer_cls_to_wrap = set()
+    # remote-code models may list layer classes of several backbones (InternVL3: LlamaDecoderLayer and
+    # Qwen2DecoderLayer); wrap those the model has
     for module in model._no_split_modules:
         transformer_cls = get_module_class_from_name(model, module)
-        if transformer_cls is None:
-            raise Exception(f"Cannot find {module} in pretrained model.")
-        else:
+        if transformer_cls is not None:
             transformer_cls_to_wrap.add(transformer_cls)
+    if not transformer_cls_to_wrap:
+        raise Exception(f"Cannot find any of {model._no_split_modules} in pretrained model.")
 
     policies = []
 
