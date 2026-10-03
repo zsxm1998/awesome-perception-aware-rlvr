@@ -22,7 +22,7 @@ image-question-answer triplets without box or reasoning annotations.
 | Training data | 20 samples (10 VSR + 10 TallyQA) from `yfan1997/GRIT_data`; images are downloaded from COCO / Visual Genome — `bash scripts/prepare_data.sh grit` |
 | Validation | GRIT VSR (288) + TallyQA (491) test sets, greedy, every 50 steps |
 | Prompt | official GRIT prompt (`examples/format_prompt/grit.jinja`): the image, then `Question: <question>` and the instruction to think with `bbox_2d` coordinates, then rethink, then answer after `<answer>` |
-| Reward | `examples/reward_function/grit.py:compute_score_official`, summed with weight 1: binary answer match + 0.1·BLEU-1 + answer format (≤ 0.5) + repetition penalty term (≤ 0.5) + grounded format (0.5 for ≥ 1 box before `<rethink>`, +1.0 if the number of boxes equals a numeric counting answer) + think/rethink structure (≤ 0.5) |
+| Reward | `examples/reward_function/grit.py:compute_score_official`, summed with weight 1: binary answer match + 0.1·BLEU-1 + answer format (≤ 0.5) + repetition term (≤ 0.5, negative when 8-grams repeat back to back, in words and in tokens) + grounded format (0.5 for ≥ 1 box before `<rethink>`, +1.0 if the number of boxes equals a numeric counting answer) + think/rethink structure (≤ 0.5); the repetition and structure terms are GRIT's code |
 | Rollout | all 20 prompts x 4 rollouts per step (80 rollouts), T=0.9, top-p 1.0; update batch 20 prompts |
 | RL | GRPO; low-var KL loss 0.01; symmetric clip 0.28 |
 | Optimization | AdamW (bf16), lr 2e-6 with cosine schedule, vision tower trainable, 200 steps (`trainer.max_steps=200`) |

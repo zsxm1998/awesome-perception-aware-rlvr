@@ -184,3 +184,111 @@ def test_official_reward_terms():
     (missing,) = grit.compute_score_official([{"response": "<think>no answer</think>", "ground_truth": "2"}])
     assert missing["accuracy"] == 0.0
     assert missing["grounded_format"] == 0.0
+
+
+# UCSB-AI/GRIT@e6d8835 grpo-gr/rewards.py, repetitive_reward and think_and_rethink_format_reward (prints removed)
+def _official_repetitive_reward(completions, completion_ids):
+    import torch
+
+    ngram_size = 8
+    max_reward = 0.5
+    rewards = []
+    pad_token_id = 151643
+    for ids, completion in zip(completion_ids, completions):
+        if completion == "":
+            rewards.append(max_reward)
+            continue
+        if len(completion.split()) < ngram_size:
+            rewards.append(max_reward)
+            continue
+        repeat_count = 0
+        total = 0
+        tokens = completion.split()
+        for i in range(len(tokens) - ngram_size):
+            ng1 = tuple(tokens[i : i + ngram_size])
+            ng2 = tuple(tokens[i + ngram_size : i + ngram_size + ngram_size])
+            total += 1
+            if ng1 == ng2:
+                repeat_count += 1
+        if total == 0:
+            reward = 1.0
+        else:
+            reward = 1.0 - (repeat_count / total)
+        ids_list = torch.tensor(ids).tolist()
+        if pad_token_id is not None:
+            if pad_token_id in ids_list:
+                ids_list = ids_list[: ids_list.index(pad_token_id)]
+        if len(ids_list) < 2 * ngram_size:
+            rewards.append(max_reward)
+            continue
+        repeat_count = 0
+        total_pairs = 0
+        for i in range(len(ids_list) - 2 * ngram_size + 1):
+            ng1 = tuple(ids_list[i : i + ngram_size])
+            ng2 = tuple(ids_list[i + ngram_size : i + 2 * ngram_size])
+            total_pairs += 1
+            if ng1 == ng2:
+                repeat_count += 1
+        if total_pairs == 0:
+            score = 1.0
+        else:
+            score = 1.0 - (repeat_count / total_pairs)
+        rewards.append((score - (1 - reward)) * max_reward)
+    return rewards
+
+
+def _official_think_and_rethink_format_reward(completions):
+    import re
+
+    rewards = []
+    max_reward = 0.5
+    keys = ["<think>", "</think>", "<rethink>", "</rethink>"]
+    for response in completions:
+        reward = 0.0
+        response_original = response
+        for key in keys:
+            if key in response:
+                reward += 1.0
+                response = response.split(key)[-1]
+        if reward == len(keys):
+            try:
+                response_list = response_original.split("<think>")[-1].split("</think>")[0].strip()
+                assert isinstance(response_list, str) and len(response_list) > 1
+                response_list = re.sub(r"[^a-zA-Z0-9\s]", " ", response_list)
+                response_list = response_list.split(" ")
+                assert len(response_list) > 1
+                reward += 1.0
+            except Exception:
+                pass
+        rewards.append(reward / (len(keys) + 1) * max_reward)
+    return rewards
+
+
+_LOOP = "the cat sits on the mat and looks " * 4
+OFFICIAL_CASES = [
+    ("", []),
+    ("short answer", [1, 2]),
+    (_response('A cat {"bbox_2d": [1, 2, 3, 4]} sits.'), list(range(40))),
+    (_response(_LOOP), [5, 6, 7, 8, 9, 10, 11, 12] * 6),  # repeated words and tokens: negative
+    (_response(_LOOP), list(range(60)) + [151643, 7, 7]),  # ids cut at the pad id
+    ("<think>x</think><answer>1</answer>", list(range(30))),  # no rethink
+    ("<rethink>r</rethink><think>a b</think>", list(range(30))),  # tags out of order
+    ("<think>ab</think><rethink>r</rethink>", list(range(30))),  # one-word think
+    ("<think>a b</think> <think>c</think><rethink>r</rethink><answer>2</answer>", list(range(30))),
+]
+
+
+@pytest.mark.parametrize("response,ids", OFFICIAL_CASES)
+def test_repetition_and_structure_terms_match_grits_code(response, ids):
+    assert grit._repetition_reward(response, ids) == pytest.approx(_official_repetitive_reward([response], [ids])[0])
+    assert grit._think_rethink_structure(response) == pytest.approx(
+        _official_think_and_rethink_format_reward([response])[0]
+    )
+
+
+def test_repetition_can_be_negative_and_uses_the_reward_input_ids():
+    response = _response(_LOOP)
+    ids = [5, 6, 7, 8, 9, 10, 11, 12] * 6
+    assert grit._repetition_reward(response, ids) < 0
+    (score,) = grit.compute_score_official([{"response": response, "ground_truth": "cat", "response_ids": ids}])
+    assert score["repetition"] == pytest.approx(grit._repetition_reward(response, ids))

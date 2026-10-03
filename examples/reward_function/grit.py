@@ -206,26 +206,56 @@ def _answers_match(prediction: str, ground_truth: str) -> bool:
         return False
 
 
-def _repetition_reward(text: str, n: int = 8) -> float:
-    words = text.split()
-    if len(words) < n:
-        return 0.5
-    ngrams = [tuple(words[i : i + n]) for i in range(len(words) - n + 1)]
-    repeated = len(ngrams) - len(set(ngrams))
-    return 0.5 * (1.0 - repeated / len(ngrams))
+_GRIT_PAD_TOKEN_ID = 151643  # GRIT's repetitive_reward cuts the completion ids at this (Qwen) pad id
 
 
-def _think_rethink_structure(response: str) -> float:
-    tags = (_THINK_OPEN, _THINK_CLOSE, _RETHINK_OPEN, _RETHINK_CLOSE, _ANSWER_OPEN)
-    cursor, hits = -1, 0
+def _repetition_reward(
+    completion: str, completion_ids: list[int] | None, ngram_size: int = 8, max_reward: float = 0.5
+) -> float:
+    """GRIT's repetitive_reward (grpo-gr/rewards.py): the share of 8-grams repeated right after themselves, in
+    words and in token ids; (1 - token share - word share) * 0.5, so it can be negative. Without token ids
+    only the word share counts."""
+    if completion == "" or len(completion.split()) < ngram_size:
+        return max_reward
+    tokens = completion.split()
+    repeat_count, total = 0, 0
+    for i in range(len(tokens) - ngram_size):
+        total += 1
+        if tuple(tokens[i : i + ngram_size]) == tuple(tokens[i + ngram_size : i + 2 * ngram_size]):
+            repeat_count += 1
+    word_score = 1.0 if total == 0 else 1.0 - repeat_count / total
+    if completion_ids is None:
+        return word_score * max_reward
+
+    ids = list(completion_ids)
+    if _GRIT_PAD_TOKEN_ID in ids:
+        ids = ids[: ids.index(_GRIT_PAD_TOKEN_ID)]
+    if len(ids) < 2 * ngram_size:
+        return max_reward
+    repeat_count, total = 0, 0
+    for i in range(len(ids) - 2 * ngram_size + 1):
+        total += 1
+        if tuple(ids[i : i + ngram_size]) == tuple(ids[i + ngram_size : i + 2 * ngram_size]):
+            repeat_count += 1
+    token_score = 1.0 if total == 0 else 1.0 - repeat_count / total
+    return (token_score - (1.0 - word_score)) * max_reward
+
+
+def _think_rethink_structure(response: str, max_reward: float = 0.5) -> float:
+    """GRIT's think_and_rethink_format_reward: one point per tag of <think>, </think>, <rethink>, </rethink>
+    found in order (each searched after the last occurrence of the previous one; a missing tag is skipped),
+    one more when all four are present and the think part has at least two words; scaled to 0.5."""
+    tags = (_THINK_OPEN, _THINK_CLOSE, _RETHINK_OPEN, _RETHINK_CLOSE)
+    reward, remaining = 0.0, response
     for tag in tags:
-        position = response.find(tag, cursor + 1)
-        if position == -1:
-            break
-        cursor, hits = position, hits + 1
-    think_body = response.split(_THINK_OPEN, 1)[-1].split(_THINK_CLOSE, 1)[0] if _THINK_OPEN in response else ""
-    nontrivial = 1 if len(think_body.split()) >= 5 else 0
-    return 0.5 * min(hits, 4) / 5 + 0.5 * nontrivial / 5
+        if tag in remaining:
+            reward += 1.0
+            remaining = remaining.split(tag)[-1]
+    if reward == len(tags):
+        think = response.split(_THINK_OPEN)[-1].split(_THINK_CLOSE)[0].strip()
+        if len(think) > 1 and len(_NON_ALNUM_PATTERN.sub(" ", think).split(" ")) > 1:
+            reward += 1.0
+    return reward / (len(tags) + 1) * max_reward
 
 
 def compute_score_official(reward_inputs: list[dict[str, Any]]) -> list[dict[str, float]]:
@@ -238,7 +268,7 @@ def compute_score_official(reward_inputs: list[dict[str, Any]]) -> list[dict[str
         answer_correct = 1.0 if answer is not None and _answers_match(answer, ground_truth) else 0.0
         bleu = bleu1_reward(answer, ground_truth) if answer else 0.0
         answer_format = (0.25 if answer is not None else 0.0) + (0.25 if response.count(_ANSWER_OPEN) == 1 else 0.0)
-        repetition = _repetition_reward(response)
+        repetition = _repetition_reward(response, reward_input.get("response_ids"))
 
         grounded = 0.0
         if _RETHINK_OPEN in response:
