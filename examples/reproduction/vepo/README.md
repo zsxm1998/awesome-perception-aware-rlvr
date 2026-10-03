@@ -27,7 +27,7 @@ sequence-level advantage is unchanged.
 | Optimization | AdamW (bf16), lr 1e-6 constant, vision tower frozen, 20 epochs (160 steps) |
 | Lengths / pixels | max prompt 8,192, max response 4,096; 200,704-1,003,520 pixels |
 | GPUs | 8 |
-| Perturbed view | `algorithm.corrupt_image=gaussian_noise`, `algorithm.corrupt_image_kwargs={"std":2.0}`, `algorithm.corrupt_image_position=prompt` |
+| Perturbed view | `algorithm.corrupt_image=gaussian_noise`, `algorithm.corrupt_image_kwargs={"std":6.928}` (on the normalized pixel values, see below), `algorithm.corrupt_image_position=prompt` (one noisy image per prompt) |
 | Token score | `algorithm.visual_sensitivity_metric=vepo`, `algorithm.visual_sensitivity_jsd_weight=0.7` (α), `algorithm.visual_sensitivity_entropy_gate=normal_entropy` |
 | Token selection | `algorithm.top_perception_quantile=0.2` (k), `algorithm.perception_thr_granularity=response`, `algorithm.normalize_pg_loss_by_selected_tokens=true` |
 
@@ -70,9 +70,15 @@ command (e.g. `algorithm.disable_kl=true`) and set `N_GPUS_PER_NODE`, `MODEL_PAT
   128 together with `worker.actor.is_noisy=true`, a NoisyRollout option that doubles it, so every
   update uses 256 prompts and each step updates twice. We follow the official code; set
   `worker.actor.global_batch_size=128` for the paper's setting.
-- **Perturbation.** We add N(0, 2²) noise to the image in [0, 1] pixel space and clip to [0, 1]. The
-  official code adds N(0, 2²) noise to the processor-normalized pixel values without clipping; the
-  paper describes diffusion-step-500 noise with a sigmoid decay schedule.
+- **Perturbation.** As the official code, the noise is added to the image processor's normalized
+  pixel values without clipping, and all responses of a prompt are scored against the same noisy
+  image (as in the paper's Algorithm 1). In the official code the 12 responses of a prompt share
+  one `multi_modal_inputs` dict and the noise loop adds N(0, 2²) to it once per response, so the
+  image the model sees carries noise of std 2·√12 ≈ 6.93 (about 1.87 in [0, 1] pixel units for
+  Qwen2.5-VL). The code comment describes std 2.0, and the paper diffusion step 500, both about
+  0.5 in pixel units; the diffusion-step augmentation module of the official repository is not
+  called during training. We use what the official code runs, `{"std":6.928}`;
+  `{"std":2.0}` gives the described strength.
 - The 3B setting and the retrained baselines of Table 1 (NoisyRollout, PAPO-DAPO, VPPO, R1-ShareVL,
   top-40% entropy) are not scripted; see [examples/comparison/](../../comparison/README.md) for a controlled
   comparison of the perception-aware methods.
