@@ -731,7 +731,23 @@ def test_pepo_geometry_suite_uses_the_pepo_answer_protocol(monkeypatch):
     )
     sample = EvalSample(benchmark="mathverse", sample_id="mathverse:0", prompt="Which angle? A: 30 B: 60", target="B")
     (asked,) = runner.apply_answer_protocol([sample], mathverse, args)
-    assert asked.prompt.endswith("Answer with the option's letter from the given choices directly.")
+    # evaluate_mathverse.py INSTR_SUFFIX: one newline, the format instruction, then the letter instruction
+    assert asked.prompt == (
+        "Which angle? A: 30 B: 60\nFirst output the thinking process in <think> </think> tags and then output the "
+        "final answer in <answer> </answer> tags. Answer with the option's letter from the given choices directly."
+    )
+    assert runner.prompt_config_for(mathverse, args).format_prompt is None  # the suffix replaces pepo.jinja
+    geo3k = BenchmarkSpec(
+        key="geo3k",
+        label="Geo3K",
+        group="Reasoning",
+        loader="sharegpt",
+        scorer="boxed_exact_match",
+        primary_metric="x",
+    )
+    (unchanged,) = runner.apply_answer_protocol([sample], geo3k, args)
+    assert unchanged.prompt == sample.prompt  # Geometry3K keeps the training template (blank line, as PEPO's data)
+    assert "First output the thinking process" in runner.prompt_config_for(geo3k, args).format_prompt
     args.perturbation, args.perturbation_seed = None, 42  # resolved later by the CLI
     monkeypatch.setattr(runner, "perturbation_metadata", lambda *_: {})
     assert runner.metric_metadata_for(mathverse, args)["answer_protocol"] == "pepo"  # read by the scorers

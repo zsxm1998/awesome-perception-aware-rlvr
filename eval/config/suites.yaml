@@ -64,7 +64,7 @@ suites:
       format_prompt: examples/format_prompt/pepo.jinja
       min_pixels: 3136  # images at their resolution, as examples/reproduction/pepo trains
       max_pixels: 12845056
-      answer_protocol: pepo  # MathVerse asks for the option letter; LogicVista reads the last standalone letter
+      answer_protocol: pepo  # PEPO's evaluation prompts on MathVista/LogicVista/MathVerse; LogicVista letters
 
   vepo:
     description: VEPO Table 1 (2 in-domain + 5 out-of-domain benchmarks)

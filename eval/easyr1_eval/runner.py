@@ -46,7 +46,7 @@ from .paths import (
 )
 from .perturbation_summary import write_perturbation_aggregate_summary
 from .perturbations import add_perturbation_args, expand_eval_runs, perturbation_metadata
-from .prompting import apply_prompt_config, prompt_config_from_args
+from .prompting import PromptConfig, apply_prompt_config, prompt_config_from_args
 from .registry import load_benchmark_specs, select_benchmarks
 from .schemas import (
     AGENT_OUTPUT_CONTRACT_NATIVE,
@@ -1026,7 +1026,7 @@ def infer_benchmark_shard(
     samples = apply_answer_protocol(samples, spec, args)
     samples = apply_box_format_to_prompts(samples, getattr(args, "box_format", "norm1000"))
     samples = apply_agent_prompt_style(samples, args)
-    samples = apply_prompt_config(samples, prompt_config_from_args(args))
+    samples = apply_prompt_config(samples, prompt_config_for(spec, args))
     output = shard_prediction_path(args.output_dir, spec, shard_index)
     if backend is None:
         backend = build_eval_backend(args)
@@ -1114,16 +1114,36 @@ def apply_agent_prompt_style(samples: list[EvalSample], args: argparse.Namespace
     return [replace(sample, prompt=sample.prompt + OFFICIAL_DEEPEYES_FORMAT_INSTRUCTION) for sample in samples]
 
 
-PEPO_MATHVERSE_INSTRUCTION = "\nAnswer with the option's letter from the given choices directly."
+_PEPO_INSTRUCTION = (
+    "\nFirst output the thinking process in <think> </think> tags and then output the final answer in <answer> </answer> "
+    "tags."
+)
+# INSTR_SUFFIX of PEPO's evaluate_mathvista.py, evaluate_logicvista.py and evaluate_mathverse.py, appended to the question
+PEPO_EVAL_SUFFIXES = {
+    "mathvista": _PEPO_INSTRUCTION,
+    "logicvista": _PEPO_INSTRUCTION,
+    "mathverse": _PEPO_INSTRUCTION + " Answer with the option's letter from the given choices directly.",
+}
+
+
+def _uses_pepo_eval_suffix(spec: BenchmarkSpec, args: argparse.Namespace) -> bool:
+    return getattr(args, "answer_protocol", "default") == "pepo" and spec.key in PEPO_EVAL_SUFFIXES
 
 
 def apply_answer_protocol(
     samples: list[EvalSample], spec: BenchmarkSpec, args: argparse.Namespace
 ) -> list[EvalSample]:
-    """--answer-protocol pepo: MathVerse questions ask for the option letter, as PEPO's evaluate_mathverse.py."""
-    if getattr(args, "answer_protocol", "default") != "pepo" or spec.key != "mathverse":
+    """--answer-protocol pepo: MathVista, LogicVista and MathVerse are asked as PEPO's evaluation scripts ask them,
+    the question followed by their instruction (MathVerse also asks for the option letter), in place of the format
+    prompt (see prompt_config_for)."""
+    if not _uses_pepo_eval_suffix(spec, args):
         return samples
-    return [replace(sample, prompt=sample.prompt + PEPO_MATHVERSE_INSTRUCTION) for sample in samples]
+    return [replace(sample, prompt=sample.prompt + PEPO_EVAL_SUFFIXES[spec.key]) for sample in samples]
+
+
+def prompt_config_for(spec: BenchmarkSpec, args: argparse.Namespace) -> PromptConfig:
+    config = prompt_config_from_args(args)
+    return replace(config, format_prompt=None) if _uses_pepo_eval_suffix(spec, args) else config
 
 
 def apply_grounding_instruction(samples: list[EvalSample], args: argparse.Namespace) -> list[EvalSample]:
@@ -1358,8 +1378,9 @@ def task_fingerprint(
                 if getattr(args, "grounding_instruction", "append") != "append"
                 else {}
             ),
+            # "pepo-v2": PEPO's evaluation suffixes replace the format prompt on MathVista/LogicVista/MathVerse
             **(
-                {"answer_protocol": args.answer_protocol}
+                {"answer_protocol": "pepo-v2" if args.answer_protocol == "pepo" else args.answer_protocol}
                 if getattr(args, "answer_protocol", "default") != "default"
                 else {}
             ),
