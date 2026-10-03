@@ -59,7 +59,7 @@ suites:
     description: PEPO Table 1 benchmarks, prompted like the Geometry3K-trained PEPO models
     benchmarks: [geo3k, mathvista, mathverse, logicvista]
     defaults:
-      format_prompt: examples/format_prompt/r1v.jinja
+      format_prompt: examples/format_prompt/pepo.jinja
 
   vepo:
     description: VEPO Table 1 (2 in-domain + 5 out-of-domain benchmarks)

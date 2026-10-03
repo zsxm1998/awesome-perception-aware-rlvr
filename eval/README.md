@@ -95,7 +95,7 @@ also set prompt defaults (see [Prompts](#prompts)); explicit flags always win.
 | `dvrp` | geo3k, mathvista, wemath, mathverse, mathverse_v, mmk12 | DVRP Table 1, general columns; medical columns not included; DVRP reports top_p 0.9/0.99, we use 1.0 |
 | `pgpo` | geo3k, mmk12, mathverse, dynamath, mathvision, logicvista, mmmu_pro, mathverse_v | PGPO Table 1; PGPO evaluates DynaMath "sample variant1", we use the VPPO-Eval DynaMath file |
 | `pepo` | geo3k, mathvista, wemath, mathverse, logicvista, clevr_count, mmmu_pro | PEPO Table 1 + Table 5 (ViRL39K scaling); Geometry3K val is not included |
-| `pepo_geometry` | geo3k, mathvista, mathverse, logicvista | PEPO Table 1 with the prompt of the Geometry3K-trained models (`r1v.jinja`, `<answer>` tags) |
+| `pepo_geometry` | geo3k, mathvista, mathverse, logicvista | PEPO Table 1 with the prompt of the Geometry3K-trained models (`pepo.jinja`, `<answer>` tags) |
 | `vepo` | geo3k, mmk12, hallusionbench, mathvista, wemath, mathverse, mathvision | VEPO Table 1; the paper uses greedy decoding and a gpt-4o-mini judge for 4 benchmarks, we use rule-based avg@8 |
 | `tor` | mathverse, mathvision, mathvista, wemath, hallusionbench | ToR Table 4; the paper follows NoisyRollout (greedy + Gemini answer parsing), we use rule-based avg@8 |
 | `cfpo` | cvqa_real, mars_bench, pope, textvqa, mmmu_pro, geo3k, wemath, mmk12, mathverse, logicvista | CFPO Table 1; CFPO reports POPE as pooled accuracy with avg@8 (same 9,000 questions; our primary is greedy macro F1, pooled accuracy in the details); CFPO's LogicVista file has 448 items, PAPO-Eval's 447 |
@@ -255,7 +255,7 @@ Evaluate a model with the prompt it was trained with:
 |---|---|
 | PAPO, VPPO, DVRP, PGPO, CFPO, ToR, GRPO/DAPO baselines | default (`math_perception.jinja`) |
 | VEPO | `--format-prompt none --system-prompt examples/system_prompt/vepo.txt` (suite `vepo`) |
-| PEPO (Geometry3K setting) | `--format-prompt examples/format_prompt/r1v.jinja` (suite `pepo_geometry`) |
+| PEPO (Geometry3K setting) | `--format-prompt examples/format_prompt/pepo.jinja` (suite `pepo_geometry`) |
 | CGPO | `--format-prompt examples/format_prompt/xml_grounded_reasoning.jinja` (suite `cgpo`) |
 | GRIT | `--format-prompt none --system-prompt examples/system_prompt/grit_GR.txt` (suite `grit`) |
 | DeepEyes | `--interaction-mode agentic --system-prompt examples/system_prompt/deepeyes.txt` (suite `deepeyes`; `deepeyes_pixel.txt` for Qwen2-VL / Qwen2.5-VL) |

@@ -21,7 +21,7 @@ from 0 to 1 over training. Variants: PEPO_G (on GRPO) and PEPO_D (on DAPO).
 | Base models | Qwen2.5-VL-3B-Instruct, InternVL3-2B-Instruct |
 | Training data | Geometry3K train (`hiyouga/geometry3k`, 2,101) — `bash scripts/prepare_data.sh pepo` |
 | Validation | Geometry3K test (601), 8 samples at T=1.0, top-p 1.0 (`trainer.val_freq=400` in `common.sh`, 25 in the DAPO / PEPO_D / InternVL leaves) |
-| Prompt / reward | `<think>…</think><answer>…</answer>` (`examples/format_prompt/r1v.jinja`); 0.5 accuracy + 0.5 format as PEPO's reward plugin (`examples/reward_function/r1v.py`: exactly one `<think>` and one `<answer>` pair; the answer NFKC-normalized and case-folded, then graded with mathruler) |
+| Prompt / reward | the problem followed by PEPO's instruction "First output the thinking process in <think> </think> tags and then output the final answer in <answer> </answer> tags." (`examples/format_prompt/pepo.jinja`); 0.5 accuracy + 0.5 format as PEPO's reward plugin (`examples/reward_function/r1v.py`: exactly one `<think>` and one `<answer>` pair; the answer NFKC-normalized and case-folded, then graded with mathruler) |
 | Rollout | 64 prompts x 8 rollouts per step (`data.rollout_batch_size=64`), T=1.0, top-p 1.0 |
 | RL | low-var KL loss 0.001; clip 0.2 / 0.2; GRPO arms: sequence-level loss averaging (`worker.actor.loss_avg_mode=seq`); DAPO arms: token-level averaging and online filtering on accuracy in (0.01, 0.99) |
 | Optimization | AdamW (bf16), lr 1e-6 constant, vision tower trainable, 1 epoch |
@@ -63,6 +63,9 @@ environment. Evaluation is described in [eval/README.md](../../../eval/README.md
 - The vision tower is trainable; the paper freezes it.
 - The learning rate is constant; the paper uses a cosine schedule for the geometry task.
 - Validation uses the Geometry3K test split (601) instead of the 300-item validation split.
+- The problems come from `hiyouga/geometry3k`; PEPO's data holds the same 2,101 training problems
+  with differently written text (InterGPS style, e.g. `\triangle R S T`). The instruction after the
+  problem is PEPO's.
 - Only the geometry task is scripted (the official repository also releases only this pipeline);
   the grounding, few-shot classification, puzzle and ViRL39K-scaling settings are not included.
 - The DAPO variants keep the upper clip ratio at 0.2, as in the released script (the paper's table

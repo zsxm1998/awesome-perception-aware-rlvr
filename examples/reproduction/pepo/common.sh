@@ -15,7 +15,7 @@ launch_pepo_geometry3k() {
         "data.answer_key=answer"
         "data.image_key=images"
         "data.video_key=videos"
-        "data.format_prompt=$ROOT_DIR/examples/format_prompt/r1v.jinja"
+        "data.format_prompt=$ROOT_DIR/examples/format_prompt/pepo.jinja"
         "data.filter_overlong_prompts=true"
         "data.max_prompt_length=1024"
         "data.max_response_length=1024"
