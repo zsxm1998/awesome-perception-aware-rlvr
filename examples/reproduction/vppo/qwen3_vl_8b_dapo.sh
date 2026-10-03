@@ -12,6 +12,7 @@ ALGO_ARGS=(
 )
 EXTRA_ARGS=(
     "data.max_response_length=8192"
+    "worker.actor.model.plain_think_tokens=false"
     "worker.actor.micro_batch_size_per_device_for_update=4"
     "worker.actor.micro_batch_size_per_device_for_experience=8"
     "worker.rollout.max_num_batched_tokens=12289"

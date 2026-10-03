@@ -27,7 +27,7 @@ most visually dependent tokens of each response receive policy gradients, and (2
 | Optimization | AdamW (bf16), lr 1e-6 constant, vision tower trainable, 2 epochs (Qwen3-VL-8B: `trainer.max_steps=130`) |
 | Lengths / pixels | max prompt 4,096; max response 2,048 (Qwen3-VL-8B: 8,192); 200,704-1,003,520 pixels |
 | GPUs | 8 |
-| Perturbed view | `algorithm.corrupt_image=random_patch`, `algorithm.corrupt_image_kwargs={"patch_size":14,"black_prob":0.5}` (patch 16 for Qwen3-VL), `algorithm.corrupt_image_position=response` |
+| Perturbed view | `algorithm.corrupt_image=random_patch`, `algorithm.corrupt_image_kwargs={"patch_size":14,"black_prob":0.5}` (also for Qwen3-VL, as the official code), `algorithm.corrupt_image_position=response` |
 | TGF | `algorithm.top_perception_quantile=0.4`, `algorithm.perception_thr_granularity=response` |
 | TAS | `algorithm.response_advantage_scaling_method=vppo`, `algorithm.vppo_response_scaling_min=0.9` (β_min; β_max is dynamic) |
 
@@ -52,8 +52,13 @@ bash scripts/eval.sh checkpoints/VPPO-Reproduce/qwen2_5_vl_7b_dapo_vppo --suite 
 Checkpoints go to `checkpoints/VPPO-Reproduce/<script name>`. Append `key=value` overrides to the
 command (e.g. `trainer.total_epochs=1`) and set `N_GPUS_PER_NODE`, `MODEL_PATH`, `DATA_ROOT`,
 `LOGGER` or `EXPERIMENT_NAME` in the environment (e.g. `N_GPUS_PER_NODE=4 bash ...`). The
-Qwen3-VL-8B runs are trained with 8,192-token responses while the suite default is 2,048 new
-tokens; use `--max-new-tokens` to change it (see [eval/README.md](../../../eval/README.md)).
+Qwen3-VL-8B runs are trained with 8,192-token responses (the suite default is 2,048 new tokens)
+and with `<think>`/`</think>` as special tokens, so evaluate them, and the released VPPO-8B
+weights, with:
+
+```bash
+bash scripts/eval.sh checkpoints/VPPO-Reproduce/qwen3_vl_8b_dapo_vppo --suite vppo --max-new-tokens 8192 --plain-think-tokens false
+```
 
 ## Differences from the paper / official code
 
@@ -64,7 +69,10 @@ tokens; use `--max-new-tokens` to change it (see [eval/README.md](../../../eval/
 - The 32B setting is not included.
 - Qwen3-VL-8B: the model card describes 150 steps with entropy coefficient 0.12 for steps 0-130
   and 0.18 for steps 131-150; the official script and ours stop at `max_steps=130` with 0.12. The
-  8B DAPO baseline has no official counterpart.
+  8B DAPO baseline has no official counterpart. Both 8B scripts keep `<think>`/`</think>` as the
+  model's special tokens (`worker.actor.model.plain_think_tokens=false`), as the official code uses
+  the original tokenizer; the controlled comparison on Qwen3-VL-4B tokenizes them as plain text and
+  uses 16-px patches, Qwen3-VL's patch size.
 - Evaluation uses this repository's harness with the VPPO-Eval / PAPO-Eval splits and the PAPO-Eval
   protocol (rule-based `\boxed{}` match, avg@8, T=1.0, top-p 1.0), not PAPO-Eval itself.
 

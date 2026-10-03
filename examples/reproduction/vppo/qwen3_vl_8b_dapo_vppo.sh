@@ -9,7 +9,7 @@ pr_default EXPERIMENT_NAME "qwen3_vl_8b_dapo_vppo"
 ALGO_ARGS=(
     "algorithm.corrupt_image=random_patch"
     "algorithm.corrupt_image_position=response"
-    "algorithm.corrupt_image_kwargs={\"patch_size\":16,\"black_prob\":0.5}"
+    "algorithm.corrupt_image_kwargs={\"patch_size\":14,\"black_prob\":0.5}"
     "algorithm.visual_sensitivity_reference=old"
     "algorithm.top_perception_quantile=0.4"
     "algorithm.perception_thr_granularity=response"
@@ -20,6 +20,7 @@ ALGO_ARGS=(
 )
 EXTRA_ARGS=(
     "data.max_response_length=8192"
+    "worker.actor.model.plain_think_tokens=false"
     "worker.actor.micro_batch_size_per_device_for_update=4"
     "worker.actor.micro_batch_size_per_device_for_experience=8"
     "worker.rollout.max_num_batched_tokens=12289"
