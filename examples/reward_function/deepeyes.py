@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import os
 import re
-import string
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -133,15 +132,32 @@ Reference answer: {reference}
 Prediction: {prediction}
 
 Judgement:"""
-_ARTICLES = {"a", "an", "the"}
-_PUNCT_TABLE = str.maketrans(dict.fromkeys(string.punctuation, " "))
+# Words that carry no answer content; together with the question's own words they are ignored when the
+# no-judge rule compares a prediction with a sentence reference.
+_RULE_STOP_WORDS = set(
+    "a an the is are was were be been being it its this that these those of to in on at by for with from and or as "
+    "there here which what who whom whose where when how why do does did has have had can could would should will "
+    "shall may might must appear appears appeared seem seems seemed look looks looked located placed positioned side "
+    "image picture photo shown visible one".split()
+)
 
 
-def _words(text: str) -> list[str]:
-    return [word for word in str(text).lower().translate(_PUNCT_TABLE).split() if word not in _ARTICLES]
+def _rule_words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", str(text).lower())
 
 
-def _rule_match(prediction: str, reference: str) -> bool:
+def _rule_keywords(text: str, question: str) -> list[str]:
+    """Words of ``text`` that are neither stop words nor in the question; in "A or B" questions A and B stay."""
+    options = re.search(r"\b(\w+)\s+or\s+(\w+)\b", question.lower())
+    question_words = set(_rule_words(question)) - ({options.group(1), options.group(2)} if options else set())
+    return [word for word in _rule_words(text) if word not in _RULE_STOP_WORDS and word not in question_words]
+
+
+def _rule_match(prediction: str, reference: str, question: str = "") -> bool:
+    """No-judge accuracy. Multiple-choice references compare the option letter, yes/no references the first
+    yes/no word; otherwise the prediction's keywords (words outside the question and the stop words) must be
+    non-empty, all appear in the reference, and include every keyword of the reference, so naming an object of
+    the question is not enough. mathruler's equivalence check is the last resort."""
     prediction, reference = prediction.strip(), str(reference).strip()
     if not prediction or not reference:
         return False
@@ -151,18 +167,17 @@ def _rule_match(prediction: str, reference: str) -> bool:
     letter = re.fullmatch(r"\(?([A-Ha-h])\)?[.:)]?(\s.*)?", prediction)
     if re.fullmatch(r"[A-Ha-h]", reference):  # multiple-choice reference (chart data)
         return letter is not None and letter.group(1).upper() == reference.upper()
-    pred_words, ref_words = _words(prediction), _words(reference)
-    if not pred_words or not ref_words:
-        return False
-    if pred_words == ref_words:
-        return True
-    if ref_words[0] in {"yes", "no"}:  # sentence answers such as "No, the car is not ..."
-        decision = next((word for word in pred_words if word in {"yes", "no"}), None)
-        return decision == ref_words[0]
-    if " ".join(ref_words) in " ".join(pred_words):
-        return True
-    # short predictions ("brown") against sentence references ("The puppy is brown.")
-    if len(pred_words) <= 4 and all(word in ref_words for word in pred_words):
+    reference_words = _rule_words(reference)
+    if reference_words and reference_words[0] in {"yes", "no"}:  # sentence answers such as "No, the car is ..."
+        return next((word for word in _rule_words(prediction) if word in {"yes", "no"}), None) == reference_words[0]
+    prediction_keys = set(_rule_keywords(prediction, question))
+    reference_keys = set(_rule_keywords(reference, question))
+    if (
+        prediction_keys
+        and reference_keys
+        and prediction_keys <= set(reference_words)
+        and reference_keys <= prediction_keys
+    ):
         return True
     try:
         return bool(grade_answer(prediction, reference))
@@ -198,7 +213,7 @@ def _judge_match(client, question: str, prediction: str, reference: str) -> bool
             return "1" in text.split("Judgement:")[-1][:8]
         except Exception:
             continue
-    return _rule_match(prediction, reference)
+    return _rule_match(prediction, reference, question)
 
 
 def _math_format_reward(response: str, final_answer: str | None) -> float:
@@ -230,7 +245,7 @@ def compute_score_official(reward_inputs: list[dict[str, Any]]) -> list[dict[str
                 if client is None:
                     return 0.0
             else:
-                return 1.0 if _rule_match(final_answer, reference) else 0.0
+                return 1.0 if _rule_match(final_answer, reference, reward_input.get("question", "")) else 0.0
         return 1.0 if _judge_match(client, reward_input.get("question", ""), final_answer, reference) else 0.0
 
     workers = int(os.environ.get("DEEPEYES_JUDGE_WORKERS", "32")) if client is not None else 1

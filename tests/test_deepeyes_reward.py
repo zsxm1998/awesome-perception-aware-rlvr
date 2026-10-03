@@ -220,12 +220,13 @@ def test_deepeyes_reward_uses_agent_validated_final_answer_not_answer_tags_in_re
     assert score[1]["overall"] == pytest.approx(2.0)
 
 
-def _official_input(answer, ground_truth, source, crops=1):
+def _official_input(answer, ground_truth, source, crops=1, question=""):
     return {
         "response": f"<think>looking</think><answer>{answer}</answer>",
         "final_answer": answer,
         "ground_truth": ground_truth,
         "data_source": source,
+        "question": question,
         "tool_call_successes": crops,
     }
 
@@ -236,7 +237,9 @@ def test_official_reward_routes_by_data_source(monkeypatch):
         [
             _official_input("No", "No, the car is not on the left side of the person.", "vstar"),
             _official_input("Yes", "No, the car is not on the left side of the person.", "vstar"),
-            _official_input("brown", "The color of the puppy is brown.", "vstar", crops=0),
+            _official_input(
+                "brown", "The color of the puppy is brown.", "vstar", 0, "What is the color of the puppy?"
+            ),
             _official_input("D. Fe2-Se", "D", "chart"),
             _official_input("The answer is \\boxed{-4}", "-4", "thinklite_eureka", crops=3),
         ]
@@ -254,7 +257,37 @@ def test_text_only_reward_extracts_answer_span():
                 "response": "<think>the sign is red</think> <answer>red</answer>",
                 "ground_truth": "The sign is red.",
                 "data_source": "vstar",
+                "question": "What color is the sign?",
             }
         ]
     )
     assert score["accuracy"] == 1.0 and score["tool"] == 0.0
+
+
+@pytest.mark.parametrize(
+    "prediction,reference,question,expected",
+    [
+        # naming an object of the question is not an answer
+        ("chair", "The color of the chair is white.", "What is the color of the chair?", False),
+        ("white", "The color of the chair is white.", "What is the color of the chair?", True),
+        ("It is white.", "The color of the chair is white.", "What is the color of the chair?", True),
+        ("white and red", "The color of the chair is white.", "What is the color of the chair?", False),
+        # "A or B" questions: the options count as answer words
+        ("black", "The cat is white.", "Is the cat black or white?", False),
+        ("white", "The cat is white.", "Is the cat black or white?", True),
+        ("The cat is white.", "The cat is white.", "Is the cat black or white?", True),
+        # yes/no and multiple-choice references
+        ("No, it is not.", "No, the car is not red.", "Is the car red?", True),
+        ("Yes", "No, the car is not red.", "Is the car red?", False),
+        ("(B) 42", "B", "Which option?", True),
+        ("C", "B", "Which option?", False),
+        (
+            "left",
+            "The barrier is on the left side of the picture.",
+            "On which side of the picture is the barrier?",
+            True,
+        ),
+    ],
+)
+def test_rule_match_needs_the_reference_keywords(prediction, reference, question, expected):
+    assert deepeyes_reward._rule_match(prediction, reference, question) is expected
