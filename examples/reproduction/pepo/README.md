@@ -22,9 +22,9 @@ from 0 to 1 over training. Variants: PEPO_G (on GRPO) and PEPO_D (on DAPO).
 | Training data | Geometry3K train (`hiyouga/geometry3k`, 2,101) — `bash scripts/prepare_data.sh pepo` |
 | Validation | Geometry3K test (601), 8 samples at T=1.0, top-p 1.0 (`trainer.val_freq=400` in `common.sh`, 25 in the DAPO / PEPO_D / InternVL leaves) |
 | Prompt / reward | the problem followed by PEPO's instruction "First output the thinking process in <think> </think> tags and then output the final answer in <answer> </answer> tags." (`examples/format_prompt/pepo.jinja`); 0.5 accuracy + 0.5 format as PEPO's reward plugin (`examples/reward_function/r1v.py`: exactly one `<think>` and one `<answer>` pair; the answer NFKC-normalized and case-folded, then graded with mathruler) |
-| Rollout | 64 prompts x 8 rollouts per step (`data.rollout_batch_size=64`), T=1.0, top-p 1.0 |
+| Rollout | 8 prompts x 8 rollouts per step (`data.rollout_batch_size=8`, one update per step, as PEPO's 2 responses per GPU x 4 accumulation steps x 8 GPUs), T=1.0, top-p 1.0 |
 | RL | low-var KL loss 0.001; clip 0.2 / 0.2; GRPO arms: sequence-level loss averaging (`worker.actor.loss_avg_mode=seq`); DAPO arms: token-level averaging and online filtering on accuracy in (0.01, 0.99) |
-| Optimization | AdamW (bf16), lr 1e-6 constant, vision tower trainable, 1 epoch |
+| Optimization | AdamW (bf16), lr 1e-6 with cosine decay to 0 and no warmup, vision tower trainable, 1 epoch (262 steps) |
 | Lengths / pixels | max prompt 1,024, max response 1,024; 200,704-1,003,520 pixels |
 | GPUs | 8 |
 | Perception prior | `algorithm.visual_sensitivity_metric=hidden_state_similarity`, `algorithm.visual_sensitivity_hidden_metric=cosine`, `algorithm.visual_token` (`auto`, `<|image_pad|>` for Qwen, `<IMG_CONTEXT>` for InternVL) |
@@ -61,7 +61,6 @@ environment. Evaluation is described in [eval/README.md](../../../eval/README.md
 
 - Training runs on EasyR1 (FSDP + vLLM) instead of ms-swift with DeepSpeed ZeRO-2.
 - The vision tower is trainable; the paper freezes it.
-- The learning rate is constant; the paper uses a cosine schedule for the geometry task.
 - Validation uses the Geometry3K test split (601) instead of the 300-item validation split.
 - The problems come from `hiyouga/geometry3k`; PEPO's data holds the same 2,101 training problems
   with differently written text (InterGPS style, e.g. `\triangle R S T`). The instruction after the
