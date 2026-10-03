@@ -603,8 +603,24 @@ def test_parse_args_default_prompt_and_data_root(monkeypatch):
 
 def test_suite_defaults_apply_only_when_flags_are_not_given(monkeypatch):
     args = _parse(monkeypatch, "--suite", "grit")
-    assert args.format_prompt is None
-    assert Path(args.system_prompt) == ROOT / "examples/system_prompt/grit_GR.txt"
+    assert Path(args.format_prompt) == ROOT / "examples/format_prompt/grit.jinja"
+    assert args.system_prompt is None
+    assert (args.min_pixels, args.max_pixels) == (3136, 200704)
+    args = _parse(
+        monkeypatch,
+        "--suite",
+        "grit",
+        "--format-prompt",
+        "none",
+        "--system-prompt",
+        str(ROOT / "examples/system_prompt/grit_GR.txt"),
+        "--min-pixels",
+        "200704",
+        "--max-pixels",
+        "1003520",
+    )
+    assert args.format_prompt is None and Path(args.system_prompt) == ROOT / "examples/system_prompt/grit_GR.txt"
+    assert (args.min_pixels, args.max_pixels) == (200704, 1003520)
 
     args = _parse(monkeypatch, "--suite", "cgpo", "--format-prompt", str(ROOT / "examples/format_prompt/math.jinja"))
     assert Path(args.format_prompt) == ROOT / "examples/format_prompt/math.jinja"

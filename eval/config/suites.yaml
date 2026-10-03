@@ -101,13 +101,18 @@ suites:
   grit:
     description: GRIT Table 1 grounded-reasoning benchmarks
     benchmarks: [grit_vsr, grit_tallyqa, grit_gqa, ovdeval_position]
-    defaults:
-      format_prompt: none
-      system_prompt: examples/system_prompt/grit_GR.txt
-      grounding_instruction: none  # the question only, as the GRIT models are trained
+    defaults:  # GRIT's evaluation, as examples/reproduction/grit is trained
+      format_prompt: examples/format_prompt/grit.jinja
+      system_prompt: none
+      grounding_instruction: none  # the question only
+      min_pixels: 3136
+      max_pixels: 200704
     notes: >-
       GRIT judges answers with GPT-4o; we use rule-based relaxed exact match. The GRIT-paper
-      grounding IoU is reported as grounding/grit_iou in the metric details.
+      grounding IoU is reported as grounding/grit_iou in the metric details. The comparison
+      GRIT (examples/comparison) answers in its own format: evaluate it with
+      --format-prompt none --system-prompt examples/system_prompt/grit_GR.txt
+      --min-pixels 200704 --max-pixels 1003520.
 
   deepeyes:
     description: DeepEyes high-resolution (Tables 1-2) and hallucination (POPE) benchmarks
