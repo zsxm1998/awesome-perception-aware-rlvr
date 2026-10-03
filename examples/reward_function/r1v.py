@@ -12,7 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""PEPO's reward (xzxxntxdy/PEPO, src/pepo/rewards/plugin.py), used by examples/reproduction/pepo.
+
+format: exactly one <think>...</think> and one <answer>...</answer> pair (text outside them is allowed);
+accuracy: the <answer> content and the ground truth, both NFKC-normalized, case-folded, with collapsed spaces,
+no trailing period and π written as \\pi, compared with mathruler's grade_answer.
+"""
+
 import re
+import unicodedata
 from typing import Any
 
 from mathruler.grader import grade_answer
@@ -22,24 +30,30 @@ from mathruler.grader import grade_answer
 REWARD_NAME = "r1v"
 REWARD_TYPE = "sequential"
 
+ANSWER_PATTERN = re.compile(r"<answer>(.*?)</answer>", re.DOTALL)
+THINK_PATTERN = re.compile(r"<think>.*?</think>", re.DOTALL)
+
 
 def format_reward(response: str) -> float:
-    pattern = re.compile(r"<think>.*?</think>\s*<answer>.*?</answer>", re.DOTALL)
-    format_match = re.fullmatch(pattern, response)
-    return 1.0 if format_match else 0.0
+    return 1.0 if len(THINK_PATTERN.findall(response)) == 1 and len(ANSWER_PATTERN.findall(response)) == 1 else 0.0
+
+
+def normalize_answer(answer: str) -> str:
+    text = unicodedata.normalize("NFKC", str(answer)).casefold()
+    text = re.sub(r"\s+", " ", text).strip()
+    if text.endswith(".") or text.endswith("\u3002"):
+        text = text[:-1].strip()
+    return text.replace("\u03c0", "\\pi")
 
 
 def accuracy_reward(response: str, ground_truth: str) -> float:
-    try:
-        content_match = re.search(r"<answer>(.*?)</answer>", response)
-        given_answer = content_match.group(1).strip() if content_match else response.strip()
-        if grade_answer(given_answer, ground_truth.strip()):
-            return 1.0
-
+    match = ANSWER_PATTERN.search(response)
+    if not match:
+        return 0.0
+    try:  # argument order as in PEPO's plugin
+        return 1.0 if grade_answer(normalize_answer(ground_truth), normalize_answer(match.group(1).strip())) else 0.0
     except Exception:
-        pass
-
-    return 0.0
+        return 0.0
 
 
 def compute_score(reward_input: dict[str, Any], format_weight: float = 0.5) -> dict[str, float]:
