@@ -163,7 +163,7 @@ class AlgorithmConfig:
     visual_sensitivity_entropy_gate: str = "none"
     """optional full-vocab sensitivity gate. `normal_entropy` multiplies the fused visual signal by normalized original-image entropy."""
     invariant_entropy_coef: float = 0.0
-    """coefficient for entropy regularization on the original/current view. Used by VPPO, PAPO, and some shared comparison scripts; gradients matter only when `entropy_loss_type=full`."""
+    """coefficient for entropy regularization on the original/current view (positive: penalty, negative: bonus). Used by VPPO, PAPO, VEPO and the shared comparison scripts. Both forms carry gradient: `entropy_loss_type=sampled` uses -log p of the sampled token, `full` the full-vocabulary entropy."""
     decremental_entropy_coef: float = 0.0
     """coefficient for entropy regularization on the decremental auxiliary view. Introduced by PAPO and also reused by DVRP."""
     entropy_loss_type: str = "sampled"
