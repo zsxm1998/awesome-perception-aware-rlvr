@@ -58,7 +58,7 @@ from .schemas import (
 )
 from .scorers import JUDGE_PROVIDERS, SCORER_VERSION, resolve_judge_max_tokens
 from .state import fingerprint, is_complete, mark_complete, mark_failed
-from .suites import load_suites, merged_suite_defaults, suite_benchmarks
+from .suites import SUITE_DEFAULT_KEYS, load_suites, merged_suite_defaults, suite_benchmarks
 from .summary import update_global_summary_csv, write_summary_csv
 
 
@@ -281,8 +281,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-model-len", type=int, default=DEFAULT_MAX_MODEL_LEN)
     parser.add_argument("--gpu-memory-utilization", type=float, default=DEFAULT_GPU_MEMORY_UTILIZATION)
-    parser.add_argument("--min-pixels", type=int, default=DEFAULT_MIN_PIXELS)
-    parser.add_argument("--max-pixels", type=int, default=DEFAULT_MAX_PIXELS)
+    parser.add_argument(
+        "--min-pixels", type=int, default=None, help=f"default: the suite's, else {DEFAULT_MIN_PIXELS} (as training)"
+    )
+    parser.add_argument(
+        "--max-pixels", type=int, default=None, help=f"default: the suite's, else {DEFAULT_MAX_PIXELS} (as training)"
+    )
     parser.add_argument("--trust-remote-code", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--resume", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--score-only", action="store_true")
@@ -400,11 +404,7 @@ def apply_prompt_defaults(args: argparse.Namespace) -> None:
         for name in suite_names:
             if name not in suites:
                 raise KeyError(f"unknown suite: {name} (available: {', '.join(sorted(suites))})")
-        explicit = {
-            key
-            for key in ("format_prompt", "system_prompt", "interaction_mode", "agent_profile")
-            if getattr(args, key, None) is not None
-        }
+        explicit = {key for key in SUITE_DEFAULT_KEYS if getattr(args, key, None) is not None}
         suite_defaults = merged_suite_defaults(suites, suite_names, ignore=explicit)
     applied = {}
     for key, value in suite_defaults.items():
@@ -414,6 +414,10 @@ def apply_prompt_defaults(args: argparse.Namespace) -> None:
             setattr(args, key, value)
             applied[key] = value
     args.suite_defaults_applied = applied
+    if getattr(args, "min_pixels", None) is None:
+        args.min_pixels = DEFAULT_MIN_PIXELS
+    if getattr(args, "max_pixels", None) is None:
+        args.max_pixels = DEFAULT_MAX_PIXELS
     if args.interaction_mode is None:
         args.interaction_mode = DEFAULT_INTERACTION_MODE
     if args.agent_profile is None:

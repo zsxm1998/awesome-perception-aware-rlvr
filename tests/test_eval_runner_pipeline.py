@@ -666,3 +666,17 @@ def test_missing_data_aborts_before_inference_or_is_skipped(monkeypatch, tmp_pat
     (tmp_path / "geo3k" / "test.parquet").write_bytes(b"x")
     args.skip_missing_data = True
     assert [spec.key for spec in runner.check_benchmark_data(specs, args)] == ["geo3k"]
+
+
+@pytest.mark.parametrize(
+    "extra,expected",
+    [
+        ([], (200704, 1003520)),
+        (["--suite", "pepo_geometry"], (3136, 12845056)),
+        (["--suite", "pepo_geometry", "--max-pixels", "1003520"], (3136, 1003520)),
+    ],
+)
+def test_image_size_defaults_follow_the_suite(monkeypatch, extra, expected):
+    monkeypatch.setattr(sys, "argv", ["run_all_benchmarks.py", "--model", "model", *extra])
+    args = runner.parse_args()
+    assert (args.min_pixels, args.max_pixels) == expected

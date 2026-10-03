@@ -24,7 +24,14 @@ import yaml
 from .schemas import BenchmarkSpec
 
 
-SUITE_DEFAULT_KEYS = ("format_prompt", "system_prompt", "interaction_mode", "agent_profile")
+SUITE_DEFAULT_KEYS = (
+    "format_prompt",
+    "system_prompt",
+    "interaction_mode",
+    "agent_profile",
+    "min_pixels",
+    "max_pixels",
+)
 
 
 @dataclass(frozen=True)
