@@ -1061,6 +1061,11 @@ def test_official_prompt_style_takes_the_system_prompt_from_the_data():
         config.post_init()
 
     config.data.system_prompt_key = "official_system_prompt"
+    config.data.system_prompt = "examples/system_prompt/deepeyes_pixel.txt"  # a native prompt as the fallback
+    with pytest.raises(ValueError, match="data.system_prompt=null"):
+        config.post_init()
+
+    config.data.system_prompt = None
     config.post_init()  # no system prompt file and no tool-calling chat template needed
     assert config.worker.rollout.agent_bbox_format == "pixel"
 

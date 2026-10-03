@@ -1721,6 +1721,20 @@ def test_official_chat_adapter_reproduces_the_official_deepeyes_strings(qwen2_5_
     assert failed.visual_token_count == 0
 
 
+def test_official_chat_adapter_needs_deepeyes_own_system_prompt(qwen2_5_vl_processor):
+    """A native-style prompt (with its {{ max_tool_calls }} placeholder) or a prompt without the tool is refused."""
+    from verl.workers.agent.chat import OfficialDeepEyesChatAdapter
+
+    adapter = OfficialDeepEyesChatAdapter(qwen2_5_vl_processor, ToolRegistry([ImageZoomInTool()]), 1, max_tool_calls=6)
+    user = {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "What is it?"}]}
+    with pytest.raises(ValueError, match="native-style system prompt"):
+        adapter.encode_initial_prompt([{"role": "system", "content": DEEPEYES_SYSTEM_PROMPT}, user])
+    with pytest.raises(ValueError, match="no tool schema"):
+        adapter.encode_initial_prompt([{"role": "system", "content": "Think, then answer."}, user])
+    with pytest.raises(ValueError, match="no tool schema"):
+        adapter.encode_initial_prompt([user])
+
+
 def test_official_chat_adapter_keeps_text_only_crops_successful(qwen2_5_vl_processor):
     """tool_image_mode=text_skipped: the crop succeeded and only its text marker comes back, not an error."""
     from verl.workers.agent.chat import OfficialDeepEyesChatAdapter
@@ -1789,7 +1803,11 @@ def test_deepeyes_inference_picks_the_adapter_and_tools_per_row(
             return SimpleNamespace()
 
     monkeypatch.setattr(inference, "AgentLoop", CapturingLoop)
-    system = DEEPEYES_SYSTEM_PROMPT if tools_enabled and prompt_style == "native" else "Think, then answer."
+    from verl.workers.agent.chat import OFFICIAL_DEEPEYES_SYSTEM_PROMPT
+
+    system = "Think, then answer."
+    if tools_enabled:
+        system = DEEPEYES_SYSTEM_PROMPT if prompt_style == "native" else OFFICIAL_DEEPEYES_SYSTEM_PROMPT
     asyncio.run(
         inference.run_deepeyes_inference(
             inference_engine=object(),

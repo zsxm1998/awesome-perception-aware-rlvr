@@ -655,10 +655,10 @@ class PPOConfig:
             )
             if self.worker.rollout.agent_prompt_style == "official":
                 # the official prompts come with the data and carry the tool schema as text
-                if not self.data.system_prompt_key:
+                if not self.data.system_prompt_key or self.data.system_prompt is not None:
                     raise ValueError(
                         "worker.rollout.agent_prompt_style=official takes the system prompt from the data; "
-                        "set data.system_prompt_key (DeepEyes: official_system_prompt)"
+                        "set data.system_prompt_key (DeepEyes: official_system_prompt) and data.system_prompt=null"
                     )
             else:
                 if self.data.system_prompt is None:

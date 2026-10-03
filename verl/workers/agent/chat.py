@@ -375,6 +375,17 @@ class OfficialDeepEyesChatAdapter(NativeToolChatAdapter):
 
     def encode_initial_prompt(self, messages: Sequence[Mapping[str, Any]]) -> EncodedPrompt:
         prepared = copy.deepcopy(list(messages))
+        system = next((str(message.get("content")) for message in prepared if message.get("role") == "system"), "")
+        if DEEPEYES_MAX_TOOL_CALLS_PLACEHOLDER in system or "image_zoom_in_tool" not in system:
+            raise ValueError(
+                "the official prompt style needs DeepEyes' own system prompt, which describes image_zoom_in_tool, from "
+                "the data (data.system_prompt_key=official_system_prompt, data.system_prompt=null); got "
+                + (
+                    "a native-style system prompt"
+                    if DEEPEYES_MAX_TOOL_CALLS_PLACEHOLDER in system
+                    else "no tool schema"
+                )
+            )
         self._validate_and_label_source_images(prepared)
         rendered = self._render_with_generation_prompt(prepared)
         return EncodedPrompt(token_ids=self._encode_raw_text(rendered), rendered_text=rendered)
