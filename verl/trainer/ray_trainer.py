@@ -615,12 +615,15 @@ class RayPPOTrainer:
         """
 
         rollout_non_tensor_keys = ["raw_prompt_ids", "multi_modal_data"]
-        raw_prompt = None
+        raw_prompt = env_name = None
         if self.config.worker.rollout.interaction_mode == "agentic":
             rollout_non_tensor_keys.extend(["raw_prompt", "uid"])
             raw_prompt = batch.non_tensor_batch.get("raw_prompt")
             if raw_prompt is None:
                 raise KeyError("agentic rollout requires 'raw_prompt' in non_tensor_batch")
+            env_name = batch.non_tensor_batch.get("env_name")  # DeepEyes' per-row tool switch ("" = no tool)
+            if env_name is not None:
+                rollout_non_tensor_keys.append("env_name")
 
         rollout_batch = batch.pop(
             batch_keys=["input_ids", "attention_mask", "position_ids"],
@@ -629,6 +632,8 @@ class RayPPOTrainer:
         )
         if raw_prompt is not None:
             batch.non_tensor_batch["raw_prompt"] = raw_prompt
+        if env_name is not None:
+            batch.non_tensor_batch["env_name"] = env_name
         return rollout_batch
 
     def init_workers(self) -> None:

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import asyncio
+import copy
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -759,6 +760,51 @@ def test_agent_rollout_pop_preserves_driver_raw_prompt():
     assert rollout_batch.non_tensor_batch["uid"].tolist() == ["prompt-0"]
 
 
+def test_agent_rollout_pop_passes_env_name_and_keeps_it_on_the_driver():
+    trainer = object.__new__(RayPPOTrainer)
+    trainer.config = SimpleNamespace(worker=SimpleNamespace(rollout=SimpleNamespace(interaction_mode="agentic")))
+    env_name = np.array(["visual_toolbox_v2", ""], dtype=object)
+    batch = DataProto.from_dict(
+        tensors={
+            "input_ids": torch.ones((2, 2), dtype=torch.long),
+            "attention_mask": torch.ones((2, 2), dtype=torch.long),
+            "position_ids": torch.zeros((2, 2), dtype=torch.long),
+        },
+        non_tensors={
+            "raw_prompt_ids": np.array([[1, 2], [1, 2]], dtype=object),
+            "multi_modal_data": np.array([{"images": []}, {"images": []}], dtype=object),
+            "raw_prompt": np.array([[], []], dtype=object),
+            "uid": np.array(["prompt-0", "prompt-1"], dtype=object),
+            "env_name": env_name,
+        },
+    )
+
+    rollout_batch = trainer._pop_rollout_inputs(batch)
+
+    assert batch.non_tensor_batch["env_name"] is env_name
+    assert rollout_batch.non_tensor_batch["env_name"].tolist() == ["visual_toolbox_v2", ""]
+
+
+def test_vllm_rollout_passes_the_row_tool_switch_and_prompt_style(monkeypatch):
+    rollout, prompts = _make_agentic_materialization_test_case(monkeypatch, [])
+    calls = []
+
+    async def fake_run_deepeyes_inference(**kwargs):
+        calls.append((kwargs["tools_enabled"], kwargs["prompt_style"]))
+        return _make_trajectory(kwargs["rollout_index"])
+
+    monkeypatch.setattr("verl.workers.agent.inference.run_deepeyes_inference", fake_run_deepeyes_inference)
+    rollout.generate_sequences(copy.deepcopy(prompts))
+    assert calls == [(True, "native")] * 2  # no env_name column: every row has the tool
+
+    calls.clear()
+    rollout.config.agent_prompt_style = "official"
+    prompts.non_tensor_batch["env_name"] = np.array([""], dtype=object)
+    output = rollout.generate_sequences(prompts)
+    assert calls == [(False, "official")] * 2
+    assert "env_name" not in output.non_tensor_batch
+
+
 def test_group_rollout_and_turn_seeds_are_stable_and_distinct():
     first = [
         derive_agent_seed(7, sample_index=3, rollout_index=rollout, turn_index=turn)
@@ -1003,6 +1049,20 @@ def test_training_config_requires_the_shared_deepeyes_prompt_contract():
     config.data.format_prompt = "examples/system_prompt/xml_GR.txt"
     with pytest.raises(ValueError, match="cannot use data.format_prompt"):
         config.post_init()
+
+
+def test_official_prompt_style_takes_the_system_prompt_from_the_data():
+    config = PPOConfig()
+    config.worker.rollout.interaction_mode = "agentic"
+    config.worker.rollout.agent_prompt_style = "official"
+    config.worker.actor.model.model_path = "Qwen/Qwen2.5-VL-7B-Instruct"
+    config.data.format_prompt = None
+    with pytest.raises(ValueError, match="data.system_prompt_key"):
+        config.post_init()
+
+    config.data.system_prompt_key = "official_system_prompt"
+    config.post_init()  # no system prompt file and no tool-calling chat template needed
+    assert config.worker.rollout.agent_bbox_format == "pixel"
 
 
 @pytest.mark.parametrize(

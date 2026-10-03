@@ -55,6 +55,10 @@ class RolloutConfig:
     # Lower pixel bound of the zoom-in tool's crops (None: data.min_pixels); DeepEyes uses 3136, so a small crop
     # stays small instead of being upscaled to data.min_pixels.
     agent_observation_min_pixels: Optional[int] = None
+    # "native": the method contract in data.system_prompt with the tool schema rendered by the chat template;
+    # "official": DeepEyes' own prompts from the data (tool schema in the system prompt text) and its tool response
+    # format. Either way, rows whose env_name column is empty are rolled out once without tools.
+    agent_prompt_style: str = "native"
     val_override_config: dict[str, Any] = field(default_factory=dict)
     # below are auto keys
     prompt_length: int = field(default=-1, init=False)
@@ -65,6 +69,8 @@ class RolloutConfig:
     def post_init(self):
         if self.interaction_mode not in {"one_shot", "agentic"}:
             raise ValueError("rollout.interaction_mode must be 'one_shot' or 'agentic'")
+        if self.agent_prompt_style not in {"native", "official"}:
+            raise ValueError("rollout.agent_prompt_style must be 'native' or 'official'")
         if self.mm_processor_cache_gb < 0:
             raise ValueError("mm_processor_cache_gb must be non-negative")
         if self.agent_max_tool_calls < 0:

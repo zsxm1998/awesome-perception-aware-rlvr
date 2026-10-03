@@ -633,35 +633,45 @@ class PPOConfig:
                 )
             if self.data.format_prompt is not None:
                 raise ValueError("DeepEyes agentic training cannot use data.format_prompt")
-            if self.data.system_prompt is None:
-                raise ValueError("DeepEyes agentic training requires data.system_prompt")
-            from ..workers.agent.chat import render_deepeyes_system_prompt
-
-            prompt_path = get_abs_path(
-                self.data.system_prompt,
-                prompt="DeepEyes system prompt file",
-            )
-            if prompt_path is None:
-                raise FileNotFoundError(f"DeepEyes system prompt file was not found: {self.data.system_prompt}")
-            with open(prompt_path, encoding="utf-8") as prompt_file:
-                prompt_text = prompt_file.read()
-            render_deepeyes_system_prompt(
-                prompt_text,
-                max_tool_calls=self.worker.rollout.agent_max_tool_calls,
-            )
             from ..workers.agent.coordinates import (
                 check_chat_template_supports_tools,
                 check_prompt_matches_bbox_format,
                 resolve_bbox_format,
             )
 
-            # Resolve "auto" once (Qwen2-VL / Qwen2.5-VL -> absolute pixels, others -> 0-1000) and refuse a
-            # system prompt that describes the other convention.
+            # Resolve "auto" once (Qwen2-VL / Qwen2.5-VL -> absolute pixels, others -> 0-1000).
             self.worker.rollout.agent_bbox_format = resolve_bbox_format(
                 self.worker.rollout.agent_bbox_format, self.worker.actor.model.model_path
             )
-            check_prompt_matches_bbox_format(prompt_text, self.worker.rollout.agent_bbox_format)
-            check_chat_template_supports_tools(self.worker.actor.model.model_path, self.data.override_chat_template)
+            if self.worker.rollout.agent_prompt_style == "official":
+                # the official prompts come with the data and carry the tool schema as text
+                if not self.data.system_prompt_key:
+                    raise ValueError(
+                        "worker.rollout.agent_prompt_style=official takes the system prompt from the data; "
+                        "set data.system_prompt_key (DeepEyes: official_system_prompt)"
+                    )
+            else:
+                if self.data.system_prompt is None:
+                    raise ValueError("DeepEyes agentic training requires data.system_prompt")
+                from ..workers.agent.chat import render_deepeyes_system_prompt
+
+                prompt_path = get_abs_path(
+                    self.data.system_prompt,
+                    prompt="DeepEyes system prompt file",
+                )
+                if prompt_path is None:
+                    raise FileNotFoundError(f"DeepEyes system prompt file was not found: {self.data.system_prompt}")
+                with open(prompt_path, encoding="utf-8") as prompt_file:
+                    prompt_text = prompt_file.read()
+                render_deepeyes_system_prompt(
+                    prompt_text,
+                    max_tool_calls=self.worker.rollout.agent_max_tool_calls,
+                )
+                # refuse a system prompt that describes the other coordinate convention
+                check_prompt_matches_bbox_format(prompt_text, self.worker.rollout.agent_bbox_format)
+                check_chat_template_supports_tools(
+                    self.worker.actor.model.model_path, self.data.override_chat_template
+                )
 
     def _validate_batch_sizes(self):
         """Fail early (also under DRY_RUN) on batch sizes the trainer and workers would reject."""

@@ -282,3 +282,108 @@ class NativeToolChatAdapter:
             elif depth:
                 depth -= 1
         return depth > 0
+
+
+class PlainChatAdapter(NativeToolChatAdapter):
+    """One model turn without tools, with the prompt's own messages (no tool schema, no system template).
+
+    DeepEyes rows whose official ``env_name`` is empty (ThinkLite) are rolled out this way, as in the
+    official environment, which gives them no tool.
+    """
+
+    def __init__(
+        self,
+        processor: Any,
+        num_source_images: int,
+        image_config: AgentImageConfig = AgentImageConfig(),
+        image_preprocessor: Any = None,
+    ):
+        super().__init__(
+            processor,
+            ToolRegistry([]),
+            num_source_images,
+            max_tool_calls=0,
+            image_config=image_config,
+            image_preprocessor=image_preprocessor,
+        )
+        self.tools = None
+        self.assistant_termination_token_ids = self._derive_assistant_termination_token_ids()
+
+    def encode_initial_prompt(self, messages: Sequence[Mapping[str, Any]]) -> EncodedPrompt:
+        prepared = copy.deepcopy(list(messages))
+        for message in prepared:
+            if message.get("role") == "system" and DEEPEYES_MAX_TOOL_CALLS_PLACEHOLDER in str(message.get("content")):
+                raise ValueError(
+                    "a row without a tool got the tool system prompt; give such rows their own system prompt "
+                    "through data.system_prompt_key (DeepEyes: row_system_prompt or official_system_prompt)"
+                )
+        self._validate_and_label_source_images(prepared)
+        rendered = self._render_with_generation_prompt(prepared)
+        return EncodedPrompt(token_ids=self._encode_raw_text(rendered), rendered_text=rendered)
+
+    async def encode(self, request: ObservationEncodingRequest) -> EncodedObservation:
+        raise RuntimeError("a rollout without tools has no tool observations")
+
+
+# DeepEyes' tool response (verl/workers/agent/envs/mm_process_engine: visual_toolbox_v2.py with PROMPT.USER_PROMPT_V2)
+OFFICIAL_DEEPEYES_TOOL_RESPONSE_SUFFIX = (
+    "\nThink first, call **image_zoom_in_tool** if needed, then answer. Format strictly as:  <think>...</think>  "
+    "<tool_call>...</tool_call> (if tools needed)  <answer>...</answer> "
+)
+
+
+class OfficialDeepEyesChatAdapter(NativeToolChatAdapter):
+    """DeepEyes' own prompt format: the tool schema is written in the dataset's system prompt (not passed to the
+    chat template), and a tool result comes back as a user turn
+    ``<tool_response><image>{format instruction}</tool_response>`` (``Error: ...`` when the call fails)."""
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self.tools = None  # the schema is part of the system prompt text
+        self.assistant_termination_token_ids = self._derive_assistant_termination_token_ids()
+
+    def encode_initial_prompt(self, messages: Sequence[Mapping[str, Any]]) -> EncodedPrompt:
+        prepared = copy.deepcopy(list(messages))
+        self._validate_and_label_source_images(prepared)
+        rendered = self._render_with_generation_prompt(prepared)
+        return EncodedPrompt(token_ids=self._encode_raw_text(rendered), rendered_text=rendered)
+
+    async def encode(self, request: ObservationEncodingRequest) -> EncodedObservation:
+        result = request.result
+        if result.images:
+            content: Any = [
+                {"type": "text", "text": "<tool_response>"},
+                *({"type": "image"} for _ in result.images),
+                {"type": "text", "text": OFFICIAL_DEEPEYES_TOOL_RESPONSE_SUFFIX + "</tool_response>"},
+            ]
+        else:
+            error = result.content.get("error") if isinstance(result.content, Mapping) else None
+            message = error.get("message") if isinstance(error, Mapping) else None
+            content = f"Error: {message or result.error_code or 'tool call failed'}"
+        rendered = self._render_with_generation_prompt(
+            [{"role": "assistant", "content": self._ASSISTANT_SENTINEL}, {"role": "user", "content": content}]
+        )
+        if rendered.count(self._ASSISTANT_SENTINEL) != 1:
+            raise RuntimeError("chat template did not preserve the agent action sentinel exactly once")
+        suffix_token_ids = self._encode_raw_text(rendered.split(self._ASSISTANT_SENTINEL, 1)[1])
+        termination_token_ids = list(self.assistant_termination_token_ids)
+        if suffix_token_ids[: len(termination_token_ids)] != termination_token_ids:
+            raise RuntimeError("observation suffix does not begin with the derived assistant termination tokens")
+        suffix_token_ids = suffix_token_ids[len(termination_token_ids) :]
+        effective_token_count = None
+        visual_token_count = None if result.images else 0
+        if result.images and hasattr(self.processor, "image_processor"):
+            effective_token_count, visual_token_count = measure_expanded_observation(
+                self.processor,
+                suffix_token_ids,
+                result.images,
+                min_pixels=self.image_config.min_pixels,
+                max_pixels=self.image_config.max_pixels,
+                image_preprocessor=self.image_preprocessor,
+            )
+        return EncodedObservation(
+            token_ids=suffix_token_ids,
+            images=result.images,
+            effective_token_count=effective_token_count,
+            visual_token_count=visual_token_count,
+        )

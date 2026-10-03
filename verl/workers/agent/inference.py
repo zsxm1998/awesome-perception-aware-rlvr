@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Mapping, Optional, Sequence
 
 from PIL import Image
@@ -25,7 +26,7 @@ from .backends import (
     VLLMAgentImageCache,
     VLLMGenerationBackend,
 )
-from .chat import NativeToolChatAdapter
+from .chat import NativeToolChatAdapter, OfficialDeepEyesChatAdapter, PlainChatAdapter
 from .coordinates import model_input_image_size
 from .loop import AgentLoop
 from .protocol import (
@@ -57,6 +58,8 @@ async def run_deepeyes_inference(
     max_model_len: int,
     tool_image_mode: str = "original",
     bbox_format: str = "norm1000",
+    tools_enabled: bool = True,
+    prompt_style: str = "native",
 ) -> AgentTrajectory:
     """Run one inference-only DeepEyes trajectory.
 
@@ -68,6 +71,10 @@ async def run_deepeyes_inference(
 
     source_images = list(source_images)
     agent_config = config or AgentLoopConfig()
+    if not tools_enabled:  # a single turn without tools (DeepEyes rows without an env, e.g. ThinkLite)
+        agent_config = replace(agent_config, max_tool_calls=0)
+    if prompt_style not in {"native", "official"}:
+        raise ValueError(f"prompt_style must be 'native' or 'official', got {prompt_style!r}")
     if isinstance(max_model_len, bool) or not isinstance(max_model_len, int):
         raise TypeError("max_model_len must be an integer")
     if max_model_len <= 0:
@@ -106,7 +113,7 @@ async def run_deepeyes_inference(
         ),
     )
     frame_sizes = None
-    if bbox_format == "pixel":
+    if tools_enabled and bbox_format == "pixel":
         if is_internvl_processor(processor):
             raise ValueError("InternVL grounds with 0-1000 coordinates; use bbox_format='norm1000'")
         # The frame a Qwen2-VL / Qwen2.5-VL policy reads absolute coordinates in.
@@ -115,15 +122,26 @@ async def run_deepeyes_inference(
         ]
     registry = ToolRegistry(
         [ImageZoomInTool(output_image_mode=tool_image_mode, bbox_format=bbox_format, frame_sizes=frame_sizes)]
+        if tools_enabled
+        else []
     )
-    chat_adapter = NativeToolChatAdapter(
-        processor,
-        registry,
-        len(source_images),
-        max_tool_calls=agent_config.max_tool_calls,
-        image_config=image_config,
-        image_preprocessor=resolved_image_cache.prepare,
-    )
+    if not tools_enabled:
+        chat_adapter = PlainChatAdapter(
+            processor,
+            len(source_images),
+            image_config=image_config,
+            image_preprocessor=resolved_image_cache.prepare,
+        )
+    else:
+        adapter_cls = OfficialDeepEyesChatAdapter if prompt_style == "official" else NativeToolChatAdapter
+        chat_adapter = adapter_cls(
+            processor,
+            registry,
+            len(source_images),
+            max_tool_calls=agent_config.max_tool_calls,
+            image_config=image_config,
+            image_preprocessor=resolved_image_cache.prepare,
+        )
     prompt = chat_adapter.encode_initial_prompt(messages)
     effective_prompt_tokens, prompt_visual_tokens = measure_expanded_observation(
         processor,

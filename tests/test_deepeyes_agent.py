@@ -1653,3 +1653,145 @@ def test_observation_min_pixels_keeps_small_crops_small_downstream():
     # the rollout, the observation encoder and the trainer resize with data.min_pixels, which keeps it as is
     assert process_image(crop, 40000, 1000000).size == (100, 100)
     assert process_image(source, 40000, 1000000).size != source.size  # source images still follow min_pixels
+
+
+# DeepEyes' tool response (verl/workers/agent/envs/mm_process_engine/visual_toolbox_v2.py with
+# prompt.py PROMPT.USER_PROMPT_V2), copied verbatim
+OFFICIAL_USER_PROMPT_V2 = (
+    "\nThink first, call **image_zoom_in_tool** if needed, then answer. Format strictly as:  <think>...</think>  "
+    "<tool_call>...</tool_call> (if tools needed)  <answer>...</answer> "
+)
+QWEN_VISION = "<|vision_start|><|image_pad|><|vision_end|>"
+
+
+def _official_observation(tool_response):
+    """The string visual_toolbox_v2.execute appends after the model's turn, with <image> as Qwen renders it."""
+    return "\n<|im_start|>user\n" + tool_response + "<|im_end|>\n<|im_start|>assistant\n"
+
+
+@pytest.fixture(scope="module")
+def qwen2_5_vl_processor():
+    from verl.utils.tokenizer import get_processor
+
+    return get_processor("Qwen/Qwen2.5-VL-7B-Instruct")
+
+
+@pytest.fixture(scope="module")
+def qwen2_5_vl_tool_processor():
+    from verl.utils.tokenizer import get_processor
+
+    template = Path(__file__).resolve().parents[1] / "examples/chat_template/qwen2_5_vl_tool_call.jinja"
+    return get_processor("Qwen/Qwen2.5-VL-7B-Instruct", override_chat_template=str(template))
+
+
+def test_official_chat_adapter_reproduces_the_official_deepeyes_strings(qwen2_5_vl_processor):
+    from verl.workers.agent.chat import OfficialDeepEyesChatAdapter
+
+    processor = qwen2_5_vl_processor
+    adapter = OfficialDeepEyesChatAdapter(processor, ToolRegistry([ImageZoomInTool()]), 1, max_tool_calls=6)
+    system = 'You are a helpful assistant.\n\n# Tools\n<tools>\n{"name": "image_zoom_in_tool"}\n</tools>'
+    user = "<image>\nIs the car on the left side of the person?" + OFFICIAL_USER_PROMPT_V2
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": user.split("<image>", 1)[1]}]},
+    ]
+    prompt = adapter.encode_initial_prompt(messages)
+    assert prompt.rendered_text == (
+        f"<|im_start|>system\n{system}<|im_end|>\n<|im_start|>user\n{user.replace('<image>', QWEN_VISION)}"
+        "<|im_end|>\n<|im_start|>assistant\n"
+    )
+
+    crop = asyncio.run(
+        adapter.encode(
+            ObservationEncodingRequest(ToolResult("image_zoom_in_tool", True, {}, images=[Image.new("RGB", (64, 64))]))
+        )
+    )
+    official = _official_observation("<tool_response>" + "<image>" + OFFICIAL_USER_PROMPT_V2 + "</tool_response>")
+    assert processor.tokenizer.decode(crop.token_ids) == official.replace("<image>", QWEN_VISION)
+    assert crop.visual_token_count > 0
+
+    failed = asyncio.run(
+        adapter.encode(
+            ObservationEncodingRequest(
+                ToolResult("image_zoom_in_tool", False, {"error": {"code": "x", "message": "bbox is too small"}})
+            )
+        )
+    )
+    assert processor.tokenizer.decode(failed.token_ids) == _official_observation("Error: bbox is too small")
+    assert failed.visual_token_count == 0
+
+
+def test_plain_chat_adapter_renders_the_rows_own_prompt_without_tools(qwen2_5_vl_processor):
+    from verl.workers.agent.chat import PlainChatAdapter
+
+    adapter = PlainChatAdapter(qwen2_5_vl_processor, 1)
+    messages = [
+        {"role": "system", "content": "Think, then answer."},
+        {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "\nFind x."}]},
+    ]
+    assert adapter.encode_initial_prompt(messages).rendered_text == (
+        "<|im_start|>system\nThink, then answer.<|im_end|>\n<|im_start|>user\n"
+        f"{QWEN_VISION}\nFind x.<|im_end|>\n<|im_start|>assistant\n"
+    )
+    assert adapter.max_tool_calls == 0
+    with pytest.raises(ValueError, match="data.system_prompt_key"):
+        adapter.encode_initial_prompt([{**messages[0], "content": DEEPEYES_SYSTEM_PROMPT}, messages[1]])
+    with pytest.raises(RuntimeError, match="without tools"):
+        asyncio.run(adapter.encode(ObservationEncodingRequest(ToolResult("image_zoom_in_tool", True, {}))))
+
+
+@pytest.mark.parametrize(
+    ("tools_enabled", "prompt_style", "adapter_name", "max_tool_calls"),
+    [
+        (True, "native", "NativeToolChatAdapter", 6),
+        (True, "official", "OfficialDeepEyesChatAdapter", 6),
+        (False, "native", "PlainChatAdapter", 0),
+        (False, "official", "PlainChatAdapter", 0),
+    ],
+)
+def test_deepeyes_inference_picks_the_adapter_and_tools_per_row(
+    monkeypatch,
+    qwen2_5_vl_processor,
+    qwen2_5_vl_tool_processor,
+    tools_enabled,
+    prompt_style,
+    adapter_name,
+    max_tool_calls,
+):
+    from verl.workers.agent import inference
+    from verl.workers.agent.protocol import AgentImageConfig
+
+    captured = {}
+
+    class CapturingLoop:
+        def __init__(self, *, backend, observation_encoder, tool_registry, config, seed_context):
+            captured.update(adapter=observation_encoder, registry=tool_registry, config=config)
+
+        async def run(self, **kwargs):
+            return SimpleNamespace()
+
+    monkeypatch.setattr(inference, "AgentLoop", CapturingLoop)
+    system = DEEPEYES_SYSTEM_PROMPT if tools_enabled and prompt_style == "native" else "Think, then answer."
+    asyncio.run(
+        inference.run_deepeyes_inference(
+            inference_engine=object(),
+            sampling_params=SamplingParams(n=1, seed=1),
+            processor=qwen2_5_vl_tool_processor if prompt_style == "native" else qwen2_5_vl_processor,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "\nWhat is it?"}]},
+            ],
+            source_images=[Image.new("RGB", (56, 56))],
+            sample_index=0,
+            rollout_index=0,
+            image_config=AgentImageConfig(min_pixels=3136, max_pixels=200704, limit_images=7),
+            scheduler=VLLMAgentBatchScheduler(object()),
+            max_model_len=4096,
+            bbox_format="pixel",
+            tools_enabled=tools_enabled,
+            prompt_style=prompt_style,
+        )
+    )
+    assert type(captured["adapter"]).__name__ == adapter_name
+    assert captured["config"].max_tool_calls == max_tool_calls == captured["adapter"].max_tool_calls
+    assert len(captured["registry"].schemas(1)) == (1 if tools_enabled else 0)

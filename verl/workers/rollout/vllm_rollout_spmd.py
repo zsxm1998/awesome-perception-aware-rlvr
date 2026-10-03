@@ -375,6 +375,7 @@ class vLLMRollout(BaseRollout):
             None,
         )
         uids = prompts.non_tensor_batch.pop("uid", None)
+        env_names = prompts.non_tensor_batch.pop("env_name", None)  # "" = no tool for that row
         prompts.non_tensor_batch.pop("raw_prompt_ids", None)
         if messages_batch is None or raw_multi_modal_batch is None or uids is None:
             raise ValueError("agentic rollout requires aligned raw_prompt, multi_modal_data, and uid fields")
@@ -461,6 +462,7 @@ class vLLMRollout(BaseRollout):
                                     "source_images": source_images,
                                     "sample_index": sample_identity,
                                     "rollout_index": rollout_index,
+                                    "tools_enabled": env_names is None or bool(env_names[sample_position]),
                                     "lora_request": (
                                         None if lora_requests is None else lora_requests[sample_position]
                                     ),
@@ -487,6 +489,8 @@ class vLLMRollout(BaseRollout):
                             image_cache=image_cache,
                             max_model_len=max_model_len,
                             bbox_format=self.agent_bbox_format,
+                            tools_enabled=request["tools_enabled"],
+                            prompt_style=self.config.agent_prompt_style,
                         )
 
                     trajectories = list(await asyncio.gather(*(generate_one(request) for request in requests)))
