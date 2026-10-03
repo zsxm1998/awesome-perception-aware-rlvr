@@ -291,3 +291,21 @@ def test_text_only_reward_extracts_answer_span():
 )
 def test_rule_match_needs_the_reference_keywords(prediction, reference, question, expected):
     assert deepeyes_reward._rule_match(prediction, reference, question) is expected
+
+
+def test_judge_call_follows_deepeyes():
+    calls = []
+
+    class _Completions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            reply = "Judgement: 1" if "[Model_answer] : white\nJudgement:" in kwargs["messages"][1]["content"] else "0"
+            return type("R", (), {"choices": [type("C", (), {"message": type("M", (), {"content": reply})()})()]})()
+
+    client = type("Client", (), {"chat": type("Chat", (), {"completions": _Completions()})()})()
+    assert deepeyes_reward._judge_match(client, "What color is the chair?", "white", "The chair is white.")
+    assert not deepeyes_reward._judge_match(client, "What color is the chair?", "black", "The chair is white.")
+    messages = calls[0]["messages"]
+    assert messages[0] == {"role": "system", "content": "You are a helpful assistant."}
+    assert calls[0]["temperature"] == 0.3 and messages[1]["content"].count("Judgement: ") == 7
+    assert deepeyes_reward._parse_judgement(" 1 ") and not deepeyes_reward._parse_judgement("yes")

@@ -125,13 +125,48 @@ def compute_score(
 # ---------------------------------------------------------------------------
 
 
-_JUDGE_PROMPT = """You are an expert evaluator. Given a question, a reference answer and a model's prediction, decide whether the prediction is consistent with the reference answer. Answer with "Judgement: 1" if it is consistent and "Judgement: 0" otherwise.
+# DeepEyes' judge prompt (verl/utils/reward_score/vl_agent.py: get_chat_template, get_gpt4_score_ICE, get_prompt)
+_JUDGE_INSTRUCTION = """
+Below are two answers to a question. Question is [Question], [Standard Answer] is the standard answer to the question, and [Model_answer] is the answer extracted from a model's output to this question.  Determine whether these two answers are consistent.
+Note that [Model Answer] is consistent with [Standard Answer] whenever they are essentially the same. If the meaning is expressed in the same way, it is considered consistent, for example, 'pink' and 'it is pink'.
+If they are consistent, Judement is 1; if they are different, Judement is 0. Just output Judement and don't output anything else.\n\n
+"""  # noqa: E501
+_JUDGE_EXAMPLES = [
+    ("Is the countertop tan or blue?", "The countertop is tan.", "tan", 1),
+    ("On which side of the picture is the barrier?", "The barrier is on the left side of the picture.", "left", 1),
+    ("Is the kite brown and large?", "Yes, the kite is brown and large.", "Yes", 1),
+    ("Are the spots on a giraffe?", "No, the spots are on a banana.", "no", 1),
+    ("Who is wearing pants?", "The boy is wearing pants.", "The person in the picture is wearing pants.", 1),
+    ("Is the man phone both blue and closed?", "Yes, the man phone is both blue and closed.", "No.", 0),
+    (
+        "What color is the towel in the center of the picture?",
+        "The towel in the center of the picture is blue.",
+        "The towel in the center of the picture is pink.",
+        0,
+    ),
+]
 
-Question: {question}
-Reference answer: {reference}
-Prediction: {prediction}
 
-Judgement:"""
+def _judge_prompt(question: str, reference: str, prediction: str) -> str:
+    prompt = _JUDGE_INSTRUCTION
+    for example_question, example_reference, example_answer, judgement in _JUDGE_EXAMPLES:
+        prompt += (
+            f"\n[Question]: {example_question}\n[Standard Answer]: {example_reference}\n"
+            f"[Model_answer] : {example_answer}\nJudgement: {judgement}\n\n\n"
+        )
+    return (
+        prompt + f"\n[Question]: {question}\n[Standard Answer]: {reference}\n[Model_answer] : {prediction}\nJudgement:"
+    )
+
+
+def _parse_judgement(text: str) -> bool:
+    text = text.strip()
+    if "Judgement:" in text:
+        text = text.split("Judgement:")[-1].strip()
+        return "1" in text
+    return text == "1"
+
+
 # Words that carry no answer content; together with the question's own words they are ignored when the
 # no-judge rule compares a prediction with a sentence reference.
 _RULE_STOP_WORDS = set(
@@ -195,22 +230,19 @@ def _judge_client():
 
 
 def _judge_match(client, question: str, prediction: str, reference: str) -> bool:
+    """DeepEyes' judge call: its few-shot prompt, system "You are a helpful assistant.", temperature 0.3."""
     model = os.environ.get("DEEPEYES_JUDGE_MODEL", "judge")
     for _ in range(3):
         try:
             completion = client.chat.completions.create(
                 model=model,
                 messages=[
-                    {
-                        "role": "user",
-                        "content": _JUDGE_PROMPT.format(question=question, reference=reference, prediction=prediction),
-                    }
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": _judge_prompt(question, reference, prediction)},
                 ],
                 temperature=0.3,
-                max_tokens=16,
             )
-            text = completion.choices[0].message.content or ""
-            return "1" in text.split("Judgement:")[-1][:8]
+            return _parse_judgement(completion.choices[0].message.content or "")
         except Exception:
             continue
     return _rule_match(prediction, reference, question)
