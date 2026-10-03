@@ -272,7 +272,8 @@ Evaluate a model with the prompt it was trained with:
 | VEPO | `--format-prompt none --system-prompt examples/system_prompt/vepo.txt` (suite `vepo`) |
 | PEPO (Geometry3K setting) | `--format-prompt examples/format_prompt/pepo.jinja` (suite `pepo_geometry`) |
 | CGPO | `--format-prompt examples/format_prompt/xml_grounded_reasoning.jinja` (suite `cgpo`) |
-| GRIT | `--format-prompt none --system-prompt examples/system_prompt/grit_GR.txt` (suite `grit`) |
+| GRIT (`examples/reproduction/grit`) | `--format-prompt examples/format_prompt/grit.jinja --system-prompt none --min-pixels 3136 --max-pixels 200704` |
+| GRIT in the comparison (`examples/comparison/qwen3_vl_4b/grit.sh`) | `--format-prompt none --system-prompt examples/system_prompt/grit_GR.txt` (suite `grit` default) |
 | DeepEyes | `--interaction-mode agentic --system-prompt examples/system_prompt/deepeyes.txt` (suite `deepeyes`; `deepeyes_pixel.txt` for Qwen2-VL / Qwen2.5-VL) |
 
 ## LLM judge
