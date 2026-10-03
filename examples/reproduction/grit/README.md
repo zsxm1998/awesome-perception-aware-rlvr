@@ -25,7 +25,7 @@ image-question-answer triplets without box or reasoning annotations.
 | Reward | `examples/reward_function/grit.py:compute_score_official`, summed with weight 1: binary answer match + 0.1·BLEU-1 + answer format (≤ 0.5) + repetition term (≤ 0.5, negative when 8-grams repeat back to back, in words and in tokens) + grounded format (0.5 for ≥ 1 box before `<rethink>`, +1.0 if the number of boxes equals a numeric counting answer) + think/rethink structure (≤ 0.5); the repetition and structure terms are GRIT's code |
 | Rollout | all 20 prompts x 4 rollouts per step (80 rollouts), T=0.9, top-p 1.0; update batch 20 prompts |
 | RL | GRPO; low-var KL loss 0.01; symmetric clip 0.28; loss averaged over each response's tokens, then over responses (`worker.actor.loss_avg_mode=seq`, as GRIT's trainer) |
-| Optimization | AdamW (bf16), lr 2e-6 with cosine schedule, vision tower trainable, 200 steps (`trainer.max_steps=200`) |
+| Optimization | AdamW (bf16), lr 2e-6 with cosine schedule, vision tower trainable, 200 steps (`trainer.max_steps=200`); the checkpoints of steps 50, 100, 150 and 200 are all kept (`trainer.save_limit=4`) |
 | Lengths / pixels | max prompt 1,024, max response 1,024; 3,136-200,704 pixels (256·28·28). InternVL: images at their resolution cut into at most 2 tiles of 448 px plus a thumbnail (`worker.actor.model.max_dynamic_patch=2`), max prompt 1,500 |
 | GPUs | 8 |
 
@@ -66,6 +66,11 @@ environment. Evaluation is described in [eval/README.md](../../../eval/README.md
   The InternVL run uses the same settings as the Qwen run except for the image tiles and the
   maximum prompt length, which follow the official InternVL script (with InternVL3-2B's default
   of up to 12 tiles, every training prompt exceeds 1,500 tokens).
+- **Training length.** We train the paper's 200 steps with a cosine schedule over them. The
+  released checkpoints come from runs planned for 500 steps (cosine over 500 steps, per their
+  `trainer_state.json`): `GRIT-20-Qwen2.5-VL-3B` stopped at step 150 and `GRIT-20-InternVL-2B` at
+  step 50. All four of our checkpoints are kept, so the step-50 and step-150 ones can be compared
+  with them.
 - **Framework.** EasyR1 with vLLM rollouts instead of the official TRL trainer (no vLLM); maximum
   response 1,024 tokens instead of 1,000.
 - **Validation** runs on the VSR and TallyQA test sets only (the official scripts validate on all six

@@ -70,7 +70,7 @@ launch_grit() {
         "trainer.val_generations_to_log=5"
         "trainer.val_before_train=true"
         "trainer.find_last_checkpoint=true"
-        "trainer.save_limit=1"
+        "trainer.save_limit=4"
     )
     launch_training "$@"
 }
