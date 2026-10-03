@@ -19,8 +19,8 @@ sequence-level advantage is unchanged.
 | | This repository |
 | --- | --- |
 | Base model | Qwen2.5-VL-7B-Instruct |
-| Training data | Geometry3K train (`hiyouga/geometry3k`, 2,101) — `bash scripts/prepare_data.sh vepo` |
-| Validation | Geometry3K test (601), every 20 steps, 8 samples at T=1.0, top-p 0.9 |
+| Training data | Geometry3K train (`hiyouga/geometry3k`, 2,101) + `xyliu6/k12-freeform` mini_train (2,100), 4,201 problems — `bash scripts/prepare_data.sh vepo` |
+| Validation | `xyliu6/k12-freeform` test (808), every 20 steps, 8 samples at T=1.0, top-p 0.9 |
 | Prompt / reward | `<think>` + `\boxed{}` (`math_perception.jinja`); binary accuracy (`math.py:compute_score_wo_format`) |
 | Rollout | 512 prompts x 12 rollouts per step, T=1.0, top-p 1.0; update batch 128 prompts; vLLM tensor parallel 4 |
 | RL | GRPO; low-var KL loss 0.01; clip 0.2 / 0.3 (EasyR1 defaults); token-level loss |
@@ -55,10 +55,12 @@ command (e.g. `algorithm.disable_kl=true`) and set `N_GPUS_PER_NODE`, `MODEL_PAT
 
 ## Differences from the paper / official code
 
-- **Training data.** The paper trains on about 4.2K samples drawn from Geometry3K and MMK12; this
-  set is not released (the official script uses a placeholder path). We train on the 2,101
-  Geometry3K training problems and validate on the Geometry3K test split instead of
-  `xyliu6/k12-freeform` (test, 808).
+- **Training data.** The paper trains on about 4.2K samples drawn from Geometry3K and MMK12, and
+  the official script leaves the training path as a placeholder. We use Geometry3K train (2,101)
+  plus the mini_train split of `xyliu6/k12-freeform` (2,100, the K12 set of NoisyRollout, the code
+  base VEPO builds on), 4,201 problems in total; this composition is our reading of the paper, not
+  confirmed by the authors. Validation uses `xyliu6/k12-freeform` test (808), as the official
+  script.
 - **RL recipe.** The official recipe is GRPO without KL, symmetric clip 0.2, max response 2,048,
   `total_episodes=20`, reward 0.9 accuracy + 0.1 format, and an entropy bonus of 1e-3 that the
   paper does not mention. Our scripts use a low-var KL loss 0.01, clip 0.2 / 0.3, max response
@@ -91,8 +93,8 @@ Paper Table 1 (Qwen2.5-VL-7B trained on the 4.2K Geometry3K + MMK12 mix; greedy 
 | `qwen2_5_vl_7b_grpo_entropy` | 47.59 | 64.93 | 68.56 | 70.40 | 67.13 | 48.25 | 28.95 | 56.54 | TBD |
 | `qwen2_5_vl_7b_grpo_vepo` | 51.58 | 69.64 | 71.71 | 72.00 | 69.54 | 48.93 | 28.31 | 58.82 | TBD |
 
-Because the training data and evaluation protocol differ, compare our runs with each other rather
-than with these numbers. Results of this repository will be added after the reproduction runs
+Because the evaluation protocol differs, compare our runs with each other rather than with these
+numbers. Results of this repository will be added after the reproduction runs
 finish.
 
 ## Citation

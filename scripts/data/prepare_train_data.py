@@ -70,7 +70,15 @@ DATASETS: dict[str, TrainDataset] = {
             "test": ["data/test-*.parquet"],
         },
         description="Geometry3K (2,101 train / 300 val / 601 test)",
-        used_by=["tor", "pepo", "vepo"],
+        used_by=["tor", "pepo", "vepo"],  # VEPO: through the vepo dataset
+    ),
+    "vepo": TrainDataset(
+        name="vepo",
+        repo_id="xyliu6/k12-freeform",
+        splits={"train": [], "test": []},
+        description="VEPO's 4.2K: Geometry3K train (2,101) + k12-freeform mini_train (2,100); k12-freeform test (808)",
+        used_by=["vepo"],
+        converter="vepo",
     ),
     "grit": TrainDataset(
         name="grit",
@@ -100,7 +108,7 @@ METHOD_GROUPS: dict[str, list[str]] = {
     "comparison": ["virl39k", "mmk12"],
     "tor": ["geometry3k"],
     "pepo": ["geometry3k"],
-    "vepo": ["geometry3k"],
+    "vepo": ["geometry3k", "vepo"],
     "grit": ["grit"],
     "deepeyes": ["deepeyes"],
 }

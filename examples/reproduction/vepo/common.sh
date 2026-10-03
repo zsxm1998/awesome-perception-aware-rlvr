@@ -7,8 +7,8 @@ source "$THIS_DIR/../common.sh"
 launch_full_vocab_sensitivity_geo3k() {
     pr_default MODEL_PATH "Qwen/Qwen2.5-VL-7B-Instruct"
     METHOD_COMMON_ARGS=(
-        "data.train_files=$DATA_ROOT/geometry3k/train.parquet"
-        "data.val_files=$DATA_ROOT/geometry3k/test.parquet"
+        "data.train_files=$DATA_ROOT/vepo/train.parquet"
+        "data.val_files=$DATA_ROOT/vepo/test.parquet"
         "data.prompt_key=problem"
         "data.answer_key=answer"
         "data.image_key=images"

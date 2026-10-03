@@ -222,3 +222,37 @@ def _write_deepeyes_monitor_split(train_path: Path, val_path: Path, per_source: 
     pq.write_table(subset, val_path)
     print(f"[write] {val_path} ({subset.num_rows} rows, monitoring only)")
     return subset.num_rows
+
+
+# ---------------------------------------------------------------------------
+# VEPO: "4.2K" training problems, read as Geometry3K train (2,101) plus the mini_train split of
+# xyliu6/k12-freeform (2,100), which VEPO's code base (NoisyRollout) trains on; validation on the
+# k12-freeform test split (808), as VEPO's script. Geometry3K must be prepared first.
+# ---------------------------------------------------------------------------
+
+
+@register("vepo")
+def convert_vepo(repo_id: str, raw_dir: Path, out_dir: Path, snapshot) -> dict[str, int]:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    geometry3k = out_dir.parent / "geometry3k" / "train.parquet"
+    if not geometry3k.exists():
+        raise FileNotFoundError(f"{geometry3k} is missing; prepare geometry3k first")
+    snapshot(["data/mini_train-*.parquet", "data/test-*.parquet"])
+    columns = ["problem", "answer", "images"]
+
+    def read(pattern: str) -> pa.Table:
+        return pa.concat_tables(pq.read_table(path, columns=columns) for path in sorted(raw_dir.glob(pattern)))
+
+    splits = {
+        "train": pa.concat_tables([pq.read_table(geometry3k, columns=columns), read("data/mini_train-*.parquet")]),
+        "test": read("data/test-*.parquet"),
+    }
+    out_dir.mkdir(parents=True, exist_ok=True)
+    summary: dict[str, int] = {}
+    for split, table in splits.items():
+        pq.write_table(table, out_dir / f"{split}.parquet")
+        summary[split] = table.num_rows
+        print(f"[write] {out_dir / f'{split}.parquet'} ({table.num_rows} rows)")
+    return summary
