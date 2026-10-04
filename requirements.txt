@@ -3,10 +3,13 @@ codetiming
 datasets
 einops
 flash-attn>=2.4.3
+flask
+huggingface_hub
 liger-kernel
-mathruler
 # DeepEyes' ThinkLite reward; the extra keeps antlr4 at 4.9.3, which omegaconf needs
 math-verify[antlr4_9_3]
+mathruler
+modelscope
 nltk==3.9.4
 numpy
 omegaconf
@@ -17,15 +20,12 @@ pyarrow>=15.0.0
 pylatexenc
 qwen-vl-utils
 ray[default]
+requests
+scipy
+swanlab
 tensordict
 timm
 torchdata
 transformers>=4.57.0,<5.0.0
 vllm>=0.17.0
 wandb
-swanlab
-modelscope
-scipy
-flask
-huggingface_hub
-requests

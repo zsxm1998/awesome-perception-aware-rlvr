@@ -1,3 +1,12 @@
+# The checks of this repository, run before every commit once installed, and by CI on every pull request
+# (.github/workflows/tests.yml). Setup and usage: "Checks with pre-commit" in .github/CONTRIBUTING.md.
+#
+#   pip install pre-commit        # or: bash scripts/install_env.sh (dev tools)
+#   pre-commit install            # installs the pre-commit and commit-msg hooks
+#   pre-commit run --all-files    # run every check once, e.g. before opening a pull request
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
+
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -9,14 +18,43 @@ repos:
     -   id: check-yaml
     -   id: debug-statements
     -   id: end-of-file-fixer
+        exclude: ^docs/assets/.*\.svg$  # written by scripts/make_taxonomy_figure.py
     -   id: requirements-txt-fixer
     -   id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
-    -   id: no-commit-to-branch
+        exclude: ^docs/assets/.*\.svg$
+    -   id: no-commit-to-branch  # work on a branch of your fork, not on main
         args: ['--branch', 'main']
 
--   repo: https://github.com/asottile/pyupgrade
-    rev: v3.17.0
+# the same ruff version as scripts/constraints.txt
+-   repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.9
     hooks:
-    -   id: pyupgrade
-        args: [--py38-plus]
+    -   id: ruff-check
+        args: [--fix]
+    -   id: ruff-format
+
+-   repo: local
+    hooks:
+    -   id: license-headers
+        name: Apache license headers
+        entry: python3 tests/check_license.py eval examples scripts tests verl setup.py
+        language: system
+        pass_filenames: false
+        types: [python]
+    -   id: shell-syntax
+        name: shell syntax (bash -n)
+        entry: bash -c 'for script in "$@"; do bash -n "$script" || exit 1; done' --
+        language: system
+        types: [shell]
+    -   id: docs
+        name: paper list, badges and Markdown links
+        entry: python3 scripts/check_docs.py
+        language: system
+        pass_filenames: false
+        types: [markdown]
+    -   id: commit-message
+        name: 'commit message format ([type] scope: summary)'
+        entry: python3 scripts/check_commit_msg.py
+        language: system
+        stages: [commit-msg]

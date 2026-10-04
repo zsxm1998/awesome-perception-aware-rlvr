@@ -82,7 +82,7 @@ Environment variables:
   CUDA_TOOLKIT_VERSION      Conda CUDA toolkit version. Default: ${CUDA_TOOLKIT_VERSION}
   CUDA_LABEL                NVIDIA conda CUDA label. Default: ${CUDA_LABEL}
   INSTALL_CONDA_CUDA        Install CUDA toolkit into conda env. Default: ${INSTALL_CONDA_CUDA}
-  INSTALL_DEV_TOOLS         Install pytest and ruff (tests, make quality). Default: ${INSTALL_DEV_TOOLS}
+  INSTALL_DEV_TOOLS         Install pytest, ruff and pre-commit (tests and checks). Default: ${INSTALL_DEV_TOOLS}
   VLLM_VERSION              vLLM version. Default: ${VLLM_VERSION}
   FLASH_ATTN_VERSION        flash-attn version. Default: ${FLASH_ATTN_VERSION}
   CPP_RUNTIME_CHANNEL       Channel for libstdcxx-ng/libgcc-ng. Default: ${CPP_RUNTIME_CHANNEL}
@@ -571,10 +571,10 @@ echo ""
 echo "Step 8/8: Installing EasyR1 in editable mode..."
 uv pip install --no-deps -e .
 if [[ "${INSTALL_DEV_TOOLS}" == "1" ]]; then
-    # unit tests (python -m pytest -q tests/) and make quality
-    uv pip install pytest ruff -c "${REPO_ROOT}/scripts/constraints.txt"
+    # unit tests (python -m pytest -q tests/) and the checks (pre-commit run --all-files, make quality)
+    uv pip install pytest ruff pre-commit -c "${REPO_ROOT}/scripts/constraints.txt"
 else
-    echo "[WARN] Skipping pytest/ruff because INSTALL_DEV_TOOLS=${INSTALL_DEV_TOOLS}"
+    echo "[WARN] Skipping pytest/ruff/pre-commit because INSTALL_DEV_TOOLS=${INSTALL_DEV_TOOLS}"
 fi
 
 echo ""

@@ -80,4 +80,3 @@ The paper list in the README was verified on 2026-10-01. This page records how e
 - Inter-GPS / Geometry3K (`2105.04165`): ACL 2021, from arXiv comments; repo README
 
 </details>
-
