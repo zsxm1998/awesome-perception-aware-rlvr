@@ -15,7 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 from transformers.models.qwen2_vl.modeling_qwen2_vl import (
@@ -224,10 +224,14 @@ def qwen2_vl_model_forward(
     self: "Qwen2VLForConditionalGeneration",
     input_ids: torch.LongTensor,
     labels: Optional[torch.LongTensor] = None,
+    logits_to_keep: Union[int, torch.Tensor] = 0,
     **kwargs,
 ) -> "Qwen2VLCausalLMOutputWithPast":
     outputs = self.model(input_ids=input_ids, **kwargs)
     hidden_states = outputs[0]
-    logits = self.lm_head(hidden_states)
+    # same semantics as transformers: 0 keeps every position, an int keeps the last positions,
+    # a 1D index tensor keeps those sequence positions
+    slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
+    logits = self.lm_head(hidden_states[:, slice_indices, :])
 
     return Qwen2VLCausalLMOutputWithPast(logits=logits, hidden_states=outputs.hidden_states)
