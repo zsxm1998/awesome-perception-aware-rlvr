@@ -1,7 +1,7 @@
 name: Reproduction results / 复现结果
 description: Share the results of a script of this repository / 分享用本仓库脚本得到的结果
 title: "[Results] "
-labels: ["results"]
+labels: ["type: results"]
 body:
   - type: markdown
     attributes:

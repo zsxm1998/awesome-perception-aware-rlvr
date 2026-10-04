@@ -1,7 +1,7 @@
 name: Feature request / 功能建议
 description: A new option, benchmark or tool / 新的选项、评测基准或工具
 title: "[Feature] "
-labels: ["feature"]
+labels: ["type: feature"]
 body:
   - type: textarea
     id: motivation

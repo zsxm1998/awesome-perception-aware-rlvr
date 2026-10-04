@@ -1,7 +1,7 @@
 name: Bug report / 问题报告
 description: Something does not work as documented / 代码的行为与文档不符
 title: "[Bug] "
-labels: ["bug"]
+labels: ["type: bug"]
 body:
   - type: markdown
     attributes:

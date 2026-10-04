@@ -1,7 +1,7 @@
 name: Question / 提问
 description: A question about the code, a method or the results / 关于代码、方法或结果的问题
 title: "[Question] "
-labels: ["question"]
+labels: ["type: question"]
 body:
   - type: checkboxes
     id: searched
