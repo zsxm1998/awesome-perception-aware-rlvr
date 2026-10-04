@@ -1,0 +1,46 @@
+name: commit messages
+
+# The commit message format of .github/CONTRIBUTING.md ("[type] scope: summary"), checked by
+# scripts/check_commit_msg.py: the title of a pull request (the subject of its squash commit, re-checked when
+# the title is edited) and the commits pushed to main.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+    branches:
+      - "main"
+  push:
+    branches:
+      - "main"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: commit message format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Pull request title
+        if: github.event_name == 'pull_request'
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: python scripts/check_commit_msg.py --title "$TITLE"
+
+      - name: Pushed commits
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: python scripts/check_commit_msg.py --range "$BEFORE..$AFTER"
