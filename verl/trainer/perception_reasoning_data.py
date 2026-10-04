@@ -866,6 +866,16 @@ class PerceptionReasoningCorruptionBuilder:
             total_training_steps=total_training_steps,
         )
 
+    def build_no_image_batch(self, batch: DataProto, global_step: int) -> AuxiliaryBatchBuildResult:
+        """The same prompts without their images (the `no_image` corruption) and the same responses."""
+        return self._build_auxiliary_batch(
+            batch=batch,
+            transform_name="no_image",
+            transform_kwargs=None,
+            transform_position="prompt",
+            global_step=global_step,
+        )
+
     def build_replaced_image_batch(self, batch: DataProto, image_key: str) -> AuxiliaryBatchBuildResult:
         """The same prompts and responses with each sample's images replaced by those of the column `image_key`
         (Vision-OPD: the teacher's crop of the student image). The prompt text is unchanged; its token ids are

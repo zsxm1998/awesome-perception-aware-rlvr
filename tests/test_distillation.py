@@ -238,6 +238,7 @@ from verl.trainer.distillation import (  # noqa: E402
     build_distillation_config,
     chunked_distillation,
     reference_divergence,
+    stat_names,
 )
 
 
@@ -908,3 +909,262 @@ def test_va_opd_needs_one_token_mean_update_per_step():
     config.worker.actor.loss_avg_mode = "seq"
     with pytest.raises(ValueError, match="one update per rollout batch"):
         config.deep_post_init()
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# VCSD: the contrast-sharpened target
+
+
+def _vcsd_spec(**kwargs) -> DistillationSpec:
+    options = dict(
+        vocab_size=VOCAB,
+        divergence="forward_kl",
+        temperature=2.0,
+        target="contrast_sharpened",
+        contrast_alpha=1.0,
+        contrast_support_beta=0.1,
+        contrast_keep_ids=(3, 7),
+    )
+    options.update(kwargs)
+    return DistillationSpec(**options)
+
+
+def _vcsd_reference(student, teacher, contrast, spec):
+    """VCSD's Eq. 7-10 written directly: all distributions at T, forward KL to the target, times T^2."""
+    temperature = spec.temperature if spec.temperature_scope == "all" else 1.0
+    log_q = torch.log_softmax(teacher[:, :VOCAB] / temperature, -1)
+    log_ctrl = torch.log_softmax(contrast[:, :VOCAB] / temperature, -1)
+    log_p = torch.log_softmax(student[:, :VOCAB] / temperature, -1)
+    score = spec.contrast_anchor_coef * log_q + spec.contrast_alpha * (log_q - log_ctrl)
+    for index in spec.contrast_keep_ids:
+        score[:, index] = spec.contrast_anchor_coef * log_q[:, index]
+    support = torch.softmax(teacher[:, :VOCAB] / temperature, -1)
+    support = support >= spec.contrast_support_beta * support.max(-1, keepdim=True).values
+    target = torch.softmax(score.masked_fill(~support, float("-inf")), -1)
+    kl = (target * (torch.log(target.clamp(min=1e-30)) - log_p)).sum(-1)
+    return kl * spec.temperature**2
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        _vcsd_spec(),
+        _vcsd_spec(temperature_scope="loss_scale_only"),
+        _vcsd_spec(contrast_support_beta=0.0, contrast_alpha=0.5),
+        _vcsd_spec(contrast_anchor_coef=0.0),
+    ],
+)
+def test_contrast_sharpened_target_matches_the_definition(spec):
+    student, teacher, contrast = _logits(seed=1), _logits(seed=2), _logits(seed=3)
+    loss, _, stats = chunked_distillation(
+        student, torch.zeros(9, dtype=torch.long), teacher, spec, chunk_size=4, teacher_contrast_logits=contrast
+    )
+    torch.testing.assert_close(loss, _vcsd_reference(student, teacher, contrast, spec), rtol=1e-4, atol=1e-5)
+    names = stat_names(spec)
+    assert names[3:] == ("target_kl_to_teacher", "target_argmax_change", "target_support_size")
+    assert (stats[:, names.index("target_support_size")] >= 1).all()
+
+
+def test_contrast_sharpened_target_without_contrast_is_the_teacher():
+    """alpha = 0 and beta = 0: the target is the teacher's distribution, so the loss is the forward KL."""
+    spec = _vcsd_spec(contrast_alpha=0.0, contrast_support_beta=0.0, contrast_keep_ids=())
+    student, teacher = _logits(seed=1), _logits(seed=2)
+    loss, _, stats = chunked_distillation(
+        student, torch.zeros(9, dtype=torch.long), teacher, spec, teacher_contrast_logits=_logits(seed=3)
+    )
+    plain = DistillationSpec(vocab_size=VOCAB, divergence="forward_kl", temperature=2.0)
+    torch.testing.assert_close(loss, reference_divergence(student, teacher, plain), rtol=1e-5, atol=1e-6)
+    assert stats[:, 3].abs().max() < 1e-5 and (stats[:, 4] == 0).all()
+
+
+def test_a_tight_support_keeps_only_the_teachers_argmax():
+    spec = _vcsd_spec(contrast_support_beta=0.999, temperature=1.0)
+    student, teacher = _logits(seed=1), _logits(seed=2)
+    loss, _, stats = chunked_distillation(
+        student, torch.zeros(9, dtype=torch.long), teacher, spec, teacher_contrast_logits=_logits(seed=3)
+    )
+    argmax = teacher[:, :VOCAB].argmax(-1)
+    expected = -torch.log_softmax(student[:, :VOCAB], -1).gather(-1, argmax[:, None]).squeeze(-1)
+    torch.testing.assert_close(loss, expected)  # KL(one-hot || p) = -log p(argmax)
+    assert (stats[:, 5] == 1).all()
+
+
+def test_the_end_tokens_are_not_contrasted():
+    teacher, contrast = _logits(seed=2), _logits(seed=3)
+    contrast[:, 3] -= 30.0  # a contrast that would boost token 3 if it applied
+    teacher[:, 3] = teacher[:, :VOCAB].max(-1).values  # keep 3 in the support
+    spec = _vcsd_spec(contrast_support_beta=0.0)
+    from verl.trainer.distillation import _contrast_sharpened_target, _support_log_probs
+
+    log_q = _support_log_probs(teacher, spec, 1.0)
+    target, _ = _contrast_sharpened_target(log_q, _support_log_probs(contrast, spec, 1.0), spec)
+    unprotected, _ = _contrast_sharpened_target(
+        log_q, _support_log_probs(contrast, spec, 1.0), _vcsd_spec(contrast_support_beta=0.0, contrast_keep_ids=())
+    )
+    assert (target[:, 3] < unprotected[:, 3]).all()
+    # log q*(e) - log q*(u) = anchor * log q(e) - score(u)
+    score_u = 2 * log_q[:, 0] - _support_log_probs(contrast, spec, 1.0)[:, 0]
+    torch.testing.assert_close(target[:, 3] - target[:, 0], log_q[:, 3] - score_u, rtol=1e-4, atol=1e-4)
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# VGS: visual-gain steering with a gated text-prior term
+
+
+def _vgs_spec(**kwargs) -> DistillationSpec:
+    options = dict(vocab_size=VOCAB, target="visual_gain", steering_coef=2.0, text_prior_coef=0.5, loss_scale=0.41)
+    options.update(kwargs)
+    return DistillationSpec(**options)
+
+
+def test_visual_gain_matches_the_paper_sketch():
+    """VGS spec §12: eta * (KL(pI||qI) + gamma KL(pI||q*) + lambda gate KL(p0||q0)), q* ~ sg(p0) qI / q0."""
+    spec = _vgs_spec()
+    student = _logits(seed=1).requires_grad_(True)
+    student_text = _logits(seed=4).requires_grad_(True)
+    teacher, teacher_text = _logits(seed=2), _logits(seed=3)
+    gate = torch.tensor([1.0, 0.0] * 4 + [1.0])
+    loss, _, stats = chunked_distillation(
+        student,
+        torch.zeros(9, dtype=torch.long),
+        teacher,
+        spec,
+        chunk_size=4,
+        teacher_contrast_logits=teacher_text,
+        student_contrast_logits=student_text,
+        row_gate=gate,
+    )
+
+    s_i, s_0 = student.detach().clone().requires_grad_(True), student_text.detach().clone().requires_grad_(True)
+    lp_i, lp_0 = torch.log_softmax(s_i[:, :VOCAB], -1), torch.log_softmax(s_0[:, :VOCAB], -1)
+    lq_i, lq_0 = torch.log_softmax(teacher[:, :VOCAB], -1), torch.log_softmax(teacher_text[:, :VOCAB], -1)
+    kl_std = (lp_i.exp() * (lp_i - lq_i)).sum(-1)
+    lq_star = torch.log_softmax(lp_0.detach() + lq_i - lq_0, -1)
+    kl_vis = (lp_i.exp() * (lp_i - lq_star)).sum(-1)
+    kl_lp = (lp_0.exp() * (lp_0 - lq_0)).sum(-1)
+    expected = 0.41 * (kl_std + 2.0 * kl_vis + 0.5 * gate * kl_lp)
+    torch.testing.assert_close(loss, expected, rtol=1e-5, atol=1e-6)
+
+    weights = torch.linspace(0.5, 1.5, 9)
+    (loss * weights).sum().backward()
+    (expected * weights).sum().backward()
+    torch.testing.assert_close(student.grad, s_i.grad, rtol=1e-4, atol=1e-6)
+    torch.testing.assert_close(student_text.grad, s_0.grad, rtol=1e-4, atol=1e-6)
+    names = stat_names(spec)
+    torch.testing.assert_close(stats[:, names.index("text_prior_gate")], gate)
+    torch.testing.assert_close(stats[:, names.index("text_prior_kl")], kl_lp.detach())
+
+
+def test_visual_gain_without_a_visual_difference_is_the_standard_kl():
+    """When the teacher's image and text-only views agree, q* is the student's text distribution."""
+    spec = _vgs_spec(text_prior_coef=0.0, loss_scale=1.0, steering_coef=0.0)
+    student, teacher = _logits(seed=1), _logits(seed=2)
+    loss, _, _ = chunked_distillation(
+        student,
+        torch.zeros(9, dtype=torch.long),
+        teacher,
+        spec,
+        teacher_contrast_logits=teacher.clone(),
+        student_contrast_logits=_logits(seed=4),
+        row_gate=torch.ones(9),
+    )
+    torch.testing.assert_close(loss, reference_divergence(student, teacher, DistillationSpec(vocab_size=VOCAB)))
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# contrast views in the actor
+
+
+def test_packed_forward_matches_separate_forwards():
+    actor = _actor()
+    micro_batch = _micro_batch()
+    rows = actor._prepare_response_rows(micro_batch, micro_batch["response_mask"], 4)
+    other = dict(micro_batch)
+    other["input_ids"] = torch.roll(micro_batch["input_ids"], 1, dims=0)
+    other_rows = actor._prepare_response_rows(other, micro_batch["response_mask"].roll(1, dims=0), 4)
+    first, second = actor._packed_forward(actor.actor_module, [rows, other_rows])
+    torch.testing.assert_close(first, actor._packed_forward(actor.actor_module, [rows])[0])
+    torch.testing.assert_close(second, actor._packed_forward(actor.actor_module, [other_rows])[0])
+
+
+def test_black_image_rows_hold_the_normalized_black_pixel():
+    rows = {"model_inputs": {"pixel_values": torch.randn(5, 6 * 4), "image_grid_thw": torch.ones(1, 3)}, "keep_idx": 1}
+    black = DataParallelPPOActor._black_image_rows(rows, [-1.0, -2.0, 0.5])
+    pixel_values = black["model_inputs"]["pixel_values"]
+    assert pixel_values.shape == (5, 24)
+    assert (
+        pixel_values[:, :8].eq(-1.0).all()
+        and pixel_values[:, 8:16].eq(-2.0).all()
+        and pixel_values[:, 16:].eq(0.5).all()
+    )
+    assert black["model_inputs"]["image_grid_thw"] is rows["model_inputs"]["image_grid_thw"]
+    with pytest.raises(ValueError, match="channels"):
+        DataParallelPPOActor._black_image_rows(rows, [0.0] * 5)
+
+
+def test_text_prior_gate_takes_the_micro_batch_quantile():
+    rows = {"row_valid": torch.tensor([1.0, 1.0, 1.0, 1.0, 0.0])}
+    teacher = torch.zeros(5, 6)
+    teacher_text = torch.zeros(5, 6)
+    teacher[:, 0] = torch.tensor([0.0, 1.0, 2.0, 4.0, 9.0])  # the visual dependency grows along the rows
+    gate = DataParallelPPOActor._text_prior_gate({}, rows, teacher, teacher_text, {"text_prior_quantile": 0.5})
+    assert gate.tolist() == [0.0, 0.0, 1.0, 1.0, 0.0]  # above the median of the valid rows; the padding row is off
+    batch_gate = {
+        "distill_text_prior_gate": torch.tensor([[1.0, 0.0], [0.0, 1.0]]),
+        "response_mask": torch.tensor([[1, 1], [1, 0]]),
+    }
+    gate = DataParallelPPOActor._text_prior_gate(batch_gate, {"row_valid": torch.ones(3)}, None, None, {})
+    assert gate.tolist() == [1.0, 0.0, 0.0]
+
+
+@pytest.mark.parametrize(
+    "algorithm, message",
+    [
+        (dict(distill_target="contrast_sharpened"), "set both or neither"),
+        (dict(distill_contrast_view="black"), "set both or neither"),
+        (dict(distill_target="visual_gain", distill_contrast_view="black"), "distill_contrast_view=no_image"),
+        (
+            dict(distill_target="visual_gain", distill_contrast_view="no_image", distill_divergence="forward_kl"),
+            "reverse KL",
+        ),
+        (
+            dict(distill_target="contrast_sharpened", distill_contrast_view="black", vcsd_support_beta=1.0),
+            "vcsd_support_beta",
+        ),
+        (
+            dict(distill_target="contrast_sharpened", distill_contrast_view="black", distill_support="student_top_k"),
+            "distill_support=full",
+        ),
+        (dict(distill_target="visual_gain", distill_contrast_view="no_image", vgs_vds_scope="batch"), "vgs_vds_scope"),
+    ],
+)
+def test_invalid_contrast_configs_fail(algorithm, message):
+    with pytest.raises(ValueError, match=message):
+        _distill_config(**algorithm).deep_post_init()
+
+
+def test_contrast_configs_build_their_views():
+    config = _distill_config(distill_target="visual_gain", distill_contrast_view="no_image")
+    config.deep_post_init()
+    built = build_distillation_config(config.algorithm, VOCAB)
+    assert built["views"] == ["no_image"] and built["contrast_view"] == "no_image"
+    config.worker.actor.ulysses_size = 2
+    with pytest.raises(ValueError, match="ulysses_size=1"):
+        config.deep_post_init()
+
+    config = _distill_config(distill_target="contrast_sharpened", distill_contrast_view="black")
+    config.worker.actor.ulysses_size = 2  # the black view keeps the token ids, so Ulysses slices still line up
+    config.deep_post_init()
+    built = build_distillation_config(config.algorithm, VOCAB, end_token_ids=(5, 9), black_pixel_values=[-1.0] * 3)
+    assert built["views"] == [] and built["contrast_keep_ids"] == [5, 9]
+    with pytest.raises(ValueError, match="normalization"):
+        build_distillation_config(config.algorithm, VOCAB)
+
+
+def test_black_pixel_values_follow_the_processor_normalization():
+    from verl.trainer.distillation import black_pixel_values
+
+    processor = SimpleNamespace(
+        image_processor=SimpleNamespace(do_normalize=True, image_mean=[0.5, 0.25, 0.0], image_std=[0.5, 0.5, 2.0])
+    )
+    assert black_pixel_values(processor) == [-1.0, -0.5, 0.0]

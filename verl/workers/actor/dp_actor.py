@@ -758,6 +758,79 @@ class DataParallelPPOActor(BasePPOActor):
             raise RuntimeError(f"the response rows of the {name!r} view differ from those of the student's input.")
         return view_rows
 
+    def _packed_forward(self, module: nn.Module, views: list[dict[str, Any]]) -> list[torch.Tensor]:
+        """Logits of the response rows of one or more views of the same micro-batch, from a single forward: the
+        padding-free sequences of the views are concatenated (positions restart at every sample, so attention
+        stays within samples) and their images follow in the same order."""
+        if len(views) == 1:
+            return [module(**views[0]["model_inputs"], logits_to_keep=views[0]["keep_idx"]).logits.squeeze(0)]
+        if self.config.ulysses_size > 1:
+            raise ValueError("forwarding several distillation views together requires worker.actor.ulysses_size=1.")
+
+        inputs = [view["model_inputs"] for view in views]
+        packed = {
+            "input_ids": torch.cat([item["input_ids"] for item in inputs], dim=-1),
+            "attention_mask": None,
+            "position_ids": torch.cat([item["position_ids"] for item in inputs], dim=-1),
+            "use_cache": False,
+        }
+        for key in sorted({key for item in inputs for key in item} - set(packed)):
+            values = [item[key] for item in inputs if item.get(key) is not None]
+            packed[key] = torch.cat(values, dim=0)
+
+        keep, offset = [], 0
+        for view, item in zip(views, inputs):
+            keep.append(view["keep_idx"] + offset)
+            offset += item["input_ids"].size(-1)
+        logits = module(**packed, logits_to_keep=torch.cat(keep)).logits.squeeze(0)
+        return list(logits.split([indices.numel() for indices in keep], dim=0))
+
+    @staticmethod
+    def _black_image_rows(rows: dict[str, Any], black_pixel_values: list[float]) -> dict[str, Any]:
+        """The same rows with every image replaced by a black image of the same size (VCSD's control view): the
+        token ids and grids are unchanged, and the processor maps black (0) to (0 - mean) / std per channel."""
+        model_inputs = dict(rows["model_inputs"])
+        if model_inputs.get("pixel_values_videos") is not None:
+            raise ValueError("the black-image contrast view supports images, not videos.")
+        pixel_values = model_inputs.get("pixel_values")
+        if pixel_values is None:
+            raise ValueError("the black-image contrast view needs images in every sample.")
+        channels = len(black_pixel_values)
+        if pixel_values.size(-1) % channels != 0:
+            raise ValueError(
+                f"pixel_values rows of size {pixel_values.size(-1)} do not split into {channels} channels."
+            )
+        # a row of pixel_values is a (channel, temporal, height, width) patch flattened channel-first
+        black_row = torch.tensor(black_pixel_values, dtype=pixel_values.dtype, device=pixel_values.device)
+        black_row = black_row.repeat_interleave(pixel_values.size(-1) // channels)
+        model_inputs["pixel_values"] = black_row.expand_as(pixel_values).contiguous()
+        return {**rows, "model_inputs": model_inputs}
+
+    @staticmethod
+    def _text_prior_gate(
+        micro_batch: dict[str, Any],
+        rows: dict[str, Any],
+        teacher_logits: torch.Tensor,
+        teacher_text_logits: torch.Tensor,
+        distill_config: dict[str, Any],
+    ) -> torch.Tensor:
+        """0/1 gate of VGS's text-prior term per row: the visual dependency score KL(q || q_text) of the teacher
+        (the full-vocabulary KL sensitivity of the visual-sensitivity module) is above its `text_prior_quantile` over
+        the response rows of this micro-batch, or the gate the driver computed over the whole step
+        (`distill_text_prior_gate`)."""
+        valid = rows["row_valid"] > 0
+        if "distill_text_prior_gate" in micro_batch:
+            gate = micro_batch["distill_text_prior_gate"][micro_batch["response_mask"].bool()].float()
+            return gate if valid.any() else torch.zeros_like(rows["row_valid"])
+        with torch.no_grad():
+            scores = compute_full_vocab_visual_sensitivity_components(
+                logits=teacher_logits, corrupted_logits=teacher_text_logits, component_names={"kl"}
+            )["kl"]
+        if not valid.any():
+            return torch.zeros_like(scores)
+        threshold = torch.quantile(scores[valid], float(distill_config["text_prior_quantile"]))
+        return ((scores > threshold) & valid).float()
+
     def _rows_to_response(self, values: torch.Tensor, rows: dict[str, Any], response_length: int) -> torch.Tensor:
         """Scatter per-row values (n_rows, ...) back to (bs, response_length, ...) along the path of the log-probs
         of `_forward_micro_batch`; the placeholder row of an empty rank contributes zeros."""
@@ -797,14 +870,35 @@ class DataParallelPPOActor(BasePPOActor):
         spec = DistillationSpec.from_config(distill_config)
 
         rows = self._prepare_response_rows(micro_batch, response_mask, response_length)
-        student_logits = self.actor_module(**rows["model_inputs"], logits_to_keep=rows["keep_idx"]).logits.squeeze(0)
         teacher_rows = rows
         if distill_config.get("teacher_view", "original") != "original":
             teacher_rows = self._prepare_view_rows(micro_batch, distill_config["teacher_view"], rows, response_length)
+
+        # the contrast view of contrast_sharpened (teacher) and visual_gain (teacher and student)
+        contrast_view = distill_config.get("contrast_view", "none")
+        contrast_rows = None
+        if contrast_view == "black":
+            contrast_rows = self._black_image_rows(teacher_rows, distill_config["black_pixel_values"])
+        elif contrast_view != "none":
+            contrast_rows = self._prepare_view_rows(micro_batch, contrast_view, rows, response_length)
+
+        if spec.target == "visual_gain":
+            student_logits, student_contrast_logits = self._packed_forward(self.actor_module, [rows, contrast_rows])
+            if spec.text_prior_coef == 0.0:
+                student_contrast_logits = student_contrast_logits.detach()
+        else:
+            (student_logits,) = self._packed_forward(self.actor_module, [rows])
+            student_contrast_logits = None
         with torch.no_grad():
-            teacher_logits = self.teacher_module(
-                **teacher_rows["model_inputs"], logits_to_keep=teacher_rows["keep_idx"]
-            ).logits.squeeze(0)
+            teacher_views = [teacher_rows] if contrast_rows is None else [teacher_rows, contrast_rows]
+            teacher_logits, *teacher_contrast = self._packed_forward(self.teacher_module, teacher_views)
+        teacher_contrast_logits = teacher_contrast[0] if teacher_contrast else None
+
+        row_gate = None
+        if spec.target == "visual_gain":
+            row_gate = self._text_prior_gate(
+                micro_batch, rows, teacher_logits, teacher_contrast_logits, distill_config
+            )
 
         loss, log_probs, stats = chunked_distillation(
             student_logits,
@@ -812,8 +906,11 @@ class DataParallelPPOActor(BasePPOActor):
             teacher_logits,
             spec,
             chunk_size=int(distill_config["chunk_size"]),
+            teacher_contrast_logits=teacher_contrast_logits,
+            student_contrast_logits=student_contrast_logits,
+            row_gate=row_gate,
         )
-        del student_logits, teacher_logits
+        del student_logits, teacher_logits, student_contrast_logits, teacher_contrast_logits
         log_probs = self._rows_to_response(log_probs, rows, response_length)
         loss = self._rows_to_response(loss, rows, response_length)
         stats = self._rows_to_response(stats, rows, response_length)
@@ -1128,6 +1225,7 @@ class DataParallelPPOActor(BasePPOActor):
             "batch_entropy_mask",
             "batch_perception_mask",
             "distill_token_weights",
+            "distill_text_prior_gate",
         ]:
             if optional_key in data.batch.keys():
                 select_keys.append(optional_key)

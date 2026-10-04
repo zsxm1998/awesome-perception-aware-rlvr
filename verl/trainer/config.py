@@ -132,7 +132,33 @@ class AlgorithmConfig:
     """where `distill_temperature` applies: `all` (the target's and the student's distributions, and the T^2 factor)
     or `loss_scale_only` (only the T^2 factor; the distributions stay at T = 1)"""
     distill_target: str = "teacher"
-    """the target distribution: `teacher` (the teacher's next-token distribution)"""
+    """the target distribution: `teacher` (the teacher's next-token distribution), `contrast_sharpened` (VCSD: the
+    teacher's distribution sharpened by its contrast with `distill_contrast_view`, see `vcsd_*`) or `visual_gain`
+    (VGS: the teacher's distribution plus a steered target and a gated text-prior term, see `vgs_*`)"""
+    distill_contrast_view: str = "none"
+    """the second input of `contrast_sharpened` and `visual_gain`: `black` (every image replaced by a black image of
+    the same size, VCSD) or `no_image` (the prompt without its images, VGS; the student also reads it)"""
+    vcsd_alpha: float = 1.0
+    """VCSD: weight alpha of the contrast log q - log q_ctrl in the target (Eq. 8)"""
+    vcsd_support_beta: float = 0.1
+    """VCSD: the target keeps the ids with q(v) >= beta * max q (Eq. 7); 0 keeps every id"""
+    vcsd_anchor_coef: float = 1.0
+    """VCSD: weight of log q in the target score (lambda of Eq. 17; 1 in the main method)"""
+    vcsd_keep_token_ids: Any = "auto"
+    """VCSD: ids whose score is not contrasted (Eq. 8: the termination tokens); `auto` takes the end-of-sequence
+    ids of the model's generation config (Qwen3-VL: 151645, 151643), or a list of ids"""
+    vgs_steering_coef: float = 2.0
+    """VGS: weight gamma of KL(p || q*) with q* proportional to p_text * q / q_text (Eq. 13)"""
+    vgs_text_prior_coef: float = 0.01
+    """VGS: weight lambda of the text-prior term KL(p_text || q_text) on the gated tokens (Eq. 16)"""
+    vgs_vds_quantile: float = 0.7
+    """VGS: the text-prior term applies to tokens whose teacher visual dependency KL(q || q_text) is above this
+    quantile (the top 30%)"""
+    vgs_vds_scope: str = "micro_batch"
+    """VGS: where the quantile is taken: `micro_batch` (each update micro-batch, as a per-batch trainer would) or
+    `global` (all response tokens of the step, from an extra teacher pass before the update)"""
+    vgs_loss_scale: float = 1.0
+    """VGS: constant eta multiplying the whole loss (0.41 for a 2B and 0.36 for a 4B student with gamma = 2)"""
     distill_weighting: str = "none"
     """per-token weights of the distillation loss: `none`, or `va_opd` (VA-OPD: the teacher scores the original and
     the `corrupt_image` views, `visual_sensitivity_reference=teacher`; responses are weighted by a softmax of the
@@ -589,7 +615,36 @@ class AlgorithmConfig:
             if self.distill_temperature <= 0.0:
                 raise ValueError(f"distill_temperature must be positive, but got {self.distill_temperature}.")
             _validate_choice("distill_temperature_scope", self.distill_temperature_scope, {"all", "loss_scale_only"})
-            _validate_choice("distill_target", self.distill_target, {"teacher"})
+            _validate_choice("distill_target", self.distill_target, {"teacher", "contrast_sharpened", "visual_gain"})
+            _validate_choice("distill_contrast_view", self.distill_contrast_view, {"none", "black", "no_image"})
+            uses_contrast = self.distill_target in ("contrast_sharpened", "visual_gain")
+            if uses_contrast != (self.distill_contrast_view != "none"):
+                raise ValueError(
+                    "distill_contrast_view is the second input of distill_target=contrast_sharpened|visual_gain: set "
+                    "both or neither."
+                )
+            if self.distill_target != "teacher" and self.distill_support != "full":
+                raise ValueError(f"distill_target={self.distill_target} needs distill_support=full.")
+            if self.distill_target == "contrast_sharpened":
+                if not 0.0 <= self.vcsd_support_beta < 1.0 or self.vcsd_alpha < 0.0 or self.vcsd_anchor_coef < 0.0:
+                    raise ValueError("vcsd_support_beta must be in [0, 1), vcsd_alpha and vcsd_anchor_coef >= 0.")
+                if self.vcsd_keep_token_ids != "auto" and not (
+                    isinstance(self.vcsd_keep_token_ids, (list, tuple))
+                    and all(isinstance(index, int) and index >= 0 for index in self.vcsd_keep_token_ids)
+                ):
+                    raise ValueError("vcsd_keep_token_ids must be `auto` or a list of token ids.")
+            if self.distill_target == "visual_gain":
+                if self.distill_contrast_view != "no_image":
+                    raise ValueError(
+                        "distill_target=visual_gain contrasts with the text-only input: distill_contrast_view=no_image."
+                    )
+                if self.distill_divergence != "reverse_kl" or self.distill_temperature != 1.0:
+                    raise ValueError("distill_target=visual_gain uses reverse KL at temperature 1 (Eq. 3, 11, 16).")
+                if self.vgs_steering_coef < 0.0 or self.vgs_text_prior_coef < 0.0 or self.vgs_loss_scale <= 0.0:
+                    raise ValueError("vgs_steering_coef and vgs_text_prior_coef must be >= 0, vgs_loss_scale > 0.")
+                if not 0.0 < self.vgs_vds_quantile < 1.0:
+                    raise ValueError(f"vgs_vds_quantile must be in (0, 1), but got {self.vgs_vds_quantile}.")
+                _validate_choice("vgs_vds_scope", self.vgs_vds_scope, {"micro_batch", "global"})
             _validate_choice("teacher_view", self.teacher_view, {"original", "data_image"})
             _validate_choice("distill_weighting", self.distill_weighting, {"none", "va_opd"})
             if self.distill_weighting == "va_opd":
@@ -825,12 +880,18 @@ class PPOConfig:
             consumers.append("algorithm.distill_loss_coef > 0")
             if not self.worker.actor.padding_free:
                 raise ValueError("algorithm.distill_loss_coef > 0 requires worker.actor.padding_free=true.")
-            if self.algorithm.teacher_view == "data_image":
-                if not self.data.teacher_image_key:
-                    raise ValueError("algorithm.teacher_view=data_image requires data.teacher_image_key.")
-                if self.worker.actor.ulysses_size > 1:
-                    # the view has its own sequence lengths, so its Ulysses slices hold other response rows
-                    raise ValueError("algorithm.teacher_view=data_image requires worker.actor.ulysses_size=1.")
+            if self.algorithm.teacher_view == "data_image" and not self.data.teacher_image_key:
+                raise ValueError("algorithm.teacher_view=data_image requires data.teacher_image_key.")
+            rebuilt_views = self.algorithm.teacher_view != "original" or self.algorithm.distill_contrast_view not in (
+                "none",
+                "black",
+            )
+            if rebuilt_views and self.worker.actor.ulysses_size > 1:
+                # a rebuilt view has its own sequence lengths, so its Ulysses slices hold other response rows
+                raise ValueError(
+                    "algorithm.teacher_view=data_image and distill_contrast_view=no_image require "
+                    "worker.actor.ulysses_size=1."
+                )
         elif self.algorithm.teacher_view != "original" or self.algorithm.distill_weighting != "none":
             raise ValueError(
                 "algorithm.teacher_view and distill_weighting only apply to the distillation loss (distill_loss_coef > 0)."

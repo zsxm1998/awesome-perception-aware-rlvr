@@ -60,8 +60,10 @@ from .core_algos import (
     get_kl_controller,
 )
 from .distillation import (
+    black_pixel_values,
     build_distillation_config,
     compute_grouped_token_weights,
+    resolve_end_token_ids,
     token_weights_for_token_mean,
     view_keys,
 )
@@ -256,6 +258,17 @@ class RayPPOTrainer:
             self.use_critic = False
 
         self.use_teacher = config.worker.teacher.enabled
+        # the end-of-sequence ids (vcsd_keep_token_ids=auto) and the normalized black pixel (black contrast view)
+        self.end_token_ids: tuple[int, ...] = ()
+        self.black_pixel_values: Optional[list[float]] = None
+        if config.algorithm.distill_loss_coef > 0.0:
+            if (
+                config.algorithm.distill_target == "contrast_sharpened"
+                and config.algorithm.vcsd_keep_token_ids == "auto"
+            ):
+                self.end_token_ids = resolve_end_token_ids(config.worker.actor.model.model_path, tokenizer)
+            if config.algorithm.distill_contrast_view == "black":
+                self.black_pixel_values = black_pixel_values(processor)
         if config.worker.teacher.source == "model":
             check_teacher_compatibility(
                 config.worker.actor.model.model_path,
@@ -318,7 +331,9 @@ class RayPPOTrainer:
         self.perception_reasoning_corruption_builder: PerceptionReasoningCorruptionBuilder | None = None
         self.grounding_consistency_scorer: GroundingConsistencyRewardScorer | None = None
         distillation_views = config.algorithm.distill_loss_coef > 0.0 and (
-            config.algorithm.teacher_view != "original" or config.algorithm.distill_weighting != "none"
+            config.algorithm.teacher_view != "original"
+            or config.algorithm.distill_weighting != "none"
+            or config.algorithm.distill_contrast_view == "no_image"
         )
         if needs_media_corruption_builder(config.algorithm) or distillation_views:
             if processor is None:
@@ -562,6 +577,26 @@ class RayPPOTrainer:
             weights, response_mask, batch.non_tensor_batch["uid"]
         )
 
+    def _attach_text_prior_gate(self, batch: DataProto, quantile: float, metrics: dict[str, Any]) -> None:
+        """VGS with vgs_vds_scope=global: the teacher's visual dependency KL(q || q_text) of every response token of
+        the step; the text-prior term applies to the tokens above its quantile over the whole step."""
+        keys = view_keys("no_image")
+        text_only = DataProto.from_dict(
+            tensors={key: batch.batch[keys[key]] for key in ("input_ids", "attention_mask", "position_ids")},
+            non_tensors={
+                key: batch.non_tensor_batch[keys[key]] for key in ("multi_modal_data", "multi_modal_cache_id")
+            },
+        )
+        metric_batch = self._pack_visual_sensitivity_metric_batch(batch, text_only)
+        metric_batch.meta_info["visual_sensitivity_metric"] = "full_vocab_kl"
+        metric_batch.meta_info["visual_sensitivity_entropy_gate"] = "none"
+        scores = self.actor_rollout_ref_wg.compute_teacher_visual_sensitivity_scores(metric_batch)
+        scores = scores.batch["per_token_sensitivity_scores"]
+        mask = batch.batch["response_mask"].bool()
+        threshold = torch.quantile(scores[mask].float(), quantile)
+        batch.batch["distill_text_prior_gate"] = ((scores > threshold) & mask).float()
+        metrics["distill/text_prior_threshold"] = threshold.item()
+
     def _attach_distillation_views(self, batch: DataProto, views: list[str]) -> None:
         """Rebuilt inputs of the distillation (same responses, other prompts), as `distill_view_<name>_*` keys."""
         for name in views:
@@ -569,6 +604,8 @@ class RayPPOTrainer:
                 view = self.perception_reasoning_corruption_builder.build_replaced_image_batch(
                     batch, image_key=self.config.data.teacher_image_key
                 ).batch
+            elif name == "no_image":
+                view = self.perception_reasoning_corruption_builder.build_no_image_batch(batch, self.global_step).batch
             else:
                 raise ValueError(f"unknown distillation view {name!r}")
             keys = view_keys(name)
@@ -1513,11 +1550,22 @@ class RayPPOTrainer:
 
                 perception_reasoning_config = self._build_perception_reasoning_loss_config()
                 batch.meta_info["perception_reasoning_config"] = perception_reasoning_config
-                distillation_config = build_distillation_config(self.config.algorithm, len(self.tokenizer))
+                distillation_config = build_distillation_config(
+                    self.config.algorithm,
+                    len(self.tokenizer),
+                    end_token_ids=self.end_token_ids,
+                    black_pixel_values=self.black_pixel_values,
+                )
                 if distillation_config is not None:
                     batch.meta_info["distillation_config"] = distillation_config
                     with timer("distill_views", timing_raw):
                         self._attach_distillation_views(batch, distillation_config["views"])
+                    if (
+                        distillation_config["target"] == "visual_gain"
+                        and distillation_config["text_prior_scope"] == "global"
+                    ):
+                        with timer("teacher_aux", timing_raw):
+                            self._attach_text_prior_gate(batch, distillation_config["text_prior_quantile"], metrics)
                 self._maybe_attach_region_token_mask(batch)
                 if has_perception_reasoning(perception_reasoning_config):
                     shaping_context = build_sensitivity_advantage_shaping_context(perception_reasoning_config, batch)

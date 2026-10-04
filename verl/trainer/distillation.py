@@ -40,7 +40,7 @@ from torch.utils.checkpoint import checkpoint
 
 DIVERGENCES = ("reverse_kl", "forward_kl", "jsd")
 SUPPORTS = ("full", "student_top_k")
-TARGETS = ("teacher",)
+TARGETS = ("teacher", "contrast_sharpened", "visual_gain")
 TEMPERATURE_SCOPES = ("all", "loss_scale_only")
 
 
@@ -59,11 +59,25 @@ class DistillationSpec:
     temperature_scope: str = "all"
     """`all`: the distributions are softmax(z / T); `loss_scale_only`: they stay at T = 1 and only T^2 is applied"""
     target: str = "teacher"
+    # contrast_sharpened (VCSD): score = anchor * log q + alpha * (log q - log q_ctrl) on the support
+    # {v: q(v) >= beta * max q}, with the score of the keep ids (the end-of-sequence tokens) at anchor * log q
+    contrast_alpha: float = 1.0
+    contrast_support_beta: float = 0.1
+    contrast_anchor_coef: float = 1.0
+    contrast_keep_ids: tuple[int, ...] = ()
+    # visual_gain (VGS): loss = loss_scale * (KL(p || q) + steering_coef * KL(p || q*)
+    #                                         + text_prior_coef * gate * KL(p_text || q_text))
+    steering_coef: float = 2.0
+    text_prior_coef: float = 0.01
+    loss_scale: float = 1.0
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "DistillationSpec":
         names = cls.__dataclass_fields__.keys()
-        return cls(**{name: config[name] for name in names if name in config})
+        values = {name: config[name] for name in names if name in config}
+        if "contrast_keep_ids" in values:
+            values["contrast_keep_ids"] = tuple(int(index) for index in values["contrast_keep_ids"])
+        return cls(**values)
 
 
 def _divergence(student_log_probs: torch.Tensor, target_log_probs: torch.Tensor, divergence: str, beta: float):
@@ -98,21 +112,45 @@ def _support_log_probs(logits: torch.Tensor, spec: DistillationSpec, temperature
     return F.log_softmax(support, dim=-1)
 
 
-def _target_log_probs(
-    teacher_logits: torch.Tensor,
-    teacher_contrast_logits: Optional[torch.Tensor],
-    student_contrast_logits: Optional[torch.Tensor],
-    spec: DistillationSpec,
-    temperature: float,
+def _kl(log_p: torch.Tensor, log_q: torch.Tensor) -> torch.Tensor:
+    """Per-row KL(p || q) of two log-distributions; terms with p = 0 count 0 (finite log_q required)."""
+    return F.kl_div(log_q, log_p, reduction="none", log_target=True).sum(-1)
+
+
+def _contrast_sharpened_target(
+    teacher_log_probs: torch.Tensor, contrast_log_probs: torch.Tensor, spec: DistillationSpec
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-    """The target distribution over the support (no gradient) and per-row statistics of its construction."""
-    teacher_log_probs = _support_log_probs(teacher_logits, spec, temperature)
-    return teacher_log_probs, {}
+    """VCSD's target (Eq. 7-9, 17): q*(v) proportional to q(v)^anchor * (q(v) / q_ctrl(v))^alpha on the support
+    S = {v: q(v) >= beta * max q}; the end-of-sequence tokens keep anchor * log q (no contrast). Outside S the
+    log-probability is clamped to -1e4 (exp gives exactly 0, and the KL stays finite)."""
+    score = spec.contrast_anchor_coef * teacher_log_probs + spec.contrast_alpha * (
+        teacher_log_probs - contrast_log_probs
+    )
+    if spec.contrast_keep_ids:
+        keep_ids = torch.tensor(spec.contrast_keep_ids, device=score.device)
+        score[:, keep_ids] = spec.contrast_anchor_coef * teacher_log_probs[:, keep_ids]
+    support = torch.ones_like(score, dtype=torch.bool)
+    if spec.contrast_support_beta > 0.0:
+        threshold = teacher_log_probs.max(dim=-1, keepdim=True).values + math.log(spec.contrast_support_beta)
+        support = teacher_log_probs >= threshold
+        score = score.masked_fill(~support, float("-inf"))
+    target = F.log_softmax(score, dim=-1).clamp_min(-1e4)
+    stats = {
+        "target_kl_to_teacher": _kl(target, teacher_log_probs),
+        "target_argmax_change": (target.argmax(-1) != teacher_log_probs.argmax(-1)).float(),
+        "target_support_size": support.sum(-1).float(),
+    }
+    return target, stats
 
 
 def stat_names(spec: DistillationSpec) -> tuple[str, ...]:
     """Names of the per-row statistics `_distill_rows` returns for a spec, in order."""
-    return ("entropy", "student_oov_mass", "teacher_oov_mass")
+    names = ("entropy", "student_oov_mass", "teacher_oov_mass")
+    if spec.target == "contrast_sharpened":
+        names += ("target_kl_to_teacher", "target_argmax_change", "target_support_size")
+    elif spec.target == "visual_gain":
+        names += ("standard_kl", "visual_kl", "text_prior_kl", "text_prior_gate")
+    return names
 
 
 def _distill_rows(
@@ -121,6 +159,7 @@ def _distill_rows(
     teacher_logits: torch.Tensor,
     teacher_contrast_logits: Optional[torch.Tensor],
     student_contrast_logits: Optional[torch.Tensor],
+    row_gate: Optional[torch.Tensor],
     spec: DistillationSpec,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """One chunk of rows.
@@ -130,7 +169,8 @@ def _distill_rows(
         labels: (rows,), the sampled tokens
         teacher_logits: (rows, V_lm_head), without gradient
         teacher_contrast_logits / student_contrast_logits: the same rows under a contrast view, for targets that
-            need them (None otherwise)
+            need them (None otherwise); the student's may carry gradient (visual_gain's text-prior term)
+        row_gate: (rows,) 0/1 gate of visual_gain's text-prior term (None otherwise)
 
     Returns:
         loss: (rows,) with gradient, already multiplied by T^2 when T != 1
@@ -147,20 +187,47 @@ def _distill_rows(
         student_detached = student.detach()
         full_log_probs = student_detached - student_lse.detach().unsqueeze(-1)
         entropy = -(full_log_probs.exp() * full_log_probs).sum(-1)
-        student_oov = 1.0 - torch.exp(
-            torch.logsumexp(student_detached[:, : spec.vocab_size], dim=-1) - student_lse.detach()
-        )
+        # 1 - exp(lse_support - lse_all), clamped at 0 against rounding
+        student_oov = (
+            -torch.expm1(torch.logsumexp(student_detached[:, : spec.vocab_size], dim=-1) - student_lse.detach())
+        ).clamp(min=0.0)
         teacher = teacher_logits.float()
-        teacher_oov = 1.0 - torch.exp(
-            torch.logsumexp(teacher[:, : spec.vocab_size], dim=-1) - torch.logsumexp(teacher, dim=-1)
-        )
+        teacher_oov = (
+            -torch.expm1(torch.logsumexp(teacher[:, : spec.vocab_size], dim=-1) - torch.logsumexp(teacher, dim=-1))
+        ).clamp(min=0.0)
         del teacher, full_log_probs
 
     temperature = spec.temperature if spec.temperature_scope == "all" else 1.0
     with torch.no_grad():
-        target_log_probs, target_stats = _target_log_probs(
-            teacher_logits, teacher_contrast_logits, student_contrast_logits, spec, temperature
-        )
+        teacher_log_probs = _support_log_probs(teacher_logits, spec, temperature)
+        target_log_probs, target_stats = teacher_log_probs, {}
+        if spec.target == "contrast_sharpened":
+            contrast_log_probs = _support_log_probs(teacher_contrast_logits, spec, temperature)
+            target_log_probs, target_stats = _contrast_sharpened_target(teacher_log_probs, contrast_log_probs, spec)
+
+    if spec.target == "visual_gain":
+        # VGS (Eq. 10-17): q*(v) proportional to p_text(v) * q(v) / q_text(v) with the student's text-only
+        # distribution detached; the text-prior term pulls p_text toward q_text on the gated rows
+        student_log_probs = _support_log_probs(student_logits, spec, temperature)
+        student_text_log_probs = _support_log_probs(student_contrast_logits, spec, temperature)
+        with torch.no_grad():
+            teacher_text_log_probs = _support_log_probs(teacher_contrast_logits, spec, temperature)
+            steered_log_probs = F.log_softmax(
+                student_text_log_probs.detach() + teacher_log_probs - teacher_text_log_probs, dim=-1
+            )
+        standard = _kl(student_log_probs, teacher_log_probs)
+        visual = _kl(student_log_probs, steered_log_probs)
+        text_prior = _kl(student_text_log_probs, teacher_text_log_probs)
+        gate = row_gate.to(text_prior.dtype)
+        loss = spec.loss_scale * (standard + spec.steering_coef * visual + spec.text_prior_coef * gate * text_prior)
+        target_stats = {
+            "standard_kl": standard.detach(),
+            "visual_kl": visual.detach(),
+            "text_prior_kl": text_prior.detach(),
+            "text_prior_gate": gate,
+        }
+        stats = torch.stack([entropy, student_oov, teacher_oov, *target_stats.values()], dim=-1)
+        return loss, sampled_log_probs, stats
 
     if spec.support == "student_top_k":
         # Vision-OPD: the classes are the student's top-k ids plus one bucket for the rest; both sides are
@@ -193,6 +260,7 @@ def chunked_distillation(
     chunk_size: int = 256,
     teacher_contrast_logits: Optional[torch.Tensor] = None,
     student_contrast_logits: Optional[torch.Tensor] = None,
+    row_gate: Optional[torch.Tensor] = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Run `_distill_rows` over chunks of rows under non-reentrant activation checkpointing: the forward keeps
     only the chunk inputs, and the [chunk, V] fp32 intermediates are recomputed in the backward (TRL's scheme).
@@ -225,6 +293,7 @@ def chunked_distillation(
             teacher_logits[start:end],
             _slice(teacher_contrast_logits, start, end),
             _slice(student_contrast_logits, start, end),
+            _slice(row_gate, start, end),
             spec,
         )
         if use_checkpoint:
@@ -235,11 +304,52 @@ def chunked_distillation(
     return loss, sampled_log_probs, stats
 
 
-def build_distillation_config(algorithm: Any, vocab_size: int) -> Optional[dict[str, Any]]:
+def resolve_end_token_ids(model_path: str, tokenizer: Any) -> tuple[int, ...]:
+    """The end-of-sequence ids of a model: its generation config's `eos_token_id` (Qwen3-VL: <|im_end|> 151645 and
+    <|endoftext|> 151643; Qwen3.5: 248046 and 248044), or the tokenizer's when there is no generation config."""
+    from transformers import GenerationConfig
+
+    try:
+        eos = GenerationConfig.from_pretrained(model_path).eos_token_id
+    except OSError:
+        eos = None
+    if eos is None:
+        eos = tokenizer.eos_token_id
+    eos = [eos] if isinstance(eos, int) else list(eos or [])
+    return tuple(sorted({int(index) for index in eos}))
+
+
+def black_pixel_values(processor: Any) -> list[float]:
+    """The normalized value of a black pixel per channel, (0 - mean) / std, as the image processor maps it."""
+    image_processor = getattr(processor, "image_processor", None)
+    if image_processor is None or not getattr(image_processor, "do_normalize", False):
+        raise ValueError("the black-image contrast view needs an image processor that normalizes the pixels.")
+    mean, std = image_processor.image_mean, image_processor.image_std
+    return [(0.0 - float(m)) / float(s) for m, s in zip(mean, std)]
+
+
+def build_distillation_config(
+    algorithm: Any,
+    vocab_size: int,
+    end_token_ids: tuple[int, ...] = (),
+    black_pixel_values: Optional[list[float]] = None,
+) -> Optional[dict[str, Any]]:
     """The settings the actor needs for the distillation loss (`meta_info["distillation_config"]`), or None when
-    `algorithm.distill_loss_coef` is 0. `vocab_size` is the length of the student's tokenizer."""
+    `algorithm.distill_loss_coef` is 0. `vocab_size` is the length of the student's tokenizer; `end_token_ids`
+    (the end-of-sequence ids) resolve `vcsd_keep_token_ids=auto`; `black_pixel_values` are the processor's
+    normalized values of a black pixel per channel, for `distill_contrast_view=black`."""
     if algorithm.distill_loss_coef == 0.0:
         return None
+    views = []
+    if algorithm.teacher_view == "data_image":
+        views.append("data_image")
+    if algorithm.distill_contrast_view == "no_image":
+        views.append("no_image")
+    keep_ids = algorithm.vcsd_keep_token_ids
+    if keep_ids == "auto":
+        keep_ids = end_token_ids
+    if algorithm.distill_contrast_view == "black" and black_pixel_values is None:
+        raise ValueError("distill_contrast_view=black needs the image processor's normalization.")
     config = {
         "vocab_size": int(vocab_size),
         "divergence": algorithm.distill_divergence,
@@ -254,8 +364,19 @@ def build_distillation_config(algorithm: Any, vocab_size: int) -> Optional[dict[
         "chunk_size": int(algorithm.distill_chunk_size),
         "is_clip": algorithm.distill_is_clip,
         "teacher_view": algorithm.teacher_view,
+        "contrast_view": algorithm.distill_contrast_view,
         # rebuilt inputs the driver attaches to the batch as `distill_view_<name>_*` (see `view_keys`)
-        "views": ["data_image"] if algorithm.teacher_view == "data_image" else [],
+        "views": views,
+        "black_pixel_values": black_pixel_values,
+        "contrast_alpha": float(algorithm.vcsd_alpha),
+        "contrast_support_beta": float(algorithm.vcsd_support_beta),
+        "contrast_anchor_coef": float(algorithm.vcsd_anchor_coef),
+        "contrast_keep_ids": [int(index) for index in keep_ids],
+        "steering_coef": float(algorithm.vgs_steering_coef),
+        "text_prior_coef": float(algorithm.vgs_text_prior_coef),
+        "loss_scale": float(algorithm.vgs_loss_scale),
+        "text_prior_quantile": float(algorithm.vgs_vds_quantile),
+        "text_prior_scope": algorithm.vgs_vds_scope,
     }
     validate_distillation_spec(DistillationSpec.from_config(config))
     return config

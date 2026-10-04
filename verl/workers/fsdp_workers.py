@@ -1181,6 +1181,51 @@ class FSDPWorker(Worker):
         return output
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
+    def compute_teacher_visual_sensitivity_scores(self, data: DataProto):
+        """Full-vocabulary visual sensitivity of the teacher between the batch and its auxiliary view (VGS's visual
+        dependency score over a whole step), as `compute_visual_sensitivity_scores` does for the actor."""
+        assert self._has_teacher
+
+        self._cache.pop("teacher_visual_sensitivity:uid", None)
+        self._cache.pop("teacher_visual_sensitivity:multi_modal_inputs", None)
+        self._cache.pop("teacher_visual_sensitivity_aux:uid", None)
+        self._cache.pop("teacher_visual_sensitivity_aux:auxiliary_multi_modal_inputs", None)
+        self._process_multi_modal_inputs(
+            data,
+            source_key="multi_modal_data",
+            output_key="multi_modal_inputs",
+            cache_namespace="teacher_visual_sensitivity",
+            cache_key_field="uid",
+        )
+        self._process_multi_modal_inputs(
+            data,
+            source_key="auxiliary_multi_modal_data",
+            output_key="auxiliary_multi_modal_inputs",
+            cache_namespace="teacher_visual_sensitivity_aux",
+            cache_key_field="auxiliary_multi_modal_cache_id",
+        )
+        data = data.to(torch.cuda.current_device())
+
+        if self._use_teacher_param_offload:
+            load_fsdp_model(self.teacher_fsdp_module)
+
+        data.meta_info["temperature"] = self.config.rollout.temperature
+        with self.ulysses_sharding_manager:
+            data = self.ulysses_sharding_manager.preprocess_data(data)
+            scores, metrics = self.teacher_policy.compute_visual_sensitivity_scores(data=data)
+            output = DataProto.from_dict(tensors={"per_token_sensitivity_scores": scores})
+            output = self.ulysses_sharding_manager.postprocess_data(output)
+
+        if self.world_size > 1:
+            self.teacher_fsdp_module._handle.reshard(True)
+
+        if self._use_teacher_param_offload:
+            offload_fsdp_model(self.teacher_fsdp_module)
+
+        output = output.to("cpu")
+        return output
+
+    @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def compute_values(self, data: DataProto):
         assert self._has_critic
 
