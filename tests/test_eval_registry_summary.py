@@ -198,6 +198,29 @@ def test_summary_csv_records_the_run_options_that_were_set(tmp_path):
     assert (row["top_k"], row["answer_protocol"], row["grounding_instruction"]) == ("50", "pepo", "")
 
 
+def test_global_summary_records_the_run_options_and_keeps_older_rows(tmp_path):
+    """An existing global summary written before these columns gains them; its rows stay, with the columns empty."""
+    import csv
+
+    path = tmp_path / "summary.csv"
+    result = MetricResult("geo3k", "Reasoning", "mean_acc_at_k", 50.0, 50.0, 2)
+    update_global_summary_csv(path, [result], run_metadata={"run_id": "old", "model": "m"})
+    rows = list(csv.reader(path.open()))
+    from easyr1_eval.summary import OPTIONAL_RUN_FIELDNAMES
+
+    header = [name for name in rows[1] if name not in OPTIONAL_RUN_FIELDNAMES]  # as written by older code
+    keep = [rows[1].index(name) for name in header]
+    with path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        for row in rows:
+            writer.writerow([row[index] for index in keep])
+
+    update_global_summary_csv(path, [result], run_metadata={"run_id": "new", "model": "m", "top_k": 50})
+    by_tag = {row["tag"]: row for row in csv.DictReader(path.open().readlines()[1:])}
+    assert by_tag["new"]["top_k"] == "50" and by_tag["old"]["top_k"] == ""
+    assert by_tag["old"]["geo3k"] == by_tag["new"]["geo3k"]
+
+
 def test_summary_csv_preserves_flat_agent_configuration(tmp_path):
     path = tmp_path / "summary.csv"
     global_path = tmp_path / "global.csv"
