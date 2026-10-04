@@ -27,23 +27,20 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install tools
-        run: pip install ruff -c scripts/constraints.txt  # pinned: formatting rules change between releases
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
-      - name: Ruff (lint and format)
-        run: |
-          ruff check eval examples scripts tests verl setup.py
-          ruff format --check eval examples scripts tests verl setup.py
+      - name: Install pre-commit
+        run: pip install pre-commit -c scripts/constraints.txt
 
-      - name: License headers
-        run: python tests/check_license.py eval examples scripts tests verl setup.py
-
-      - name: Shell syntax
-        run: |
-          for f in scripts/*.sh examples/reproduction/*/*.sh examples/comparison/*/*.sh; do bash -n "$f"; done
-
-      - name: Paper list, badges and Markdown anchors
-        run: python scripts/check_docs.py
+      # the checks of .pre-commit-config.yaml, as contributors run them locally: ruff (lint and format, pinned),
+      # license headers, shell syntax, paper list and Markdown links, and the generic file checks
+      - name: pre-commit
+        env:
+          SKIP: no-commit-to-branch  # this workflow also runs on main
+        run: pre-commit run --all-files --show-diff-on-failure
 
   unit-tests:
     name: unit tests (CPU)
