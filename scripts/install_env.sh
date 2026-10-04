@@ -5,6 +5,7 @@
 #   bash scripts/install_env.sh
 #   ENV_NAME=my-env bash scripts/install_env.sh
 #   INSTALL_QWEN35_FASTPATH=1 bash scripts/install_env.sh   # also build Qwen3.5 kernels
+#   QWEN35_FASTPATH_ONLY=1 bash scripts/install_env.sh      # add them to an existing env
 #
 # By default this creates a CUDA 12.8 / vLLM 0.19 environment. Python packages are
 # pinned through scripts/constraints.txt to the versions the repository was tested
@@ -30,6 +31,10 @@ CUDA_LABEL="${CUDA_LABEL:-cuda-12.8.1}"
 VLLM_VERSION="${VLLM_VERSION:-0.19.0}"
 FLASH_ATTN_VERSION="${FLASH_ATTN_VERSION:-2.8.3}"
 INSTALL_QWEN35_FASTPATH="${INSTALL_QWEN35_FASTPATH:-0}"
+QWEN35_FASTPATH_ONLY="${QWEN35_FASTPATH_ONLY:-0}"
+if [[ "${QWEN35_FASTPATH_ONLY}" == "1" ]]; then
+    INSTALL_QWEN35_FASTPATH=1
+fi
 FLA_VERSION="${FLA_VERSION:-0.4.2}"
 CAUSAL_CONV1D_REF="${CAUSAL_CONV1D_REF:-v1.6.2.post1}"
 INSTALL_CONDA_CUDA="${INSTALL_CONDA_CUDA:-1}"
@@ -45,8 +50,8 @@ Awesome-Perception-Aware-RLVR environment installer.
 
 Usage:
   scripts/install_env.sh
-  ENV_NAME=easyr1-qwen35 scripts/install_env.sh
-  INSTALL_QWEN35_FASTPATH=0 scripts/install_env.sh
+  INSTALL_QWEN35_FASTPATH=1 scripts/install_env.sh
+  QWEN35_FASTPATH_ONLY=1 ENV_NAME=parlvr scripts/install_env.sh
   scripts/install_env.sh --help
 
 What it installs:
@@ -55,28 +60,32 @@ What it installs:
   - vLLM ${VLLM_VERSION} with the cu128 torch backend.
   - Runtime dependencies from requirements.txt, excluding vllm and flash-attn.
   - flash-attn ${FLASH_ATTN_VERSION}, with conda C++ runtime hooks if needed.
-  - Qwen3.5 fast-path dependencies by default:
+  - Qwen3.5 fast-path dependencies, only with INSTALL_QWEN35_FASTPATH=1 (off by
+    default; only Qwen3.5 models use them, other models do not need them):
       fla-core==${FLA_VERSION}
       flash-linear-attention==${FLA_VERSION}
       causal-conv1d built from ${CAUSAL_CONV1D_REF} source with --no-deps
   - EasyR1 in editable mode.
 
 Common examples:
-  # Default EasyR1 environment with Qwen3.5 fast path.
+  # Default environment, without the Qwen3.5 fast path.
   scripts/install_env.sh
 
-  # Separate environment for Qwen3.5 experiments.
-  ENV_NAME=easyr1-qwen35 scripts/install_env.sh
+  # Default environment plus the Qwen3.5 fast path.
+  INSTALL_QWEN35_FASTPATH=1 scripts/install_env.sh
 
-  # Base EasyR1 environment without Qwen3.5 fast-path packages.
-  INSTALL_QWEN35_FASTPATH=0 scripts/install_env.sh
+  # Add the Qwen3.5 fast path to an environment installed earlier, changing nothing
+  # else; skipped when it already works.
+  QWEN35_FASTPATH_ONLY=1 ENV_NAME=parlvr scripts/install_env.sh
 
   # Use a different causal-conv1d tag or branch.
-  CAUSAL_CONV1D_REF=v1.6.2.post1 ENV_NAME=easyr1-qwen35 scripts/install_env.sh
+  CAUSAL_CONV1D_REF=v1.6.2.post1 INSTALL_QWEN35_FASTPATH=1 scripts/install_env.sh
 
 Environment variables:
   ENV_NAME                  Conda env name. Default: ${ENV_NAME}
   INSTALL_QWEN35_FASTPATH   Install Qwen3.5 fast-path deps. Default: ${INSTALL_QWEN35_FASTPATH}
+  QWEN35_FASTPATH_ONLY      Only add the Qwen3.5 fast path to the existing env ENV_NAME
+                            (no other package is installed or upgraded). Default: ${QWEN35_FASTPATH_ONLY}
   FLA_VERSION               fla-core / flash-linear-attention version. Default: ${FLA_VERSION}
   CAUSAL_CONV1D_REF         causal-conv1d git tag or branch. Default: ${CAUSAL_CONV1D_REF}
   CUDA_TOOLKIT_VERSION      Conda CUDA toolkit version. Default: ${CUDA_TOOLKIT_VERSION}
@@ -149,6 +158,7 @@ echo "Requested Python version: ${PYTHON_VERSION}"
 echo "Install CUDA toolkit into conda env: ${INSTALL_CONDA_CUDA}"
 echo "C++ runtime channel: ${CPP_RUNTIME_CHANNEL}"
 echo "Install Qwen3.5 fast-path dependencies: ${INSTALL_QWEN35_FASTPATH}"
+echo "Only add the Qwen3.5 fast path to an existing env: ${QWEN35_FASTPATH_ONLY}"
 echo "FLA version for Qwen3.5 fast path: ${FLA_VERSION}"
 echo "causal-conv1d source ref: ${CAUSAL_CONV1D_REF}"
 echo "MAX_JOBS for source builds: ${MAX_JOBS}"
@@ -295,7 +305,7 @@ EOF
     return 1
 }
 
-flash_attn_import_needs_cpp_runtime_fix() {
+import_needs_cpp_runtime_fix() {
     local import_log="$1"
     grep -Eq 'CXXABI_|GLIBCXX_|libstdc\+\+\.so\.6|libgcc_s\.so\.1|version `[^`]+` not found' "${import_log}"
 }
@@ -307,7 +317,7 @@ verify_flash_attn_with_runtime_fix() {
         return 0
     fi
 
-    if flash_attn_import_needs_cpp_runtime_fix "${import_log}"; then
+    if import_needs_cpp_runtime_fix "${import_log}"; then
         echo "[WARN] flash-attn import failed with a C++ runtime error. Refreshing conda runtime and retrying..."
         ensure_conda_cpp_runtime
         if verify_flash_attn_import "${import_log}"; then
@@ -412,6 +422,113 @@ install_qwen35_fastpath() {
     )
 }
 
+# Imports the fast-path kernels as transformers does; succeeds only when Qwen3.5 can use them.
+verify_qwen35_fastpath_import() {
+    local import_log="${1:-${TEMP_DIR}/qwen35_fastpath_import.log}"
+
+    if python - <<'EOF' >"${import_log}" 2>&1
+import causal_conv1d
+import fla
+from transformers.models.qwen3_next import modeling_qwen3_next as qwen3_next
+
+if not qwen3_next.is_fast_path_available:
+    raise SystemExit("transformers does not see the Qwen3.5 fast path")
+print("Qwen3.5 fast path imported OK: fla", fla.__version__)
+EOF
+    then
+        cat "${import_log}"
+        return 0
+    fi
+
+    cat "${import_log}"
+    return 1
+}
+
+# causal-conv1d is built with the conda compiler, so like flash-attn it can need the conda C++ runtime
+# (and the activation hook that loads it) even when flash-attn itself did not.
+verify_qwen35_fastpath_with_runtime_fix() {
+    local import_log="${TEMP_DIR}/qwen35_fastpath_import.log"
+
+    if verify_qwen35_fastpath_import "${import_log}"; then
+        return 0
+    fi
+
+    if import_needs_cpp_runtime_fix "${import_log}"; then
+        echo "[WARN] The Qwen3.5 fast path failed to import with a C++ runtime error. Refreshing conda runtime and retrying..."
+        ensure_conda_cpp_runtime
+        if verify_qwen35_fastpath_import "${import_log}"; then
+            install_conda_runtime_hooks
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+pinned_package_versions() {
+    python -c "import importlib.metadata as m; print(' '.join(f'{p}=={m.version(p)}' for p in ('torch', 'transformers', 'triton')))"
+}
+
+# QWEN35_FASTPATH_ONLY=1: add the fast path to an environment installed earlier, changing nothing else.
+add_qwen35_fastpath_to_existing_env() {
+    echo "=== Adding the Qwen3.5 fast path to the existing conda environment ${ENV_NAME} ==="
+    if ! conda env list | awk 'NF > 0 && $1 !~ /^#/' | awk '{print $1}' | grep -Fxq "${ENV_NAME}"; then
+        echo "[ERROR] Conda environment ${ENV_NAME} does not exist. Create it with the fast path instead:"
+        echo "        ENV_NAME=${ENV_NAME} INSTALL_QWEN35_FASTPATH=1 bash scripts/install_env.sh"
+        exit 1
+    fi
+
+    CONDA_BASE="$(conda info --base)"
+    activate_conda_env "${ENV_NAME}"
+    echo "[OK] Active conda environment: ${CONDA_DEFAULT_ENV}"
+
+    local versions_before versions_after pinned_transformers
+    versions_before="$(pinned_package_versions)"
+    echo "[OK] Installed: ${versions_before}"
+    pinned_transformers="$(grep -E '^transformers==' "${REPO_ROOT}/scripts/constraints.txt" || true)"
+    if [[ -n "${pinned_transformers}" && " ${versions_before} " != *" ${pinned_transformers} "* ]]; then
+        echo "[WARN] This repository is tested with ${pinned_transformers}; fla ${FLA_VERSION} may not match other versions."
+    fi
+
+    if verify_qwen35_fastpath_with_runtime_fix; then
+        echo "[OK] The Qwen3.5 fast path already works in ${ENV_NAME}; nothing to install."
+    else
+        echo "Installing the build tools the source build needs (installed versions are kept)..."
+        python -m pip install uv ninja packaging
+        if ! command -v nvcc >/dev/null 2>&1; then
+            if [[ "${INSTALL_CONDA_CUDA}" == "1" ]]; then
+                echo "nvcc not found: installing CUDA toolkit ${CUDA_TOOLKIT_VERSION} into ${ENV_NAME}..."
+                run_conda_relaxed install -y -c "nvidia/label/${CUDA_LABEL}" "cuda-toolkit=${CUDA_TOOLKIT_VERSION}"
+            fi
+        fi
+        install_qwen35_fastpath
+        if ! verify_qwen35_fastpath_with_runtime_fix; then
+            echo "[ERROR] The Qwen3.5 fast path was installed but cannot be imported (see the log above)."
+            exit 1
+        fi
+        versions_after="$(pinned_package_versions)"
+        if [[ "${versions_after}" != "${versions_before}" ]]; then
+            echo "[ERROR] Installing the fast path changed core packages:"
+            echo "        before: ${versions_before}"
+            echo "        after:  ${versions_after}"
+            exit 1
+        fi
+    fi
+
+    echo ""
+    echo "Verifying installation..."
+    export INSTALL_QWEN35_FASTPATH
+    verify_installation
+
+    echo ""
+    echo "[OK] The Qwen3.5 fast path works in conda env: ${ENV_NAME}"
+    if [[ "${NEEDS_REACTIVATE_NOTICE}" == "1" ]]; then
+        echo ""
+        echo "[NOTE] This run installed runtime-library hooks for ${ENV_NAME}; shells that already had it"
+        echo "       active need: conda deactivate && conda activate ${ENV_NAME}"
+    fi
+}
+
 verify_installation() {
     local verify_script="${TEMP_DIR}/verify_easyr1.py"
 
@@ -500,6 +617,11 @@ if [[ "$(uname -s)" != "Linux" ]]; then
     exit 1
 fi
 
+if [[ "${QWEN35_FASTPATH_ONLY}" == "1" ]]; then
+    add_qwen35_fastpath_to_existing_env
+    exit 0
+fi
+
 echo "=== Environment Detection ==="
 
 echo "Step 1/8: Creating or reusing conda environment..."
@@ -563,6 +685,10 @@ echo ""
 echo "Step 7/8: Installing Qwen3.5 fast-path dependencies..."
 if [[ "${INSTALL_QWEN35_FASTPATH}" == "1" ]]; then
     install_qwen35_fastpath
+    if ! verify_qwen35_fastpath_with_runtime_fix; then
+        echo "[ERROR] The Qwen3.5 fast path was installed but cannot be imported (see the log above)."
+        exit 1
+    fi
 else
     echo "[WARN] Skipping Qwen3.5 fast-path dependencies because INSTALL_QWEN35_FASTPATH=${INSTALL_QWEN35_FASTPATH}"
 fi

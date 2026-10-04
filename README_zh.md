@@ -132,6 +132,7 @@ git clone https://github.com/zsxm1998/awesome-perception-aware-rlvr.git
 cd awesome-perception-aware-rlvr
 bash scripts/install_env.sh          # 创建 conda 环境 "parlvr"（torch 2.10、vLLM 0.19、flash-attn 2.8.3）
 conda activate parlvr
+QWEN35_FASTPATH_ONLY=1 bash scripts/install_env.sh   # 可选，仅 Qwen3.5 模型需要：补装其加速算子
 ```
 
 也提供了基于 `vllm/vllm-openai:v0.19.0` 的 [Dockerfile](Dockerfile)。

@@ -225,10 +225,10 @@ class Qwen3_5GatedDeltaNet(nn.Module):
 
         if not is_fast_path_available:
             logger.warning_once(
-                "The fast path is not available because one of the required libraries is not installed. Falling back "
-                "to torch implementation. To install follow "
-                "https://github.com/fla-org/flash-linear-attention#installation and "
-                "https://github.com/Dao-AILab/causal-conv1d"
+                "The Qwen3.5 fast path (flash-linear-attention and causal-conv1d) is not available, so the much "
+                "slower torch implementation is used. Add it to this environment with "
+                "`QWEN35_FASTPATH_ONLY=1 ENV_NAME=<env> bash scripts/install_env.sh`, and start training from a shell "
+                "where the environment was activated with `conda activate <env>`."
             )
 
     def forward(
