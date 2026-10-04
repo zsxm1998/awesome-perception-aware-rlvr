@@ -8,6 +8,10 @@ under **one** recipe: same model, same data, same GRPO hyper-parameters and the 
 Each script only sets `ALGO_ARGS`, the switches that define the method; everything else comes from
 [qwen3_vl_4b/common.sh](qwen3_vl_4b/common.sh).
 
+On-policy distillation (VA-OPD, VGS, VCSD and the two base OPD objectives) is compared separately, on a 2B
+student with an 8B teacher: see [opd_qwen3_vl_2b/README.md](opd_qwen3_vl_2b/README.md). Its OPD-from-sampled-tokens
+run on the 4B student, `qwen3_vl_4b/opd_sampled.sh`, appears in the table below.
+
 ## Shared setting
 
 | | `examples/comparison/qwen3_vl_4b/common.sh` |
@@ -133,6 +137,11 @@ the best validation reward.
 | VEPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | GRIT | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | CGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| OPD from sampled tokens, 8B teacher (`opd_sampled.sh`) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+
+The last row learns from Qwen3-VL-8B-Instruct on the OPD recipe of
+[opd_qwen3_vl_2b/common.sh](opd_qwen3_vl_2b/common.sh) (one update per step, no KL or entropy term), so it is
+not an RL method under the shared setting; it links this table to the OPD comparison.
 
 Results will be added after the runs finish.
 
