@@ -53,6 +53,8 @@ from transformers.models.qwen3_vl.modeling_qwen3_vl import (
     Qwen3VLVisionModel,
 )
 
+from ...utils.ulysses import get_ulysses_sequence_parallel_world_size
+
 
 try:
     from transformers import AutoModelForImageTextToText
@@ -237,7 +239,16 @@ class Qwen3_5GatedDeltaNet(nn.Module):
         cache_params: Optional[Qwen3NextDynamicCache] = None,
         cache_position: Optional[torch.LongTensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
+        segments: Optional[tuple[tuple[int, int], ...]] = None,
     ):
+        if segments is not None and len(segments) > 1:
+            # padding-free packed samples (batch size 1): the recurrence must restart at every sample, so each
+            # sample runs separately here, inside the layer, whose parameters are already gathered
+            if cache_params is not None or attention_mask is not None:
+                raise ValueError("packed Qwen3.5 linear attention takes no cache and no attention mask.")
+            outputs = [self.forward(hidden_states[:, start:end]) for start, end in segments]
+            return torch.cat(outputs, dim=1)
+
         hidden_states = apply_mask_to_padding_states(hidden_states, attention_mask)
         batch_size, seq_len, _ = hidden_states.shape
 
@@ -350,6 +361,7 @@ class Qwen3_5DecoderLayer(GradientCheckpointingLayer):
         position_ids: Optional[torch.LongTensor] = None,
         past_key_values: Optional[Cache] = None,
         cache_position: Optional[torch.LongTensor] = None,
+        linear_attn_segments: Optional[tuple[tuple[int, int], ...]] = None,
         **kwargs,
     ) -> torch.FloatTensor:
         residual = hidden_states
@@ -361,6 +373,7 @@ class Qwen3_5DecoderLayer(GradientCheckpointingLayer):
                 cache_params=past_key_values,
                 cache_position=cache_position,
                 attention_mask=attention_mask,
+                segments=linear_attn_segments,
             )
         else:
             hidden_states, _ = self.self_attn(
@@ -776,34 +789,15 @@ class Qwen3_5Model(PreTrainedModel):
             return bool((torch.diff(position_ids[0, 0]) < 0).any())
         return False
 
-    def _forward_packed_segments(
-        self,
-        inputs_embeds: torch.FloatTensor,
-        position_ids: torch.LongTensor,
-        **kwargs,
-    ) -> MoeModelOutputWithPast:
+    @staticmethod
+    def _packed_segments(position_ids: torch.LongTensor) -> tuple[tuple[int, int], ...]:
+        """(start, end) of every sample in a padding-free packed sequence, where the text position restarts at 0."""
         token_positions = position_ids[0] if position_ids.ndim == 2 else position_ids[0, 0]
         starts = (token_positions == 0).nonzero(as_tuple=False).flatten()
         if starts.numel() == 0 or starts[0].item() != 0:
             starts = torch.cat([starts.new_zeros(1), starts])
         ends = torch.cat([starts[1:], starts.new_tensor([token_positions.numel()])])
-
-        hidden_states = []
-        for start, end in zip(starts.tolist(), ends.tolist()):
-            segment_position_ids = (
-                position_ids[:, start:end] if position_ids.ndim == 2 else position_ids[:, :, start:end]
-            )
-            segment_outputs = self.language_model(
-                input_ids=None,
-                attention_mask=None,
-                position_ids=segment_position_ids,
-                inputs_embeds=inputs_embeds[:, start:end],
-                use_cache=False,
-                **kwargs,
-            )
-            hidden_states.append(segment_outputs.last_hidden_state)
-
-        return MoeModelOutputWithPast(last_hidden_state=torch.cat(hidden_states, dim=1), past_key_values=None)
+        return tuple(zip(starts.tolist(), ends.tolist()))
 
     def compute_3d_position_ids(
         self,
@@ -895,6 +889,10 @@ class Qwen3_5Model(PreTrainedModel):
                 mm_token_type_ids=mm_token_type_ids,
             )
 
+        if get_ulysses_sequence_parallel_world_size() > 1:
+            # the linear-attention recurrence would only see this rank's slice of each sequence
+            raise ValueError("Qwen3.5 does not support Ulysses sequence parallelism (worker.actor.ulysses_size=1).")
+
         if (
             attention_mask is None
             and self._is_packed_position_ids(position_ids)
@@ -902,22 +900,23 @@ class Qwen3_5Model(PreTrainedModel):
             and cache_position is None
             and not use_cache
         ):
-            outputs = self._forward_packed_segments(
-                inputs_embeds=inputs_embeds,
-                position_ids=position_ids,
-                **kwargs,
-            )
-        else:
-            outputs = self.language_model(
-                input_ids=None,
-                attention_mask=attention_mask,
-                position_ids=position_ids,
-                past_key_values=past_key_values,
-                inputs_embeds=inputs_embeds,
-                cache_position=cache_position,
-                use_cache=use_cache,
-                **kwargs,
-            )
+            # Padding-free packed samples run through the language model in one call, so that every rank calls each
+            # FSDP unit once whatever its number of samples: flash attention keeps the full-attention layers within
+            # each sample (from the restarting position ids) and the linear-attention layers run sample by sample.
+            if self.language_model.config._attn_implementation != "flash_attention_2":
+                raise ValueError("packed Qwen3.5 inputs require attn_implementation='flash_attention_2'.")
+            kwargs["linear_attn_segments"] = self._packed_segments(position_ids)
+
+        outputs = self.language_model(
+            input_ids=None,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            cache_position=cache_position,
+            use_cache=use_cache,
+            **kwargs,
+        )
 
         return Qwen3VLModelOutputWithPast(
             last_hidden_state=outputs.last_hidden_state,
