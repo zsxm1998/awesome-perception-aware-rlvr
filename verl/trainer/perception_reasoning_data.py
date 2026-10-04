@@ -866,6 +866,88 @@ class PerceptionReasoningCorruptionBuilder:
             total_training_steps=total_training_steps,
         )
 
+    def build_replaced_image_batch(self, batch: DataProto, image_key: str) -> AuxiliaryBatchBuildResult:
+        """The same prompts and responses with each sample's images replaced by those of the column `image_key`
+        (Vision-OPD: the teacher's crop of the student image). The prompt text is unchanged; its token ids are
+        rebuilt because the number of image tokens follows the image size, and all prompts are left-padded to the
+        widest one, so the view can be wider than the batch. The responses stay right-aligned and identical."""
+        if "raw_prompt" not in batch.non_tensor_batch:
+            raise KeyError("Rebuilding prompts with replaced images requires 'raw_prompt' in non_tensor_batch.")
+        if image_key not in batch.non_tensor_batch:
+            raise KeyError(f"the data has no column {image_key!r} (data.teacher_image_key).")
+        if self.processor is None:
+            raise ValueError("Rebuilding prompts with replaced images requires a multimodal processor.")
+
+        responses = batch.batch["responses"]
+        response_mask = batch.batch["response_mask"]
+        uids = batch.non_tensor_batch.get("uid")
+        prompts_by_uid: dict[Any, tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[ProcessedImageInput]]] = {}
+        prompt_list = []
+        for sample_idx in range(len(batch)):
+            uid = uids[sample_idx] if uids is not None else sample_idx
+            if uid not in prompts_by_uid:
+                raw_prompt = batch.non_tensor_batch["raw_prompt"][sample_idx]
+                images = batch.non_tensor_batch[image_key][sample_idx]
+                # a column of equal-length lists is collated into a 2-D object array
+                images = [] if images is None else list(images)
+                placeholders = sum(
+                    1
+                    for message in raw_prompt
+                    if isinstance(message.get("content"), list)
+                    for item in message["content"]
+                    if item.get("type") == "image"
+                )
+                if len(images) != placeholders:
+                    raise ValueError(
+                        f"sample {sample_idx} has {placeholders} image placeholders but {len(images)} images in "
+                        f"{image_key!r}."
+                    )
+                loaded = [self._load_image(image) for image in images]
+                prompt_text = self._apply_chat_template(raw_prompt)
+                model_inputs = self.processor(loaded, [prompt_text], add_special_tokens=False, return_tensors="pt")
+                prompts_by_uid[uid] = (
+                    model_inputs["input_ids"][0],
+                    model_inputs["attention_mask"][0],
+                    model_inputs.get("image_grid_thw"),
+                    self._mark_processed_images(loaded),
+                )
+            prompt_list.append(prompts_by_uid[uid])
+
+        prompt_width = max(prompt_ids.size(0) for prompt_ids, *_ in prompt_list)
+        input_ids_list, attention_mask_list, position_ids_list, multi_modal_data_list = [], [], [], []
+        for sample_idx, (prompt_ids, prompt_attention, image_grid_thw, images) in enumerate(prompt_list):
+            prompt_ids, prompt_attention = self._left_pad_prompt(prompt_ids, prompt_attention, prompt_width)
+            input_ids = torch.cat([prompt_ids, responses[sample_idx]], dim=-1)
+            attention_mask = torch.cat(
+                [prompt_attention, response_mask[sample_idx].to(prompt_attention.dtype)], dim=-1
+            )
+            position_ids = self._compute_position_ids(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                image_grid_thw=image_grid_thw,
+                video_grid_thw=None,
+                second_per_grid_ts=None,
+            )
+            input_ids_list.append(input_ids)
+            attention_mask_list.append(attention_mask)
+            position_ids_list.append(position_ids)
+            multi_modal_data_list.append({"images": images})
+
+        view_batch = DataProto.from_dict(
+            tensors={
+                "input_ids": torch.stack(input_ids_list, dim=0),
+                "attention_mask": torch.stack(attention_mask_list, dim=0),
+                "position_ids": torch.stack(position_ids_list, dim=0),
+            },
+            non_tensors={
+                "multi_modal_data": np.array(multi_modal_data_list, dtype=object),
+                "multi_modal_cache_id": np.array(
+                    [str(uids[i]) if uids is not None else f"prompt:{i}" for i in range(len(batch))], dtype=object
+                ),
+            },
+        )
+        return AuxiliaryBatchBuildResult(batch=view_batch, stats={})
+
     def _build_auxiliary_batch(
         self,
         batch: DataProto,

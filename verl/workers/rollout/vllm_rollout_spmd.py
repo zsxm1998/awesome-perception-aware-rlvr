@@ -57,6 +57,17 @@ def _get_logit_bias(processor: Optional[ProcessorMixin]) -> Optional[dict[int, f
         return None
 
 
+def _get_ids_beyond_tokenizer_bias(
+    model_path: str, tokenizer: PreTrainedTokenizer, trust_remote_code: bool
+) -> dict[int, float]:
+    """-100 on the ids in [len(tokenizer), vocab_size): padding rows of the LM head, which have non-zero logits
+    in Qwen models but no token; on-policy distillation never samples them (as verl's distillation rollout)."""
+    register_qwen3_5()
+    model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code)
+    vocab_size = model_config.get_text_config().vocab_size
+    return dict.fromkeys(range(len(tokenizer), vocab_size), -100)
+
+
 def _process_multi_modal_data(
     multi_modal_data: dict[str, Any],
     min_pixels: int,
@@ -214,10 +225,17 @@ class vLLMRollout(BaseRollout):
         # Offload vllm model to reduce peak memory usage
         self.inference_engine.sleep(level=1)
 
+        logit_bias = _get_logit_bias(processor)
+        if config.ban_ids_beyond_tokenizer:
+            logit_bias = {
+                **(logit_bias or {}),
+                **_get_ids_beyond_tokenizer_bias(model_path, tokenizer, config.trust_remote_code),
+            }
+
         sampling_kwargs = {
             "max_tokens": config.response_length,
             "detokenize": False,
-            "logit_bias": _get_logit_bias(processor),
+            "logit_bias": logit_bias,
         }
         default_sampling_params = SamplingParams()
         for key in config.to_dict().keys():

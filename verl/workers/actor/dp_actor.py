@@ -31,6 +31,14 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from ...models.transformers.flash_attention_utils import use_model_level_visual_corruption
 from ...protocol import DataProto, collate_multi_modal_inputs
 from ...trainer.core_algos import average_loss, compute_kl, compute_policy_loss
+from ...trainer.distillation import (
+    DistillationSpec,
+    chunked_distillation,
+    importance_weights,
+    masked_stat_means,
+    stat_names,
+    view_keys,
+)
 from ...trainer.perception_reasoning_loss import (
     compute_perception_reasoning_policy_loss,
     current_policy_entropy_requires_grad,
@@ -81,6 +89,8 @@ class DataParallelPPOActor(BasePPOActor):
         self.world_size = int(os.getenv("WORLD_SIZE", "1"))
         self.actor_module = actor_module
         self.actor_optimizer = actor_optimizer
+        # frozen teacher of on-policy distillation, set by the worker when worker.teacher is configured
+        self.teacher_module: Optional[nn.Module] = None
         if config.use_torch_compile:
             self.log_probs_from_logits = torch.compile(VF.log_probs_from_logits, dynamic=True)
         else:
@@ -636,6 +646,179 @@ class DataParallelPPOActor(BasePPOActor):
             entropy_gate=entropy_gate,
         )
 
+    def _prepare_response_rows(
+        self, inputs: dict[str, Any], response_mask: torch.Tensor, response_length: int
+    ) -> dict[str, Any]:
+        """Padding-free model inputs of one view, and the rows whose next token is a response token.
+
+        The rows are taken after the Ulysses slicing, so `keep_idx` indexes this rank's local sequence and can be
+        passed to the model as `logits_to_keep`; every view of the same responses yields the same rows in the same
+        order (response tokens are right-aligned and identical across views).
+        """
+        input_ids = inputs["input_ids"]
+        batch_size, seqlen = input_ids.shape
+        attention_mask = inputs["attention_mask"]
+        position_ids = inputs["position_ids"]
+        if position_ids.dim() == 3:  # qwen2vl mrope
+            position_ids = position_ids.transpose(0, 1)  # (bsz, 4, seqlen) -> (4, bsz, seqlen)
+
+        if inputs.get("multi_modal_inputs") is not None:
+            multi_modal_inputs = collate_multi_modal_inputs(inputs["multi_modal_inputs"], device=input_ids.device)
+        else:
+            multi_modal_inputs = {}
+
+        input_ids_rmpad, indices, *_ = unpad_input(input_ids.unsqueeze(-1), attention_mask)  # (total_nnz, 1)
+        input_ids_rmpad = input_ids_rmpad.transpose(0, 1)  # (1, total_nnz)
+        if position_ids.dim() == 3:
+            position_ids_rmpad = (
+                index_first_axis(rearrange(position_ids, "c b s ... -> (b s) c ..."), indices)
+                .transpose(0, 1)
+                .unsqueeze(1)
+            )  # (4, bsz, seqlen) -> (4, 1, bsz * seqlen)
+        else:
+            position_ids_rmpad = index_first_axis(
+                rearrange(position_ids.unsqueeze(-1), "b s ... -> (b s) ..."), indices
+            ).transpose(0, 1)
+
+        labels_rmpad = torch.roll(input_ids_rmpad, shifts=-1, dims=1)  # (1, total_nnz)
+        # a row predicts a response token when the token after it is one: columns [-R-1, -1) of the padded layout
+        target_rows = torch.zeros_like(attention_mask, dtype=torch.long)
+        target_rows[:, -response_length - 1 : -1] = response_mask.long()
+        target_rows_rmpad = index_first_axis(
+            rearrange(target_rows.unsqueeze(-1), "b s ... -> (b s) ..."), indices
+        ).transpose(0, 1)  # (1, total_nnz)
+
+        pad_size = 0
+        if self.config.ulysses_size > 1:
+            if multi_modal_inputs:
+                model_config = self._get_actor_model_config()
+                for token_attr, input_key, index_key in (
+                    ("image_token_id", "pixel_values", "image_token_feature_indices"),
+                    ("video_token_id", "pixel_values_videos", "video_token_feature_indices"),
+                ):
+                    token_id = getattr(model_config, token_attr, None)
+                    if token_id is None or input_key not in multi_modal_inputs:
+                        continue
+                    token_mask = input_ids_rmpad == token_id
+                    feature_indices = token_mask.long().cumsum(dim=-1) - 1
+                    feature_indices = feature_indices.masked_fill(~token_mask, -1)
+                    multi_modal_inputs[index_key] = feature_indices
+
+            input_ids_rmpad, position_ids_rmpad, pad_size = ulysses_pad_and_slice_inputs(
+                input_ids_rmpad, position_ids_rmpad, sp_size=self.config.ulysses_size
+            )
+            labels_rmpad, _, _ = ulysses_pad_and_slice_inputs(labels_rmpad, None, self.config.ulysses_size)
+            target_rows_rmpad, _, _ = ulysses_pad_and_slice_inputs(target_rows_rmpad, None, self.config.ulysses_size)
+            for index_key in ("image_token_feature_indices", "video_token_feature_indices"):
+                if index_key in multi_modal_inputs:
+                    multi_modal_inputs[index_key] = _pad_and_slice_mm_feature_indices(
+                        multi_modal_inputs[index_key], pad_size
+                    )
+
+        keep_idx = target_rows_rmpad.squeeze(0).nonzero(as_tuple=True)[0]
+        row_valid = torch.ones(keep_idx.numel(), dtype=torch.float32, device=input_ids.device)
+        if keep_idx.numel() == 0:
+            # no response row on this rank: score one placeholder row with weight 0 so that every rank runs the
+            # same forward and backward through the LM head (TRL keeps at least one chunk for the same reason)
+            keep_idx = torch.zeros(1, dtype=torch.long, device=input_ids.device)
+            row_valid = torch.zeros(1, dtype=torch.float32, device=input_ids.device)
+
+        return {
+            "model_inputs": {
+                "input_ids": input_ids_rmpad,
+                "attention_mask": None,
+                "position_ids": position_ids_rmpad,
+                **multi_modal_inputs,
+                "use_cache": False,
+            },
+            "keep_idx": keep_idx,
+            "row_valid": row_valid,
+            "labels": labels_rmpad.squeeze(0)[keep_idx],
+            "indices": indices,
+            "pad_size": pad_size,
+            "local_length": input_ids_rmpad.size(-1),
+            "shape": (batch_size, seqlen),
+        }
+
+    def _prepare_view_rows(
+        self, micro_batch: dict[str, Any], name: str, rows: dict[str, Any], response_length: int
+    ) -> dict[str, Any]:
+        """Response rows of a rebuilt view (`distill_view_<name>_*`), checked to be those of the main input."""
+        keys = view_keys(name)
+        view_inputs = {
+            "input_ids": micro_batch[keys["input_ids"]],
+            "attention_mask": micro_batch[keys["attention_mask"]],
+            "position_ids": micro_batch[keys["position_ids"]],
+            "multi_modal_inputs": micro_batch.get(keys["multi_modal_inputs"]),
+        }
+        view_rows = self._prepare_response_rows(view_inputs, micro_batch["response_mask"], response_length)
+        if not torch.equal(view_rows["labels"], rows["labels"]) or not torch.equal(
+            view_rows["row_valid"], rows["row_valid"]
+        ):
+            raise RuntimeError(f"the response rows of the {name!r} view differ from those of the student's input.")
+        return view_rows
+
+    def _rows_to_response(self, values: torch.Tensor, rows: dict[str, Any], response_length: int) -> torch.Tensor:
+        """Scatter per-row values (n_rows, ...) back to (bs, response_length, ...) along the path of the log-probs
+        of `_forward_micro_batch`; the placeholder row of an empty rank contributes zeros."""
+        values = values * rows["row_valid"].view(-1, *([1] * (values.dim() - 1))).to(values.dtype)
+        full = values.new_zeros((rows["local_length"], *values.shape[1:])).index_put((rows["keep_idx"],), values)
+        if self.config.ulysses_size > 1:
+            full = gather_outputs_and_unpad(full, gather_dim=0, unpad_dim=0, padding_size=rows["pad_size"])
+        batch_size, seqlen = rows["shape"]
+        trailing = values.shape[1:]
+        full = pad_input(
+            hidden_states=full.reshape(full.size(0), -1), indices=rows["indices"], batch=batch_size, seqlen=seqlen
+        )
+        full = full.reshape(batch_size, seqlen, *trailing)
+        return full[:, -response_length - 1 : -1]
+
+    def _forward_micro_batch_distill(
+        self, micro_batch: dict[str, Any], distill_config: dict[str, Any]
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Student forward with gradient and teacher forward without gradient on the response rows only, then the
+        chunked fp32 divergence of `verl.trainer.distillation`.
+
+        Returns (bs, response_length) tensors: the sampled tokens' log-probs (with gradient, at T = 1), the
+        per-token distillation loss (with gradient), and (bs, response_length, n) statistics without gradient.
+        """
+        if self.teacher_module is None:
+            raise RuntimeError("distillation needs the teacher module; the worker did not attach it.")
+        if not self.config.padding_free:
+            raise ValueError("distillation requires worker.actor.padding_free=true.")
+
+        model_config = self._get_actor_model_config()
+        if getattr(model_config, "model_type", None) == "internvl_chat":
+            raise ValueError("distillation does not support InternVL: its forward has no `logits_to_keep`.")
+
+        responses = micro_batch["responses"]
+        response_length = responses.size(-1)
+        response_mask = micro_batch["response_mask"]
+        spec = DistillationSpec.from_config(distill_config)
+
+        rows = self._prepare_response_rows(micro_batch, response_mask, response_length)
+        student_logits = self.actor_module(**rows["model_inputs"], logits_to_keep=rows["keep_idx"]).logits.squeeze(0)
+        teacher_rows = rows
+        if distill_config.get("teacher_view", "original") != "original":
+            teacher_rows = self._prepare_view_rows(micro_batch, distill_config["teacher_view"], rows, response_length)
+        with torch.no_grad():
+            teacher_logits = self.teacher_module(
+                **teacher_rows["model_inputs"], logits_to_keep=teacher_rows["keep_idx"]
+            ).logits.squeeze(0)
+
+        loss, log_probs, stats = chunked_distillation(
+            student_logits,
+            rows["labels"],
+            teacher_logits,
+            spec,
+            chunk_size=int(distill_config["chunk_size"]),
+        )
+        del student_logits, teacher_logits
+        log_probs = self._rows_to_response(log_probs, rows, response_length)
+        loss = self._rows_to_response(loss, rows, response_length)
+        stats = self._rows_to_response(stats, rows, response_length)
+        return log_probs, loss, stats
+
     def _optimizer_step(self) -> torch.Tensor:
         if isinstance(self.actor_module, FSDP):
             grad_norm = self.actor_module.clip_grad_norm_(self.config.max_grad_norm)
@@ -929,6 +1112,10 @@ class DataParallelPPOActor(BasePPOActor):
             )
         )
         advantage_shaping_context = data.meta_info.get("advantage_shaping_context")
+        # distribution-level distillation (None when off): see verl/trainer/distillation.py
+        distill_config = data.meta_info.get("distillation_config")
+        if distill_config is not None and (use_perception_reasoning or need_hidden_visual_scores):
+            raise ValueError("distillation does not combine with the perception-aware policy losses.")
         select_keys = ["input_ids", "attention_mask", "position_ids", "responses", "response_mask"]
         select_keys.extend(["old_log_probs", "ref_log_probs", "advantages"])
         for optional_key in [
@@ -940,10 +1127,16 @@ class DataParallelPPOActor(BasePPOActor):
             "per_token_sensitivity_scores",
             "batch_entropy_mask",
             "batch_perception_mask",
+            "distill_token_weights",
         ]:
             if optional_key in data.batch.keys():
                 select_keys.append(optional_key)
         non_tensor_select_keys = ["multi_modal_inputs"]
+        if distill_config is not None:
+            for name in distill_config.get("views", []):
+                keys = view_keys(name)
+                select_keys.extend(keys[field] for field in ("input_ids", "attention_mask", "position_ids"))
+                non_tensor_select_keys.append(keys["multi_modal_inputs"])
 
         # Split to make minibatch iterator for updating the actor
         # See PPO paper for details. https://arxiv.org/abs/1707.06347
@@ -1002,17 +1195,32 @@ class DataParallelPPOActor(BasePPOActor):
                                 "hidden_visual_metric": loss_config.get("visual_sensitivity_hidden_metric", "cosine"),
                             }
                         )
-                    output = self._forward_micro_batch(model_inputs, **forward_kwargs)
                     hidden_visual_scores = None
-                    if need_hidden_visual_scores:
-                        log_probs, entropy, hidden_visual_scores = output
-                    elif need_entropy:
-                        log_probs, entropy = output
+                    if distill_config is not None:
+                        log_probs, distill_per_token, distill_stats = self._forward_micro_batch_distill(
+                            model_inputs, distill_config
+                        )
+                        names = stat_names(DistillationSpec.from_config(distill_config))
+                        entropy = distill_stats[..., names.index("entropy")] if need_entropy else None
                     else:
-                        log_probs = output
-                        entropy = None
+                        output = self._forward_micro_batch(model_inputs, **forward_kwargs)
+                        if need_hidden_visual_scores:
+                            log_probs, entropy, hidden_visual_scores = output
+                        elif need_entropy:
+                            log_probs, entropy = output
+                        else:
+                            log_probs = output
+                            entropy = None
 
-                    if use_perception_reasoning:
+                    if distill_config is not None and distill_config["policy_loss_coef"] == 0.0:
+                        # pure distillation: the policy-gradient term is not computed
+                        pg_loss = None
+                        batch_metrics = {}
+                        if entropy is not None and loss_config and loss_config.get("log_entropy", False):
+                            batch_metrics["actor/policy_entropy"] = (
+                                VF.masked_mean(entropy, response_mask).detach().item()
+                            )
+                    elif use_perception_reasoning:
                         pg_loss, batch_metrics = compute_perception_reasoning_policy_loss(
                             actor_config=self.config,
                             loss_config=loss_config,
@@ -1055,6 +1263,36 @@ class DataParallelPPOActor(BasePPOActor):
                             batch_metrics["actor/policy_entropy"] = (
                                 VF.masked_mean(entropy, response_mask).detach().item()
                             )
+                    if distill_config is not None:
+                        # the PG term (if any) is weighted by policy_loss_coef, the distillation term by
+                        # distill_loss_coef; both are averaged with loss_avg_mode and rescaled below
+                        distill_weights = model_inputs.get("distill_token_weights")
+                        is_weights = importance_weights(log_probs, old_log_probs, distill_config["is_clip"])
+                        weighted = distill_per_token
+                        if distill_weights is not None:
+                            weighted = weighted * distill_weights
+                        if is_weights is not None:
+                            weighted = weighted * is_weights
+                        distill_loss = average_loss(weighted, response_mask, mode=self.config.loss_avg_mode)
+                        batch_metrics["distill/loss"] = distill_loss.detach().item()
+                        batch_metrics.update(
+                            {
+                                f"distill/{name}": value
+                                for name, value in masked_stat_means(distill_stats, response_mask, names).items()
+                                if name != "entropy"
+                            }
+                        )
+                        if is_weights is not None:
+                            batch_metrics["distill/is_weight_mean"] = (
+                                VF.masked_mean(is_weights, response_mask).detach().item()
+                            )
+                        distill_term = distill_loss * distill_config["loss_coef"]
+                        if pg_loss is None:
+                            pg_loss = distill_term
+                        else:
+                            pg_loss = pg_loss * distill_config["policy_loss_coef"] + distill_term
+                        del distill_per_token, distill_stats
+
                     if self.config.use_kl_loss and "ref_log_probs" in model_inputs:
                         ref_log_probs = model_inputs["ref_log_probs"]
                         # compute kl loss

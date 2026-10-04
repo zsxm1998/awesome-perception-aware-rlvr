@@ -79,6 +79,9 @@ class DataConfig:
     system_prompt_key: Optional[str] = None
     """column holding a per-row system prompt; a row with a non-empty value uses it instead of `system_prompt`
     (DeepEyes: the official ThinkLite prompt, or every row's official prompt)."""
+    teacher_image_key: Optional[str] = None
+    """column holding the images the distillation teacher sees instead of the student's (with
+    `algorithm.teacher_view=data_image`, Vision-OPD's crops); the prompt text is the same"""
     override_chat_template: Optional[str] = None
     shuffle: bool = True
     seed: int = 1
@@ -101,7 +104,43 @@ class AlgorithmConfig:
     lam: float = 1.0
     """lambda value for ppo gae advantage estimator"""
     adv_estimator: str = "grpo"
-    """advantage estimator, support `gae`, `grpo`, `reinforce_plus_plus`, `remax`, `rloo`"""
+    """advantage estimator, support `gae`, `grpo`, `reinforce_plus_plus`, `remax`, `rloo`, `teacher_log_ratio`
+    (on-policy distillation from sampled tokens: log q(y_t) - log pi_old(y_t) with the teacher of
+    `worker.teacher`)"""
+    teacher_log_ratio_clip: Optional[float] = 10.0
+    """clamp of the `teacher_log_ratio` advantage to [-clip, clip] (verl's on-policy distillation example uses 10);
+    null keeps it unclamped"""
+    policy_loss_coef: float = 1.0
+    """weight of the policy-gradient loss when a distillation loss is added (`distill_loss_coef > 0`); 0 trains on
+    the distillation loss alone and skips the policy loss"""
+    distill_loss_coef: float = 0.0
+    """weight of the distribution-level distillation loss toward the teacher of `worker.teacher` (0: off). The
+    student and the teacher score every response position in the update; see verl/trainer/distillation.py"""
+    distill_divergence: str = "reverse_kl"
+    """per-token divergence between the student p and the target q: `reverse_kl` KL(p||q), `forward_kl` KL(q||p),
+    `jsd` (generalized JSD with `distill_jsd_beta`)"""
+    distill_jsd_beta: float = 0.5
+    """mixture weight of the target in `jsd`, M = (1 - beta) p + beta q; strictly in (0, 1)"""
+    distill_support: str = "full"
+    """classes of the divergence: `full` (every token id of the tokenizer) or `student_top_k` (the student's top
+    `distill_top_k` ids plus one bucket for the remaining mass, Vision-OPD)"""
+    distill_top_k: int = 100
+    """number of ids of `distill_support=student_top_k`"""
+    distill_temperature: float = 1.0
+    """distillation temperature T: the distributions are softmax(z / T) and the loss is multiplied by T^2"""
+    distill_temperature_scope: str = "all"
+    """where `distill_temperature` applies: `all` (the target's and the student's distributions, and the T^2 factor)
+    or `loss_scale_only` (only the T^2 factor; the distributions stay at T = 1)"""
+    distill_target: str = "teacher"
+    """the target distribution: `teacher` (the teacher's next-token distribution)"""
+    teacher_view: str = "original"
+    """what the distillation teacher sees: `original` (the student's input) or `data_image` (the same prompt with the
+    images of `data.teacher_image_key`, Vision-OPD); the responses are the student's either way"""
+    distill_chunk_size: int = 256
+    """response rows per chunk of the fp32 divergence (activation-checkpointed)"""
+    distill_is_clip: Optional[float] = None
+    """detached truncated importance weight min(pi / pi_old, clip) on the distillation loss; null: no weight (it is
+    1 when every rollout batch makes one update)"""
     disable_kl: bool = False
     """disable reference model"""
     use_kl_loss: bool = False
@@ -512,6 +551,49 @@ class AlgorithmConfig:
             raise ValueError(
                 f"cgpo_response_scaling_coef must be non-negative, but got {self.cgpo_response_scaling_coef}."
             )
+        if self.teacher_log_ratio_clip is not None and self.teacher_log_ratio_clip <= 0.0:
+            raise ValueError(
+                f"teacher_log_ratio_clip must be positive or null, but got {self.teacher_log_ratio_clip}."
+            )
+        if self.distill_loss_coef < 0.0 or self.policy_loss_coef < 0.0:
+            raise ValueError("distill_loss_coef and policy_loss_coef must be non-negative.")
+        if self.distill_loss_coef == 0.0:
+            if self.policy_loss_coef != 1.0:
+                raise ValueError("policy_loss_coef only weighs the policy loss against distill_loss_coef > 0.")
+        else:
+            _validate_choice("distill_divergence", self.distill_divergence, {"reverse_kl", "forward_kl", "jsd"})
+            if self.distill_divergence == "jsd" and not 0.0 < self.distill_jsd_beta < 1.0:
+                # the generalized JSD vanishes at beta = 0 and 1; use forward_kl / reverse_kl for those ends
+                raise ValueError(f"distill_jsd_beta must be in (0, 1), but got {self.distill_jsd_beta}.")
+            _validate_choice("distill_support", self.distill_support, {"full", "student_top_k"})
+            if self.distill_top_k < 1:
+                raise ValueError(f"distill_top_k must be positive, but got {self.distill_top_k}.")
+            if self.distill_temperature <= 0.0:
+                raise ValueError(f"distill_temperature must be positive, but got {self.distill_temperature}.")
+            _validate_choice("distill_temperature_scope", self.distill_temperature_scope, {"all", "loss_scale_only"})
+            _validate_choice("distill_target", self.distill_target, {"teacher"})
+            _validate_choice("teacher_view", self.teacher_view, {"original", "data_image"})
+            if self.distill_chunk_size < 1:
+                raise ValueError(f"distill_chunk_size must be positive, but got {self.distill_chunk_size}.")
+            if self.distill_is_clip is not None and self.distill_is_clip <= 0.0:
+                raise ValueError(f"distill_is_clip must be positive or null, but got {self.distill_is_clip}.")
+            perception_losses = {
+                "visual_sensitivity_loss_coef": self.visual_sensitivity_loss_coef != 0.0,
+                "decremental_entropy_coef": self.decremental_entropy_coef != 0.0,
+                "invariant_entropy_coef": self.invariant_entropy_coef != 0.0,
+                "top_entropy_quantile": self.top_entropy_quantile < 1.0,
+                "top_perception_quantile": self.top_perception_quantile < 1.0,
+                "advantage_scaling_method": self.advantage_scaling_method is not None,
+                "tor_use_token_weighting": self.tor_use_token_weighting,
+                "visual_robustness_loss_coef": self.visual_robustness_loss_coef != 0.0,
+                "incremental_entropy_coef": self.incremental_entropy_coef != 0.0,
+            }
+            enabled = [name for name, on in perception_losses.items() if on]
+            if enabled:
+                raise ValueError(
+                    "distill_loss_coef > 0 does not combine with the perception-aware policy losses; disable: "
+                    + ", ".join(enabled)
+                )
 
 
 @dataclass
@@ -594,6 +676,7 @@ class PPOConfig:
         self.worker.actor.kl_penalty = self.algorithm.kl_penalty
         self.worker.actor.kl_coef = self.algorithm.kl_coef
         self._validate_batch_sizes()
+        self._validate_teacher()
         rollout = self.worker.rollout
         if (
             rollout.agent_observation_min_pixels is not None
@@ -691,6 +774,49 @@ class PPOConfig:
                 check_chat_template_supports_tools(
                     self.worker.actor.model.model_path, self.data.override_chat_template
                 )
+
+    def _validate_teacher(self):
+        """The teacher of on-policy distillation: needed exactly when an objective uses it, and the rollout must
+        sample from the student's own distribution (the objectives are expectations under the student)."""
+        teacher = self.worker.teacher
+        consumers = []
+        if self.algorithm.adv_estimator == "teacher_log_ratio":
+            consumers.append("algorithm.adv_estimator=teacher_log_ratio")
+        if self.algorithm.distill_loss_coef > 0.0:
+            consumers.append("algorithm.distill_loss_coef > 0")
+            if not self.worker.actor.padding_free:
+                raise ValueError("algorithm.distill_loss_coef > 0 requires worker.actor.padding_free=true.")
+            if self.algorithm.teacher_view == "data_image":
+                if not self.data.teacher_image_key:
+                    raise ValueError("algorithm.teacher_view=data_image requires data.teacher_image_key.")
+                if self.worker.actor.ulysses_size > 1:
+                    # the view has its own sequence lengths, so its Ulysses slices hold other response rows
+                    raise ValueError("algorithm.teacher_view=data_image requires worker.actor.ulysses_size=1.")
+        elif self.algorithm.teacher_view != "original":
+            raise ValueError("algorithm.teacher_view only applies to the distillation loss (distill_loss_coef > 0).")
+        if self.data.teacher_image_key and self.algorithm.teacher_view != "data_image":
+            raise ValueError("data.teacher_image_key is only read with algorithm.teacher_view=data_image.")
+        if consumers and not teacher.enabled:
+            raise ValueError(f"{', '.join(consumers)} requires a teacher; set worker.teacher.source.")
+        if not teacher.enabled:
+            return
+        if not consumers:
+            raise ValueError(
+                f"worker.teacher.source={teacher.source} but no objective uses the teacher; set "
+                "algorithm.adv_estimator=teacher_log_ratio or algorithm.distill_loss_coef, or remove the teacher."
+            )
+        if teacher.source == "ema" and self.worker.actor.model.lora.rank > 0:
+            raise ValueError("worker.teacher.source=ema averages the actor's full weights and does not support LoRA.")
+        rollout = self.worker.rollout
+        if rollout.interaction_mode != "one_shot":
+            raise ValueError("on-policy distillation supports worker.rollout.interaction_mode=one_shot only.")
+        if rollout.temperature != 1.0 or rollout.top_p != 1.0 or rollout.top_k != -1:
+            raise ValueError(
+                "on-policy distillation samples from the student's own distribution: set worker.rollout.temperature=1.0, "
+                f"top_p=1.0 and top_k=-1 (got {rollout.temperature}, {rollout.top_p}, {rollout.top_k})."
+            )
+        # ids at or beyond len(tokenizer) are padding rows of the LM head that the tokenizer cannot produce
+        rollout.ban_ids_beyond_tokenizer = True
 
     def _validate_batch_sizes(self):
         """Fail early (also under DRY_RUN) on batch sizes the trainer and workers would reject."""

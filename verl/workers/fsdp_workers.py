@@ -16,7 +16,10 @@ The main entry point to run the PPO algorithm
 """
 
 import importlib.util
+import math
+import os
 from contextlib import nullcontext
+from dataclasses import replace
 from typing import Any, Literal, Optional, Union, cast
 
 import numpy as np
@@ -46,14 +49,18 @@ from ..models.transformers.qwen3_5 import register_qwen3_5
 from ..protocol import DataProto
 from ..single_controller.base import Worker
 from ..single_controller.base.decorator import Dispatch, register
+from ..trainer.distillation import view_keys
 from ..utils.checkpoint.fsdp_checkpoint_manager import FSDPCheckpointManager
 from ..utils.dataset import process_image, process_video
 from ..utils.flops_counter import FlopsCounter
 from ..utils.fsdp_utils import (
+    copy_fsdp_params_,
+    ema_update_fsdp_params_,
     get_fsdp_wrap_policy,
     get_init_fn,
     load_fsdp_model,
     load_fsdp_optimizer,
+    local_flat_param_shards,
     offload_fsdp_model,
     offload_fsdp_optimizer,
 )
@@ -66,6 +73,7 @@ from ..utils.torch_functional import (
     get_constant_schedule_with_warmup,
     get_cosine_schedule_with_warmup,
 )
+from .actor.config import TeacherModelConfig
 from .config import ActorConfig, CriticConfig, FSDPConfig, ModelConfig, OptimConfig, WorkerConfig
 from .sharding_manager.fsdp_ulysses import FSDPUlyssesShardingManager
 
@@ -106,12 +114,16 @@ class FSDPWorker(Worker):
         if self.config.actor.disable_kl:
             self._has_ref = False
 
+        # the teacher of on-policy distillation lives with the actor, which distills from it during the update
+        self._has_teacher = self.role == "actor_rollout_ref" and self.config.teacher.enabled
+
         self._lora_rank = self.config.actor.model.lora.rank
         self._is_lora = self._lora_rank > 0
 
         self._use_param_offload = False
         self._use_optimizer_offload = False
         self._use_ref_param_offload = False
+        self._use_teacher_param_offload = False
         if self._has_actor:
             self._use_param_offload = self.config.actor.offload.offload_params
             self._use_optimizer_offload = self.config.actor.offload.offload_optimizer
@@ -124,6 +136,9 @@ class FSDPWorker(Worker):
 
         if self._has_ref:  # NOTE: it seems that manual offload is slower than FSDP offload
             self._use_ref_param_offload = self.config.ref.offload.offload_params
+
+        if self._has_teacher:
+            self._use_teacher_param_offload = self.config.teacher.offload.offload_params
 
     def _init_dist_mesh(self, config: Union[ActorConfig, CriticConfig], role: Literal["actor", "critic"]):
         world_size = dist.get_world_size()
@@ -168,14 +183,23 @@ class FSDPWorker(Worker):
 
     def _build_model_optimizer(
         self,
-        model_config: ModelConfig,
+        model_config: Union[ModelConfig, TeacherModelConfig],
         fsdp_config: FSDPConfig,
         optim_config: Optional[OptimConfig],
         padding_free: bool,
-        role: Literal["actor", "critic", "ref"],
+        role: Literal["actor", "critic", "ref", "teacher"],
     ) -> None:
         register_qwen3_5()
-        if role != "ref":  # ref model's tokenizer is same as actor
+        if role == "teacher":
+            # the teacher reads the student's token ids with its own architecture (e.g. a larger model of the
+            # same family); it keeps the actor's tokenizer, processor and model config untouched
+            hf_config = AutoConfig.from_pretrained(
+                model_config.model_path,
+                trust_remote_code=model_config.trust_remote_code,
+                **model_config.override_config,
+            )
+            self.print_rank0(f"Teacher model config: {hf_config}")
+        elif role != "ref":  # ref model's tokenizer is same as actor
             self.tokenizer = get_tokenizer(
                 model_config.tokenizer_path,
                 override_chat_template=model_config.override_chat_template,
@@ -207,18 +231,21 @@ class FSDPWorker(Worker):
 
             self.print_rank0(f"Model config: {self.model_config}")
 
+        if role != "teacher":
+            hf_config = self.model_config
+
         if padding_free:
-            apply_ulysses_patch(self.model_config.model_type)
+            apply_ulysses_patch(hf_config.model_type)
             self.print_rank0("Ulysses patch applied!")
 
         if fsdp_config.torch_dtype is None:
-            torch_dtype = torch.float32 if role != "ref" else torch.bfloat16
+            torch_dtype = torch.float32 if role not in ("ref", "teacher") else torch.bfloat16
         else:
             torch_dtype = PrecisionType.to_dtype(fsdp_config.torch_dtype)
 
         if role == "critic":
             AutoClass = AutoModelForTokenClassification
-        elif type(self.model_config) in AutoModelForImageTextToText._model_mapping.keys():
+        elif type(hf_config) in AutoModelForImageTextToText._model_mapping.keys():
             AutoClass = AutoModelForImageTextToText
         else:
             AutoClass = AutoModelForCausalLM
@@ -226,7 +253,7 @@ class FSDPWorker(Worker):
         if (not fsdp_config.enable_rank0_init) or self.device_mesh.get_local_rank("fsdp") == 0:
             model = AutoClass.from_pretrained(
                 model_config.model_path,
-                config=self.model_config,
+                config=hf_config,
                 torch_dtype=torch_dtype,
                 attn_implementation="flash_attention_2",
                 device_map="cpu" if fsdp_config.enable_rank0_init else "cuda",
@@ -236,7 +263,7 @@ class FSDPWorker(Worker):
         else:
             with no_init_weights(), init_empty_weights():
                 model = AutoClass.from_config(
-                    self.model_config,
+                    hf_config,
                     torch_dtype=torch_dtype,
                     attn_implementation="flash_attention_2",
                     trust_remote_code=model_config.trust_remote_code,
@@ -246,7 +273,7 @@ class FSDPWorker(Worker):
         model.tie_weights()  # avoid hanging
         set_internvl_image_context_token_id(model, getattr(self, "processor", None))
 
-        if role == "ref":
+        if role in ("ref", "teacher"):
             model.requires_grad_(False)
 
         is_lora_model = self._is_lora and role == "actor"
@@ -274,14 +301,14 @@ class FSDPWorker(Worker):
         else:
             model = model.to(torch_dtype)
 
-        if model_config.enable_gradient_checkpointing:
+        if role != "teacher" and model_config.enable_gradient_checkpointing:
             model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
 
         patched_encoders = patch_internvl_vision_checkpointing(model)
         if patched_encoders:
             self.print_rank0(f"InternVL vision checkpointing uses non-reentrant mode ({patched_encoders} encoder(s)).")
 
-        if model_config.freeze_vision_tower:
+        if role != "teacher" and model_config.freeze_vision_tower:
             if hasattr(model, "model") and hasattr(model.model, "visual"):  # transformers >= 4.52.0
                 model.model.visual.requires_grad_(False)
                 fsdp_config.use_orig_params = True
@@ -393,6 +420,11 @@ class FSDPWorker(Worker):
             if self._use_optimizer_offload:
                 offload_fsdp_optimizer(optimizer=self.optimizer)
                 print_gpu_memory_usage(f"After offload {role} optimizer during init")
+        elif role == "teacher":
+            self.teacher_fsdp_module = fsdp_module
+            if self._use_teacher_param_offload:
+                offload_fsdp_model(self.teacher_fsdp_module)
+                print_gpu_memory_usage(f"After offload {role} model during init")
         else:
             self.ref_fsdp_module = fsdp_module
             if self._use_ref_param_offload:
@@ -459,6 +491,40 @@ class FSDPWorker(Worker):
                     role="ref",
                 )
 
+        if self._has_teacher:
+            teacher_config = self.config.teacher
+            if teacher_config.source == "ema":
+                # the EMA starts as a copy of the actor and is built with the actor's wrapping, so that the local
+                # shards of the two modules pair up one to one; it is kept in fp32
+                actor_model = self.config.actor.model
+                teacher_model = TeacherModelConfig(
+                    model_path=actor_model.model_path,
+                    trust_remote_code=actor_model.trust_remote_code,
+                    override_config=dict(actor_model.override_config),
+                )
+                teacher_fsdp = replace(
+                    teacher_config.fsdp, torch_dtype="fp32", use_orig_params=self.config.actor.fsdp.use_orig_params
+                )
+            else:
+                teacher_model, teacher_fsdp = teacher_config.model, teacher_config.fsdp
+            self._build_model_optimizer(
+                model_config=teacher_model,
+                fsdp_config=teacher_fsdp,
+                optim_config=None,
+                padding_free=teacher_config.padding_free,
+                role="teacher",
+            )
+            if teacher_config.source == "ema":
+                if self._use_param_offload:
+                    load_fsdp_model(self.fsdp_module)
+                if self._use_teacher_param_offload:
+                    load_fsdp_model(self.teacher_fsdp_module)
+                copy_fsdp_params_(self.teacher_fsdp_module, self.fsdp_module)
+                if self._use_teacher_param_offload:
+                    offload_fsdp_model(self.teacher_fsdp_module)
+                if self._use_param_offload:
+                    offload_fsdp_model(self.fsdp_module)
+
         if self._has_actor:
             from .actor.dp_actor import DataParallelPPOActor  # lazy import
 
@@ -467,6 +533,8 @@ class FSDPWorker(Worker):
                 actor_module=self.fsdp_module,
                 actor_optimizer=self.optimizer,
             )
+            if self._has_teacher:
+                self.actor.teacher_module = self.teacher_fsdp_module
 
         if self._has_critic:
             from .critic.dp_critic import DataParallelPPOCritic  # lazy import
@@ -488,6 +556,14 @@ class FSDPWorker(Worker):
                 actor_module=self.ref_fsdp_module,
             )
 
+        if self._has_teacher:
+            from .actor.dp_actor import DataParallelPPOActor  # lazy import
+
+            self.teacher_policy = DataParallelPPOActor(
+                config=self.config.teacher,
+                actor_module=self.teacher_fsdp_module,
+            )
+
         if self._has_actor or self._has_critic:
             self.flops_counter = FlopsCounter(self.model_config)
             self.checkpoint_manager = FSDPCheckpointManager(
@@ -504,6 +580,11 @@ class FSDPWorker(Worker):
             load_fsdp_model(self.fsdp_module)
 
         self.checkpoint_manager.save_checkpoint(path, save_model_only)
+        if self._has_teacher and self.config.teacher.source == "ema" and not save_model_only:
+            torch.save(
+                [shard.detach().cpu() for shard in local_flat_param_shards(self.teacher_fsdp_module)],
+                self._ema_teacher_path(path),
+            )
         dist.barrier()
         if self._use_param_offload:
             offload_fsdp_model(self.fsdp_module)
@@ -515,12 +596,30 @@ class FSDPWorker(Worker):
             load_fsdp_model(self.fsdp_module)
 
         self.checkpoint_manager.load_checkpoint(path)
+        if self._has_teacher and self.config.teacher.source == "ema":
+            ema_path = self._ema_teacher_path(path)
+            if not os.path.exists(ema_path):
+                raise FileNotFoundError(
+                    f"{ema_path} is missing: the EMA teacher cannot be restored, and restarting it from the actor "
+                    "would change the training. Resume with the same number of GPUs from a checkpoint saved with "
+                    "trainer.save_model_only=false."
+                )
+            saved = torch.load(ema_path, weights_only=True)
+            shards = local_flat_param_shards(self.teacher_fsdp_module)
+            if len(saved) != len(shards) or any(a.shape != b.shape for a, b in zip(saved, shards)):
+                raise RuntimeError(f"{ema_path} does not match the shards of the EMA teacher.")
+            with torch.no_grad():
+                for shard, saved_shard in zip(shards, saved):
+                    shard.copy_(saved_shard.to(device=shard.device, dtype=shard.dtype))
         dist.barrier()
         if self._use_param_offload:
             offload_fsdp_model(self.fsdp_module)
 
         if self._use_optimizer_offload:  # avoid OOM in resuming
             offload_fsdp_optimizer(self.optimizer)
+
+    def _ema_teacher_path(self, path: str) -> str:
+        return os.path.join(path, f"teacher_ema_world_size_{self.world_size}_rank_{self.rank}.pt")
 
     def _process_multi_modal_inputs(
         self,
@@ -639,6 +738,19 @@ class FSDPWorker(Worker):
         assert self._has_actor
 
         self._process_multi_modal_inputs(data)
+        for name in data.meta_info.get("distillation_config", {}).get("views", []):
+            # rebuilt inputs of the distillation, new every step
+            keys = view_keys(name)
+            namespace = f"distill_view_{name}"
+            self._cache.pop(f"{namespace}:uid", None)
+            self._cache.pop(f"{namespace}:{keys['multi_modal_inputs']}", None)
+            self._process_multi_modal_inputs(
+                data,
+                source_key=keys["multi_modal_data"],
+                output_key=keys["multi_modal_inputs"],
+                cache_namespace=namespace,
+                cache_key_field=keys["multi_modal_cache_id"],
+            )
         data = data.to(torch.cuda.current_device())
 
         if self._use_param_offload:
@@ -647,10 +759,30 @@ class FSDPWorker(Worker):
         if self._use_optimizer_offload:
             load_fsdp_optimizer(optimizer=self.optimizer)
 
+        distills = "distillation_config" in data.meta_info
+        if distills and self._use_teacher_param_offload:
+            load_fsdp_model(self.teacher_fsdp_module)
+
         with self.ulysses_sharding_manager:
             data = self.ulysses_sharding_manager.preprocess_data(data=data)
             with Timer(name="update_policy", logger=None) as timer:
                 metrics = self.actor.update_policy(data=data)
+
+            if distills and self.world_size > 1:
+                # the teacher's root unit stays unsharded after its no-grad forwards
+                self.teacher_fsdp_module._handle.reshard(True)
+            if self._has_teacher and self.config.teacher.source == "ema":
+                # one EMA step per training step, after all optimizer steps, if at least one of them was applied
+                applied = any(math.isfinite(value) for value in metrics.get("actor/grad_norm", []))
+                if applied:
+                    if not distills and self._use_teacher_param_offload:
+                        load_fsdp_model(self.teacher_fsdp_module)
+                    ema_update_fsdp_params_(self.teacher_fsdp_module, self.fsdp_module, self.config.teacher.ema_rate)
+                    if not distills and self._use_teacher_param_offload:
+                        offload_fsdp_model(self.teacher_fsdp_module)
+                metrics["teacher/ema_update_applied"] = float(applied)
+            if distills and self._use_teacher_param_offload:
+                offload_fsdp_model(self.teacher_fsdp_module)
 
             delta_time = timer.last
             global_num_tokens = data.meta_info["global_token_num"]
@@ -1001,6 +1133,49 @@ class FSDPWorker(Worker):
 
         if self._use_ref_param_offload or (self._is_lora and self._use_param_offload):
             offload_fsdp_model(self.ref_fsdp_module)
+
+        output = output.to("cpu")
+        return output
+
+    @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
+    def compute_teacher_log_probs(self, data: DataProto):
+        """The teacher's log-probs of the sampled tokens, at the rollout temperature. An auxiliary view (a batch
+        with `multi_modal_cache_id`, built by the driver) is scored under `teacher_log_probs_output_key`."""
+        assert self._has_teacher
+
+        output_key = data.meta_info.get("teacher_log_probs_output_key", "teacher_log_probs")
+        if "multi_modal_cache_id" in data.non_tensor_batch:
+            # auxiliary images are rebuilt per step, so stale worker-side features must not survive across calls
+            self._cache.pop(f"{output_key}:uid", None)
+            self._cache.pop(f"{output_key}:multi_modal_inputs", None)
+            self._process_multi_modal_inputs(
+                data,
+                source_key="multi_modal_data",
+                output_key="multi_modal_inputs",
+                cache_namespace=output_key,
+                cache_key_field="multi_modal_cache_id",
+            )
+        else:
+            self._process_multi_modal_inputs(data)
+        data = data.to(torch.cuda.current_device())
+
+        if self._use_teacher_param_offload:
+            load_fsdp_model(self.teacher_fsdp_module)
+
+        data.meta_info["temperature"] = self.config.rollout.temperature
+        with self.ulysses_sharding_manager:
+            data = self.ulysses_sharding_manager.preprocess_data(data)
+            output = self.teacher_policy.compute_log_prob(data=data)
+            output = DataProto.from_dict(tensors={output_key: output})
+            output = self.ulysses_sharding_manager.postprocess_data(output)
+
+        # https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes
+        # unshard the root FSDP module
+        if self.world_size > 1:
+            self.teacher_fsdp_module._handle.reshard(True)
+
+        if self._use_teacher_param_offload:
+            offload_fsdp_model(self.teacher_fsdp_module)
 
         output = output.to("cpu")
         return output

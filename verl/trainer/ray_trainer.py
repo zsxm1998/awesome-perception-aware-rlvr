@@ -46,6 +46,7 @@ from ..utils.reasoning import (
     decode_prompt_from_batch,
 )
 from ..utils.seqlen_balancing import get_seqlen_balanced_partitions, log_seqlen_unbalance
+from ..utils.tokenizer import check_teacher_compatibility
 from ..workers.fsdp_workers import FSDPWorker
 from ..workers.reward import AutoRewardManager
 from .config import PPOConfig
@@ -55,7 +56,12 @@ from .core_algos import (
     KLController,
     compute_advantage_return,
     compute_kl,
+    compute_teacher_log_ratio_metrics,
     get_kl_controller,
+)
+from .distillation import (
+    build_distillation_config,
+    view_keys,
 )
 from .grounding_consistency import (
     GroundingConsistencyRewardResult,
@@ -164,7 +170,13 @@ def apply_kl_penalty(data: DataProto, kl_ctrl: KLController, kl_penalty="kl"):
     return data, metrics
 
 
-def compute_advantage(data: DataProto, adv_estimator: AdvantageEstimator, gamma: float = 1.0, lam: float = 1.0):
+def compute_advantage(
+    data: DataProto,
+    adv_estimator: AdvantageEstimator,
+    gamma: float = 1.0,
+    lam: float = 1.0,
+    teacher_log_ratio_clip: Optional[float] = None,
+):
     """Compute advantage estimates for policy optimization."""
     adv_inputs = {
         "token_level_rewards": data.batch["token_level_rewards"],
@@ -178,6 +190,11 @@ def compute_advantage(data: DataProto, adv_estimator: AdvantageEstimator, gamma:
 
     if "reward_baselines" in data.batch:
         adv_inputs["reward_baselines"] = data.batch["reward_baselines"]
+
+    if adv_estimator == AdvantageEstimator.TEACHER_LOG_RATIO:
+        adv_inputs["teacher_log_probs"] = data.batch["teacher_log_probs"]
+        adv_inputs["old_log_probs"] = data.batch["old_log_probs"]
+        adv_inputs["log_ratio_clip"] = teacher_log_ratio_clip
 
     advantages, returns = compute_advantage_return(adv_estimator, **adv_inputs)
     data.batch["advantages"] = advantages
@@ -235,6 +252,14 @@ class RayPPOTrainer:
         else:
             self.use_critic = False
 
+        self.use_teacher = config.worker.teacher.enabled
+        if config.worker.teacher.source == "model":
+            check_teacher_compatibility(
+                config.worker.actor.model.model_path,
+                config.worker.teacher.model.model_path,
+                trust_remote_code=config.worker.teacher.model.trust_remote_code,
+            )
+
         if config.algorithm.adv_estimator not in list(AdvantageEstimator):
             raise NotImplementedError(f"Unknown advantage estimator: {config.algorithm.adv_estimator}.")
 
@@ -289,7 +314,8 @@ class RayPPOTrainer:
             self.visual_token_ids = sorted(visual_token_ids)
         self.perception_reasoning_corruption_builder: PerceptionReasoningCorruptionBuilder | None = None
         self.grounding_consistency_scorer: GroundingConsistencyRewardScorer | None = None
-        if needs_media_corruption_builder(config.algorithm):
+        distillation_views = config.algorithm.distill_loss_coef > 0.0 and (config.algorithm.teacher_view != "original")
+        if needs_media_corruption_builder(config.algorithm) or distillation_views:
             if processor is None:
                 raise ValueError("Perception/reasoning auxiliary views require a multimodal processor.")
             image_processor = getattr(processor, "image_processor", None)
@@ -494,6 +520,32 @@ class RayPPOTrainer:
             # Sampled diagnostic estimators piggyback on the same corrupted-view forward.
             or bool(self.config.algorithm.visual_sensitivity_log_metrics)
         )
+
+    def _attach_distillation_views(self, batch: DataProto, views: list[str]) -> None:
+        """Rebuilt inputs of the distillation (same responses, other prompts), as `distill_view_<name>_*` keys."""
+        for name in views:
+            if name == "data_image":
+                view = self.perception_reasoning_corruption_builder.build_replaced_image_batch(
+                    batch, image_key=self.config.data.teacher_image_key
+                ).batch
+            else:
+                raise ValueError(f"unknown distillation view {name!r}")
+            keys = view_keys(name)
+            for key in ("input_ids", "attention_mask", "position_ids"):
+                batch.batch[keys[key]] = view.batch[key]
+            for key in ("multi_modal_data", "multi_modal_cache_id"):
+                batch.non_tensor_batch[keys[key]] = view.non_tensor_batch[key]
+
+    def _check_response_ids_within_tokenizer(self, batch: DataProto) -> None:
+        """On-policy distillation bans the LM head's padding ids in the rollout; a sampled one would be scored
+        against a distribution that leaves it out."""
+        responses = batch.batch["responses"]
+        out_of_range = (responses >= len(self.tokenizer)) & batch.batch["response_mask"].bool()
+        if out_of_range.any():
+            raise RuntimeError(
+                f"the rollout sampled token ids {sorted(set(responses[out_of_range].tolist()))[:5]} at or beyond "
+                f"len(tokenizer)={len(self.tokenizer)} although on-policy distillation bans them."
+            )
 
     def _maybe_attach_region_token_mask(self, batch: DataProto) -> None:
         if not self.config.algorithm.include_region_tokens_in_perception_mask:
@@ -1352,6 +1404,22 @@ class RayPPOTrainer:
                         ref_log_probs = self.actor_rollout_ref_wg.compute_ref_log_probs(batch)
                         batch = batch.union(ref_log_probs)
 
+                if self.use_teacher:
+                    self._check_response_ids_within_tokenizer(batch)
+
+                # the teacher's log-probs of the sampled tokens (on-policy distillation from sampled tokens)
+                if self.config.algorithm.adv_estimator == AdvantageEstimator.TEACHER_LOG_RATIO:
+                    with timer("teacher", timing_raw):
+                        teacher_log_probs = self.actor_rollout_ref_wg.compute_teacher_log_probs(batch)
+                        batch = batch.union(teacher_log_probs)
+                    metrics.update(
+                        compute_teacher_log_ratio_metrics(
+                            batch.batch["teacher_log_probs"],
+                            batch.batch["old_log_probs"],
+                            batch.batch["response_mask"],
+                            self.config.algorithm.teacher_log_ratio_clip,
+                        )
+                    )
                 # compute values
                 if self.use_critic:
                     with timer("values", timing_raw):
@@ -1390,12 +1458,18 @@ class RayPPOTrainer:
                         adv_estimator=self.config.algorithm.adv_estimator,
                         gamma=self.config.algorithm.gamma,
                         lam=self.config.algorithm.lam,
+                        teacher_log_ratio_clip=self.config.algorithm.teacher_log_ratio_clip,
                     )
 
                 self._maybe_log_train_generations(batch, reward_metrics=train_reward_metrics)
 
                 perception_reasoning_config = self._build_perception_reasoning_loss_config()
                 batch.meta_info["perception_reasoning_config"] = perception_reasoning_config
+                distillation_config = build_distillation_config(self.config.algorithm, len(self.tokenizer))
+                if distillation_config is not None:
+                    batch.meta_info["distillation_config"] = distillation_config
+                    with timer("distill_views", timing_raw):
+                        self._attach_distillation_views(batch, distillation_config["views"])
                 self._maybe_attach_region_token_mask(batch)
                 if has_perception_reasoning(perception_reasoning_config):
                     shaping_context = build_sensitivity_advantage_shaping_context(perception_reasoning_config, batch)

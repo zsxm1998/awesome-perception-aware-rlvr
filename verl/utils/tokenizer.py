@@ -19,7 +19,7 @@ from transformers import AutoConfig, AutoProcessor, AutoTokenizer, PreTrainedTok
 
 from ..models.transformers.internvl import InternVLProcessorAdapter
 from ..models.transformers.qwen3_5 import register_qwen3_5
-from .plain_think import plain_think_tokenizer_path
+from .plain_think import THINK_TOKENS, plain_think_tokenizer_path
 
 
 def get_tokenizer(
@@ -102,3 +102,73 @@ def get_processor(
         print(f"Using chat template {override_chat_template}")
 
     return processor
+
+
+def _model_family(model_type: str) -> str:
+    return model_type[: -len("_moe")] if model_type.endswith("_moe") else model_type
+
+
+def check_teacher_compatibility(student_path: str, teacher_path: str, trust_remote_code: bool = True) -> None:
+    """Fail unless a teacher can read the student's inputs and score the student's vocabulary.
+
+    The teacher is fed the student's token ids and pixel values, and the distillation losses compare the two
+    distributions id by id, so the token-to-id map, the vocabulary size, the visual special tokens, the multimodal
+    rotary layout and the image preprocessing must agree. The architecture (size, depth) may differ.
+    """
+    register_qwen3_5()
+    problems = []
+    student_config = AutoConfig.from_pretrained(student_path, trust_remote_code=trust_remote_code)
+    teacher_config = AutoConfig.from_pretrained(teacher_path, trust_remote_code=trust_remote_code)
+    if _model_family(student_config.model_type) != _model_family(teacher_config.model_type):
+        problems.append(f"model_type {student_config.model_type!r} vs {teacher_config.model_type!r}")
+
+    student_text, teacher_text = student_config.get_text_config(), teacher_config.get_text_config()
+    if student_text.vocab_size != teacher_text.vocab_size:
+        problems.append(f"vocab_size {student_text.vocab_size} vs {teacher_text.vocab_size}")
+
+    for name in ("image_token_id", "video_token_id", "vision_start_token_id", "vision_end_token_id"):
+        if getattr(student_config, name, None) != getattr(teacher_config, name, None):
+            problems.append(f"{name} {getattr(student_config, name, None)} vs {getattr(teacher_config, name, None)}")
+
+    def _mrope_section(text_config) -> Any:
+        rope = getattr(text_config, "rope_scaling", None) or getattr(text_config, "rope_parameters", None) or {}
+        return rope.get("mrope_section")
+
+    if _mrope_section(student_text) != _mrope_section(teacher_text):
+        problems.append(f"mrope_section {_mrope_section(student_text)} vs {_mrope_section(teacher_text)}")
+
+    student_vision = getattr(student_config, "vision_config", None)
+    teacher_vision = getattr(teacher_config, "vision_config", None)
+    for name in ("patch_size", "spatial_merge_size", "temporal_patch_size"):
+        student_value, teacher_value = getattr(student_vision, name, None), getattr(teacher_vision, name, None)
+        if student_value != teacher_value:
+            problems.append(f"vision_config.{name} {student_value} vs {teacher_value}")
+
+    student_tokenizer = AutoTokenizer.from_pretrained(student_path, trust_remote_code=trust_remote_code)
+    teacher_tokenizer = AutoTokenizer.from_pretrained(teacher_path, trust_remote_code=trust_remote_code)
+    # <think> / </think> may be removed from either side by the plain-think option (verl/utils/plain_think.py);
+    # the teacher never tokenizes text, so only the ids of the other tokens have to agree
+    student_vocab, teacher_vocab = (
+        {token: index for token, index in tokenizer.get_vocab().items() if token not in THINK_TOKENS}
+        for tokenizer in (student_tokenizer, teacher_tokenizer)
+    )
+    if student_vocab != teacher_vocab:
+        differing = sorted(set(student_vocab.items()) ^ set(teacher_vocab.items()), key=lambda item: item[1])
+        problems.append(f"tokenizer vocabularies differ ({len(differing)} entries, e.g. {differing[:3]})")
+    if len(student_tokenizer) > student_text.vocab_size:
+        problems.append(f"the tokenizer has {len(student_tokenizer)} tokens, more than vocab_size")
+
+    if getattr(student_config, "vision_config", None) is not None:
+        student_image = AutoProcessor.from_pretrained(student_path, trust_remote_code=trust_remote_code)
+        teacher_image = AutoProcessor.from_pretrained(teacher_path, trust_remote_code=trust_remote_code)
+        student_image = getattr(student_image, "image_processor", student_image)
+        teacher_image = getattr(teacher_image, "image_processor", teacher_image)
+        for name in ("patch_size", "merge_size", "temporal_patch_size", "image_mean", "image_std"):
+            student_value, teacher_value = getattr(student_image, name, None), getattr(teacher_image, name, None)
+            if student_value != teacher_value:
+                problems.append(f"image processor {name} {student_value} vs {teacher_value}")
+
+    if problems:
+        raise ValueError(
+            f"The teacher {teacher_path} cannot be distilled into the student {student_path}: " + "; ".join(problems)
+        )

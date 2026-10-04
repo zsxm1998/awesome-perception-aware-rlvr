@@ -167,3 +167,64 @@ class RefConfig:
     dynamic_batching: bool = field(default=False, init=False)
     ulysses_size: int = field(default=1, init=False)
     use_torch_compile: bool = field(default=True, init=False)
+
+
+@dataclass
+class TeacherModelConfig:
+    model_path: Optional[str] = None
+    """the teacher checkpoint (a model name or a local path), loaded with its own config"""
+    trust_remote_code: bool = True
+    override_config: dict[str, Any] = field(default_factory=dict)
+
+    def post_init(self):
+        if self.model_path is not None and os.path.exists(self.model_path):  # ray job uses absolute path
+            self.model_path = os.path.abspath(self.model_path)
+
+
+@dataclass
+class TeacherConfig:
+    source: str = "none"
+    """where the teacher of on-policy distillation comes from: `none` (no teacher), `model` (a frozen model
+    loaded from `model.model_path`) or `ema` (an exponential moving average of the actor, updated after each
+    training step and saved with the actor's checkpoints)"""
+    model: TeacherModelConfig = field(default_factory=TeacherModelConfig)
+    fsdp: FSDPConfig = field(default_factory=FSDPConfig)
+    offload: OffloadConfig = field(default_factory=OffloadConfig)
+    ema_rate: float = 0.05
+    """`source=ema`: phi <- (1 - ema_rate) * phi + ema_rate * theta after each training step"""
+    # below are auto keys
+    micro_batch_size_per_device_for_experience: int = field(default=-1, init=False)
+    padding_free: bool = field(default=False, init=False)
+    dynamic_batching: bool = field(default=False, init=False)
+    ulysses_size: int = field(default=1, init=False)
+    use_torch_compile: bool = field(default=True, init=False)
+
+    def post_init(self):
+        if self.source not in {"none", "model", "ema"}:
+            raise ValueError(
+                f"worker.teacher.source must be one of ['ema', 'model', 'none'], but got {self.source!r}."
+            )
+        if self.source == "ema":
+            if self.model.model_path:
+                raise ValueError(
+                    "worker.teacher.source=ema copies the actor; leave worker.teacher.model.model_path unset."
+                )
+            if self.fsdp.torch_dtype not in (None, "fp32"):
+                # a 0.05 step of an EMA is often below the relative precision of bf16 (2^-8) and would be rounded away
+                raise ValueError(
+                    "worker.teacher.source=ema keeps its weights in fp32; leave worker.teacher.fsdp.torch_dtype unset."
+                )
+            if not 0.0 < self.ema_rate <= 1.0:
+                raise ValueError(f"worker.teacher.ema_rate must be in (0, 1], but got {self.ema_rate}.")
+        if self.source == "model" and not self.model.model_path:
+            raise ValueError("worker.teacher.source=model requires worker.teacher.model.model_path.")
+        if self.source == "none" and self.model.model_path:
+            raise ValueError(
+                "worker.teacher.model.model_path is set but worker.teacher.source=none; set source=model to use it."
+            )
+        if self.offload.offload_optimizer:
+            raise ValueError("worker.teacher has no optimizer; set worker.teacher.offload.offload_optimizer=false.")
+
+    @property
+    def enabled(self) -> bool:
+        return self.source != "none"

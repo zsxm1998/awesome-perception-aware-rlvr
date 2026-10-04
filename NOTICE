@@ -6,9 +6,13 @@ Apache License 2.0, which is itself a fork of veRL (https://github.com/volcengin
 Copyright 2024 Bytedance Ltd. and/or its affiliates, licensed under the Apache License 2.0.
 
 Modifications: implementations of perception-aware RLVR methods (verl/trainer/perception_reasoning_*.py,
-visual_sensitivity.py, grounding_consistency.py, verl/utils/perturbations/), the agentic zoom-in
-rollout (verl/workers/agent/), reproduction and comparison launchers, data preparation and the
-evaluation harness under eval/.
+visual_sensitivity.py, grounding_consistency.py, verl/utils/perturbations/), on-policy distillation
+(verl/trainer/distillation.py and the teacher of verl/workers/), the agentic zoom-in rollout
+(verl/workers/agent/), reproduction and comparison launchers, data preparation and the evaluation
+harness under eval/.
+
+verl/trainer/distillation.py contains portions adapted from TRL (https://github.com/huggingface/trl),
+Copyright 2020-2026 The HuggingFace Team, licensed under the Apache License 2.0.
 
 The methods reproduced here (PAPO, VPPO, DVRP, ToR, PGPO, PEPO, CFPO, VEPO, GRIT, DeepEyes) are
 independent re-implementations based on the respective papers and, where available, their public

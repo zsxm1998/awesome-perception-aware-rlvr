@@ -65,6 +65,8 @@ class RolloutConfig:
     response_length: int = field(default=-1, init=False)
     trust_remote_code: bool = field(default=False, init=False)
     max_dynamic_patch: Optional[int] = field(default=None, init=False)  # copied from worker.actor.model
+    # on-policy distillation: forbid sampling ids at or beyond len(tokenizer) (the padding rows of the LM head)
+    ban_ids_beyond_tokenizer: bool = field(default=False, init=False)
 
     def post_init(self):
         if self.interaction_mode not in {"one_shot", "agentic"}:

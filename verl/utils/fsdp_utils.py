@@ -136,6 +136,57 @@ def load_fsdp_model(model: FSDP, empty_cache: bool = True):
         gc.collect()
 
 
+def local_flat_param_shards(module: FSDP) -> list[torch.Tensor]:
+    """The local shards of the flat parameters of an FSDP module, in a fixed order (for saving and restoring)."""
+    _lazy_init(module, module)
+    return [handle.flat_param._local_shard for handle in module._all_handles]
+
+
+def _paired_local_shards(target: FSDP, source: FSDP) -> list[tuple[torch.Tensor, torch.Tensor]]:
+    """The local shards of the flat parameters of two FSDP modules built with the same wrapping, paired by the
+    names of the parameters they hold (fail closed on any difference)."""
+    _lazy_init(target, target)
+    _lazy_init(source, source)
+    target_handles, source_handles = target._all_handles, source._all_handles
+    if len(target_handles) != len(source_handles):
+        raise RuntimeError(f"FSDP modules hold {len(target_handles)} and {len(source_handles)} flat parameters.")
+    pairs = []
+    for target_handle, source_handle in zip(target_handles, source_handles):
+        target_param, source_param = target_handle.flat_param, source_handle.flat_param
+        if tuple(target_param._fqns) != tuple(source_param._fqns):
+            raise RuntimeError(f"FSDP flat parameters hold different parameters: {target_param._fqns[:3]} ...")
+        if target_param._local_shard.shape != source_param._local_shard.shape:
+            raise RuntimeError(
+                f"FSDP local shards differ in shape: {target_param._local_shard.shape} vs "
+                f"{source_param._local_shard.shape} ({target_param._fqns[:3]} ...)"
+            )
+        pairs.append((target_param._local_shard, source_param._local_shard))
+    return pairs
+
+
+@torch.no_grad()
+def copy_fsdp_params_(target: FSDP, source: FSDP) -> None:
+    """target <- source on the local shards of the parameters, and on the (unsharded) buffers, which keep the
+    source's values in the target's dtype: a bf16 actor holds bf16-rounded rotary frequencies, and a copy that
+    recomputed them in fp32 would not be the same model."""
+    for target_shard, source_shard in _paired_local_shards(target, source):
+        target_shard.copy_(source_shard.to(device=target_shard.device, dtype=target_shard.dtype))
+
+    target_buffers, source_buffers = dict(target.named_buffers()), dict(source.named_buffers())
+    if target_buffers.keys() != source_buffers.keys():
+        raise RuntimeError("FSDP modules hold different buffers.")
+    for name, buffer in target_buffers.items():
+        buffer.copy_(source_buffers[name].to(device=buffer.device, dtype=buffer.dtype))
+
+
+@torch.no_grad()
+def ema_update_fsdp_params_(ema: FSDP, source: FSDP, rate: float) -> None:
+    """ema <- (1 - rate) * ema + rate * source on the local shards, in the precision of the EMA (parameters only,
+    not buffers). The two modules must be built with the same wrapping and sharding."""
+    for ema_shard, source_shard in _paired_local_shards(ema, source):
+        ema_shard.mul_(1.0 - rate).add_(source_shard.to(device=ema_shard.device, dtype=ema_shard.dtype), alpha=rate)
+
+
 @torch.no_grad()
 def offload_fsdp_optimizer(optimizer: Optimizer, empty_cache: bool = True):
     if not optimizer.state:

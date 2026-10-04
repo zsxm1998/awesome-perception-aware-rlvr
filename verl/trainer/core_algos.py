@@ -84,6 +84,7 @@ class AdvantageEstimator(str, Enum):
     REINFORCE_PLUS_PLUS = "reinforce_plus_plus"
     REMAX = "remax"
     RLOO = "rloo"
+    TEACHER_LOG_RATIO = "teacher_log_ratio"
 
 
 ADV_ESTIMATOR_MAP: dict[str, Any] = {}
@@ -368,6 +369,66 @@ def compute_remax_outcome_advantage(
     advantages = (token_level_rewards.sum(dim=-1) - reward_baselines) * response_mask
     returns = (token_level_rewards * response_mask).flip(dims=(-1,)).cumsum(dim=-1).flip(dims=(-1,))
     return advantages, returns
+
+
+@register_adv_estimator(AdvantageEstimator.TEACHER_LOG_RATIO)
+def compute_teacher_log_ratio_advantage(
+    teacher_log_probs: torch.Tensor,
+    old_log_probs: torch.Tensor,
+    response_mask: torch.Tensor,
+    log_ratio_clip: float | None = 10.0,
+    **kwargs,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Compute the per-token advantage of on-policy distillation from sampled tokens:
+    A_t = log q(y_t) - log pi_old(y_t), the negative per-token reverse-KL estimate (k1) of the sampled token.
+    Used with the PPO policy loss, E_{y~pi}[A * grad log pi] = -grad KL(pi || q). No group normalization, no
+    discounting; the task reward is not used. Matches verl's on-policy distillation with k1 and policy gradient
+    and NeMo-RL's `opd` estimator (verl clamps the k1 value to +-10 in its example).
+
+    Args:
+        teacher_log_probs: `(torch.Tensor)`
+            shape: (bs, response_length), the teacher's log-probs of the sampled tokens
+        old_log_probs: `(torch.Tensor)`
+            shape: (bs, response_length), the rollout policy's log-probs recomputed by the actor
+        response_mask: `(torch.Tensor)`
+            shape: (bs, response_length)
+        log_ratio_clip: `(float | None)`
+            clamp the advantage to [-clip, clip]; None keeps it unclamped
+
+    Returns:
+        advantages: `(torch.Tensor)`
+            shape: (bs, response_length)
+        returns: `(torch.Tensor)`
+            shape: (bs, response_length)
+    """
+    advantages = teacher_log_probs - old_log_probs
+    if log_ratio_clip is not None:
+        advantages = advantages.clamp(-log_ratio_clip, log_ratio_clip)
+    # where, not multiply: padded positions may hold arbitrary log-probs
+    advantages = torch.where(response_mask.bool(), advantages, torch.zeros_like(advantages))
+    return advantages, advantages
+
+
+def compute_teacher_log_ratio_metrics(
+    teacher_log_probs: torch.Tensor,
+    old_log_probs: torch.Tensor,
+    response_mask: torch.Tensor,
+    log_ratio_clip: float | None,
+) -> dict[str, float]:
+    """Statistics of log q(y_t) - log pi_old(y_t) over the response tokens, before clamping."""
+    mask = response_mask.bool()
+    if not mask.any():
+        return {}
+    log_ratio = (teacher_log_probs - old_log_probs)[mask].float()
+    metrics = {
+        "teacher/log_ratio_mean": log_ratio.mean().item(),
+        "teacher/log_ratio_min": log_ratio.min().item(),
+        "teacher/log_ratio_max": log_ratio.max().item(),
+    }
+    if log_ratio_clip is not None:
+        metrics["teacher/log_ratio_clip_frac"] = (log_ratio.abs() > log_ratio_clip).float().mean().item()
+    return metrics
 
 
 def compute_rewards(
