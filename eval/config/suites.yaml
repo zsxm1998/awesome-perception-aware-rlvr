@@ -130,6 +130,82 @@ suites:
       --max-pixels (pass --max-pixels 12845056 to match).
       Use `--interaction-mode one_shot --format-prompt <template>` for non-agent models.
 
+  va_opd:
+    description: VA-OPD Table 1 (3 math reasoning + 4 visual understanding benchmarks; no OCRBench)
+    benchmarks: [wemath, mathvista, mathverse, hallusionbench, ai2d, mmmu_val, mmstar]
+    defaults:  # the training prompt and image size of examples/reproduction/va_opd
+      format_prompt: examples/format_prompt/math.jinja
+      min_pixels: 262144
+      max_pixels: 4194304
+    notes: >-
+      VA-OPD reports avg@8 at temperature 1.0 under the official scoring protocols, with a GPT-4o
+      judge where applicable, for the best checkpoint of each method (use --all-steps). We score
+      with rules: We-Math, MathVista and MathVerse with the PAPO-Eval protocol (avg@8, T=1.0);
+      HallusionBench, AI2D, MMMU (val) and MMStar are greedy by default (add `--temperature 1.0
+      --num-samples 8` for avg@8; HallusionBench then scores the first sample only). The paper's
+      MathVerse is testmini (its figures read MathVerse_mini); our `mathverse` is the PAPO-Eval
+      file, the 2,180 multiple-choice testmini questions with an image, without the free-form
+      ones. The paper does not say which HallusionBench metric it reports; our primary is aAcc
+      (fAcc, qAcc and their mean aqf_mean are in the details). OCRBench is not available in this
+      harness, so the paper's Visual Avg cannot be reproduced.
+
+  vgs:
+    description: VGS Table 1 benchmarks available here (4 of 7)
+    benchmarks: [mathvision, mathverse_v, logicvista, mmmu_pro]
+    defaults:  # the training prompt and image size of examples/reproduction/vgs (VGS' system prompt)
+      format_prompt: none
+      system_prompt: examples/system_prompt/vgs.txt
+      min_pixels: 262144
+      max_pixels: 4194304
+    notes: >-
+      VGS reports Acc@1 (greedy) and Acc@16 (mean accuracy of 16 samples at T=1.0) with 2048 new
+      tokens on MathVision, MathVerse Vision Dominant and Vision Only, LogicVista, VisualPuzzles,
+      VlmsAreBlind and MMMU-Pro (4 options); the paper does not describe its answer scoring. Our
+      sets differ from the evaluation files of the VGS authors (MathVision 3,040 items, MathVerse
+      VD / VO multiple-choice 432 / 436, LogicVista 448, MMMU-Pro 4-option 1,592): `mathvision`
+      is VPPO-Eval's 2,907-item verifiable subset, `mathverse_v` is PAPO-Eval's 1,308-item
+      vision-dependent split (one score), `logicvista` has 447 items and `mmmu_pro` is PAPO-Eval's
+      1,730-item vision setting. VisualPuzzles and VlmsAreBlind are not available. The defaults
+      are the PAPO-Eval protocol (avg@8, T=1.0); add `--temperature 0 --num-samples 1` for Acc@1
+      or `--num-samples 16` for Acc@16.
+
+  vcsd:
+    description: VCSD Table 1 (7 benchmarks; Acc. is their unweighted mean)
+    benchmarks: [blink, mmstar, vstar, mathvista, hrbench_4k, hrbench_8k, hallusionbench]
+    defaults:  # the training prompt (the bare problem) and image size of examples/reproduction/vcsd
+      format_prompt: none
+      system_prompt: none
+      min_pixels: 262144
+      max_pixels: 4194304
+    notes: >-
+      VCSD's HallusionBench score is (aAcc + fAcc + qAcc) / 3, reported here in the details as
+      aqf_mean (our primary is aAcc), and its Acc. column averages the seven scores. The paper
+      does not state its evaluation tool, prompts, decoding or answer extraction. We use greedy
+      decoding and rule-based scoring, except for MathVista (PAPO-Eval testmini, avg@8 at T=1.0;
+      add `--temperature 0 --num-samples 1` for greedy decoding everywhere). BLINK is the val
+      split (1,901 questions). The paper reports step 90 of every run. Evaluate with the training
+      chat template and tokenizer (`--chat-template examples/chat_template/qwen_no_thinking.jinja
+      --plain-think-tokens false`).
+
+  vision_opd:
+    description: Vision-OPD fine-grained (Table 1) and holdout (Table 2) benchmarks available here
+    benchmarks: [vstar, zoombench, hrbench_4k, hrbench_8k, mme_realworld_lite, mmstar, pope]
+    defaults:  # the training prompt (the dataset prompt) and image size of examples/reproduction/vision_opd
+      format_prompt: none
+      system_prompt: none
+      min_pixels: 65536
+      max_pixels: 16777216
+    notes: >-
+      Vision-OPD asks the dataset prompts without a system prompt (the defaults above), decodes
+      greedily with up to 32768 new tokens and scores with mathruler, letter matching and a
+      gpt-oss-120b judge; we score with rules (ZoomBench: the `zoombench` scorer, eval/README.md)
+      and 2048 new tokens. Vision-OPD sends the original images to a vLLM server; the suite uses
+      the training range of 65,536-16,777,216 pixels. The paper uses the full MME-RealWorld EN and CN sets; we have MME-RealWorld-Lite. MMVP and
+      CV-Bench (holdout) are not available. POPE's primary here is macro-F1 (accuracy in the
+      details); the paper does not say which POPE number it reports. Qwen3.5 models must be
+      evaluated in non-thinking mode, as the paper does (`--chat-template
+      examples/chat_template/qwen_no_thinking.jinja`, the template of the training scripts).
+
   cgpo:
     description: CGPO (natural-image reproduction trained on ViRL39K) = the PAPO suite
     include: [papo]
@@ -140,6 +216,10 @@ suites:
     description: Union used by examples/comparison/ (PAPO + VPPO reasoning sets, POPE, HallusionBench)
     include: [papo, vppo]
     benchmarks: [pope, hallusionbench]
+
+  opd:
+    description: Union used by examples/comparison/opd_qwen3_vl_2b (same as comparison)
+    include: [comparison]
 
   perception:
     description: General perception / hallucination benchmarks (MM-Vet runs only with a judge)

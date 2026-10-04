@@ -515,6 +515,8 @@ def score_hallusionbench(
             figures.setdefault("_".join(base + [str(meta.get("figure_id"))]), []).append(correct)
         questions.setdefault("_".join(base + [str(meta.get("question_id"))]), []).append(correct)
     accuracy = sum(correct_flags) / len(correct_flags) if correct_flags else 0.0
+    figure_accuracy = sum(all(items) for items in figures.values()) / len(figures) if figures else None
+    pair_accuracy = sum(all(items) for items in questions.values()) / len(questions) if questions else None
     raw = accuracy * 100.0
     write_jsonl(output_dir / f"{spec.key}_per_sample.jsonl", per_sample)
     return MetricResult(
@@ -526,9 +528,15 @@ def score_hallusionbench(
         len(rows),
         details={
             "question_accuracy": accuracy,
-            "figure_accuracy": sum(all(items) for items in figures.values()) / len(figures) if figures else None,
-            "question_pair_accuracy": sum(all(items) for items in questions.values()) / len(questions)
-            if questions
+            "figure_accuracy": figure_accuracy,
+            "question_pair_accuracy": pair_accuracy,
+            # The same three accuracies under the names of the HallusionBench paper, and their
+            # mean (the HallusionBench score that VCSD reports).
+            "aAcc": accuracy,
+            "fAcc": figure_accuracy,
+            "qAcc": pair_accuracy,
+            "aqf_mean": (accuracy + figure_accuracy + pair_accuracy) / 3
+            if figure_accuracy is not None and pair_accuracy is not None
             else None,
             "accuracy_by_category": {key: sum(items) / len(items) for key, items in sorted(categories.items())},
             "figure_count": len(figures),
@@ -688,6 +696,534 @@ def score_mcq(
             **({"accuracy_by_task": _mean_by_group(scores, tasks)} if any(tasks) else {}),
             "accuracy_by_category": accuracy_by_category,
             "unparsed_response_rate": unparsed / response_count if response_count else 0.0,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# MMMU: option letters (as the mcq scorer) and the rule-based matching of open answers of the
+# official MMMU evaluation (MMMU-Benchmark/MMMU, mmmu/utils/eval_utils.py)
+# ---------------------------------------------------------------------------
+
+MMMU_DISCIPLINES = {
+    "Art and Design": ("Art", "Art_Theory", "Design", "Music"),
+    "Business": ("Accounting", "Economics", "Finance", "Manage", "Marketing"),
+    "Science": ("Biology", "Chemistry", "Geography", "Math", "Physics"),
+    "Health and Medicine": (
+        "Basic_Medical_Science",
+        "Clinical_Medicine",
+        "Diagnostics_and_Laboratory_Medicine",
+        "Pharmacy",
+        "Public_Health",
+    ),
+    "Humanities and Social Science": ("History", "Literature", "Sociology", "Psychology"),
+    "Tech and Engineering": (
+        "Agriculture",
+        "Architecture_and_Engineering",
+        "Computer_Science",
+        "Electronics",
+        "Energy_and_Power",
+        "Materials",
+        "Mechanical_Engineering",
+    ),
+}
+_MMMU_DISCIPLINE_BY_SUBJECT = {
+    subject: discipline for discipline, subjects in MMMU_DISCIPLINES.items() for subject in subjects
+}
+_MMMU_KEY_INDICATORS = ("could be ", "so ", "is ", "thus ", "therefore ", "final ", "answer ", "result ")
+
+
+def _mmmu_is_number(text: str) -> bool:
+    try:
+        float(text.replace(",", ""))
+    except ValueError:
+        return False
+    return True
+
+
+def mmmu_normalize_str(text: str) -> list[float | str]:
+    """``normalize_str``: a number becomes [its value rounded to 2 decimals]; other text is
+    lowercased, and a single character is padded with a space on either side so that it does not
+    match inside a word."""
+    text = text.strip()
+    if _mmmu_is_number(text):
+        return [round(float(text.replace(",", "")), 2)]
+    text = text.lower()
+    if len(text) == 1:
+        return [" " + text, text + " "]
+    return [text]
+
+
+def mmmu_extract_numbers(text: str) -> list[str]:
+    """``extract_numbers``: numbers with thousands separators, in scientific notation and plain."""
+    with_commas = re.findall(r"-?\b\d{1,3}(?:,\d{3})+\b", text)
+    scientific = re.findall(r"-?\d+(?:\.\d+)?[eE][+-]?\d+", text)
+    simple = re.findall(r"-?(?:\d+\.\d+|\.\d+|\d+\b)(?![eE][+-]?\d+)(?![,\d])", text)
+    return with_commas + scientific + simple
+
+
+def _mmmu_key_subresponses(response: str) -> list[str]:
+    # As in the official code, the response is lowercased before the sentence split, so in effect
+    # only line breaks split it; "=" is an indicator in the last part only.
+    response = response.strip().strip(".").lower()
+    parts = re.split(r"\.\s(?=[A-Z])|\n", response)
+    key_responses = []
+    for index, part in enumerate(parts):
+        indicators = _MMMU_KEY_INDICATORS + (("=",) if index == len(parts) - 1 else ())
+        shortest = None
+        for indicator in indicators:
+            if indicator in part:
+                candidate = part.split(indicator)[-1].strip()
+                if not shortest or len(candidate) < len(shortest):
+                    shortest = candidate
+        if shortest and shortest not in {":", ",", ".", "!", "?", ";", "'"}:
+            key_responses.append(shortest)
+    return key_responses or [response]
+
+
+def mmmu_parse_open_response(response: str) -> list[float | str]:
+    """``parse_open_response``: the key sub-responses (the shortest tail after "is", "so",
+    "therefore", ... of each line) and the numbers in them, normalized, duplicates removed."""
+    key_responses = _mmmu_key_subresponses(response)
+    candidates = list(key_responses)
+    for key_response in key_responses:
+        candidates.extend(mmmu_extract_numbers(key_response))
+    normalized: list[float | str] = []
+    for candidate in candidates:
+        normalized.extend(mmmu_normalize_str(candidate))
+    return list(dict.fromkeys(normalized))
+
+
+def mmmu_eval_open(target: Any, predictions: list[float | str]) -> bool:
+    """``eval_open``: a text prediction is correct when it contains a normalized reference text, a
+    number when it equals a normalized reference number (``target`` may list several references)."""
+    references = target if isinstance(target, list) else [target]
+    normalized: list[float | str] = []
+    for reference in references:
+        normalized.extend(mmmu_normalize_str(str(reference)))
+    for prediction in predictions:
+        if isinstance(prediction, str):
+            if any(isinstance(answer, str) and answer in prediction for answer in normalized):
+                return True
+        elif prediction in normalized:
+            return True
+    return False
+
+
+def mmmu_open_answer(response: str) -> list[float | str]:
+    """Candidate answers of an open MMMU response: the official parsing of its final answer
+    (``\\boxed{}``, ``<answer>`` or "answer is" when present, else the whole response)."""
+    return mmmu_parse_open_response(extract_final_response_text(response))
+
+
+def mmmu_response_correct(row: dict[str, Any], response_index: int, response: str) -> bool:
+    if (row.get("extra_info") or {}).get("question_type") == "multiple-choice":
+        return mcq_response_correct(row, response_index, response)
+    if is_truncated_without_final_answer(row, response_index, response):
+        return False
+    return mmmu_eval_open(row.get("target"), mmmu_open_answer(response))
+
+
+def mmmu_row_score(row: dict[str, Any]) -> float:
+    scores = [
+        float(mmmu_response_correct(row, index, str(response)))
+        for index, response in enumerate(row.get("responses") or [])
+    ]
+    return sum(scores) / len(scores) if scores else 0.0
+
+
+def score_mmmu(
+    spec: BenchmarkSpec, rows: PredictionRows, judge_config: JudgeConfig | None, output_dir: Path
+) -> MetricResult:
+    """Accuracy over all questions (the official overall score), by question type, discipline and subject.
+
+    Multiple-choice answers are read with ``extract_choice_letter``; unlike the official
+    ``parse_multi_choice_response``, an answer without a recognizable option is wrong instead of
+    replaced by a random letter.
+    """
+    scores, subjects, question_types, per_sample = [], [], [], []
+    unparsed = choice_responses = 0
+    for row in rows:
+        extra = row.get("extra_info") or {}
+        question_type = str(extra.get("question_type") or "")
+        options = extra.get("options")
+        answers: list[Any] = []
+        for response in row.get("responses") or []:
+            if question_type == "multiple-choice":
+                letter = extract_choice_letter(str(response), list(options) if options else None)
+                answers.append(letter)
+                unparsed += int(letter is None)
+                choice_responses += 1
+            else:
+                answers.append([str(item) for item in mmmu_open_answer(str(response))])
+        score = mmmu_row_score(row)
+        subject = str((row.get("metadata") or {}).get("category") or "all")
+        scores.append(score)
+        subjects.append(subject)
+        question_types.append(question_type)
+        per_sample.append(
+            {
+                "sample_id": row.get("sample_id"),
+                "target": row.get("target"),
+                "question_type": question_type,
+                "answers": answers,
+                "mean_accuracy": score,
+                "category": subject,
+            }
+        )
+    accuracy = sum(scores) / len(scores) if scores else 0.0
+    raw = accuracy * 100.0
+    write_jsonl(output_dir / f"{spec.key}_per_sample.jsonl", per_sample)
+    return MetricResult(
+        spec.key,
+        spec.group,
+        spec.primary_metric,
+        raw,
+        raw,
+        len(rows),
+        details={
+            "accuracy": accuracy,
+            "accuracy_by_question_type": _mean_by_group(scores, question_types),
+            "accuracy_by_discipline": _mean_by_group(
+                scores, [_MMMU_DISCIPLINE_BY_SUBJECT.get(subject, "other") for subject in subjects]
+            ),
+            "accuracy_by_category": _mean_by_group(scores, subjects),
+            "unparsed_choice_rate": unparsed / choice_responses if choice_responses else 0.0,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# ZoomBench: rule-based reading of multiple-choice letters and counts. The official evaluation
+# (Vision-OPD eval/judge_qwenlm.py) accepts an answer when mathruler's grade_answer matches it
+# and otherwise asks an LLM judge; the rules below stand in for the judge.
+# ---------------------------------------------------------------------------
+
+ZOOMBENCH_CONFLICT = "conflict"
+_MARKDOWN_EMPHASIS_RE = re.compile(r"\*+|_{2,}|`+")
+_ZOOMBENCH_ANSWER_MARKER_RE = re.compile(
+    r"\b(?:final\s+)?answer\b\s*(?:(?:is|would\s+be|should\s+be)\b\s*[:：]?|[:：])", flags=re.IGNORECASE
+)
+_ZOOMBENCH_OPTION_MARKER_RE = re.compile(
+    r"\b(?:option|choice)\b\s*(?:(?:is|would\s+be|should\s+be)\b\s*[:：]?|[:：])?", flags=re.IGNORECASE
+)
+_ZOOMBENCH_ANSWER_PREFIX_RE = re.compile(
+    r"^\s*(?:the\s+)?(?:correct\s+|final\s+|best\s+)?(?:answer|option|choice)\b\s*(?:is\b\s*[:：]?|[:：])?\s*",
+    flags=re.IGNORECASE,
+)
+_ZOOMBENCH_LETTER_RE = re.compile(r"\(([A-D])\)|\[([A-D])\]|([A-D])(?![A-Za-z0-9])")
+_ZOOMBENCH_LETTER_DELIMITERS = ".:：,;!?)]"
+_ZOOMBENCH_SECOND_LETTER_RE = re.compile(r"\s*(?:,|/|&|(?i:or|and)\b)\s*\(?([A-D])(?![A-Za-z0-9])")
+# Words after a leading "A " that make it the option letter ("A is correct") rather than the article ("A red cup").
+_ZOOMBENCH_LETTER_WORDS_RE = re.compile(
+    r"(?:is|was|would|should|seems?|appears?|matches|fits|best|correct)\b", flags=re.IGNORECASE
+)
+_ZOOMBENCH_UNITS = (
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
+)
+_ZOOMBENCH_TENS = {
+    "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "fifty": 50,
+    "sixty": 60,
+    "seventy": 70,
+    "eighty": 80,
+    "ninety": 90,
+}
+_ZOOMBENCH_NUMBER_RE = re.compile(
+    r"(?<![\w.])(?P<digits>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?!\d)"
+    rf"|\b(?P<tens>{'|'.join(_ZOOMBENCH_TENS)})(?:[\s-](?P<tens_unit>{'|'.join(_ZOOMBENCH_UNITS[1:10])}))?\b"
+    rf"|\b(?P<unit>{'|'.join(_ZOOMBENCH_UNITS)})\b",
+    flags=re.IGNORECASE,
+)
+# "one" after these words is a pronoun ("the one on the left"), not a count.
+_ZOOMBENCH_PRONOUN_ONE_AFTER = {"the", "this", "that", "which", "each", "every", "any", "no", "some", "another"}
+
+
+def zoombench_text(response: str) -> str:
+    """The part of a response after its last ``</think>`` (the whole response when nothing follows
+    it), without markdown emphasis (``**``, ``__``, backticks)."""
+    text = str(response)
+    if "</think>" in text:
+        text = text.rsplit("</think>", 1)[1].strip() or text
+    return _MARKDOWN_EMPHASIS_RE.sub("", text).strip()
+
+
+def zoombench_official_answer(text: str) -> str:
+    """Answer extraction of the official ZoomBench judge (``extract_answer``): the ``<answer>`` span,
+    else the text from the first ``Answer:`` on, else the whole text."""
+    if "<answer>" in text:
+        start, end = text.find("<answer>"), text.find("</answer>")
+        if start != -1 and end != -1:
+            return text[start + len("<answer>") : end].strip()
+    if "Answer:" in text:
+        return text[text.find("Answer:") :].strip()
+    return text.strip()
+
+
+def _zoombench_mathruler(target: str, text: str) -> bool:
+    """The official first stage: ``grade_answer(gt, extracted)`` (in this argument order)."""
+    try:
+        return _grade_answer_cached(target, zoombench_official_answer(text))
+    except Exception:  # noqa: BLE001 - a parse failure of mathruler counts as no match
+        return False
+
+
+def _zoombench_answer_spans(text: str, markers: tuple[re.Pattern[str], ...]) -> list[str]:
+    """Final-answer spans, most authoritative first: the last ``<answer>`` span (or an unclosed
+    trailing one), the last ``\\boxed{}``, then the line after each marker match, last match first."""
+    spans = []
+    tagged = _ANSWER_TAG_RE.findall(text)
+    if tagged:
+        spans.append(tagged[-1])
+    else:
+        opening = list(re.finditer(r"<answer>", text, flags=re.IGNORECASE))
+        if opening:
+            spans.append(text[opening[-1].end() :])
+    boxed = _extract_boxed_answers(text)
+    if boxed:
+        spans.append(boxed[-1][1])
+    for marker in markers:
+        for match in reversed(list(marker.finditer(text))):
+            rest = text[match.end() :].strip()
+            spans.append(rest.split("\n", 1)[0])
+    return spans
+
+
+def _zoombench_norm(text: str) -> str:
+    """Lowercase, punctuation as spaces; unlike ``_norm_option_text``, non-Latin letters are kept
+    (some ZoomBench options are Chinese or Japanese)."""
+    return re.sub(r"\s+", " ", re.sub(r"[\W_]+", " ", str(text).lower())).strip()
+
+
+def _zoombench_option_letter(text: str, options: list[str], letters: str) -> str | None:
+    """Letter of the option whose text the answer equals (verbatim, then without case and
+    punctuation), or of the only option text it mentions (an option contained in a longer
+    mentioned option, "red" in "dark red", does not count)."""
+    normalized = _zoombench_norm(text)
+    if not options or not normalized:
+        return None
+    verbatim = [index for index, option in enumerate(options) if option.strip().lower() == text.strip().lower()]
+    if len(verbatim) == 1:
+        return letters[verbatim[0]]
+    norms = [_zoombench_norm(option) for option in options]
+    exact = [index for index, option in enumerate(norms) if option and option == normalized]
+    if len(exact) == 1:
+        return letters[exact[0]]
+
+    def mentions(haystack: str, needle: str) -> bool:
+        return re.search(rf"(?<![a-z0-9]){re.escape(needle)}(?![a-z0-9])", haystack) is not None
+
+    found = [index for index, option in enumerate(norms) if option and mentions(normalized, option)]
+    found = [
+        index
+        for index in found
+        if not any(norms[other] != norms[index] and mentions(norms[other], norms[index]) for other in found)
+    ]
+    return letters[found[0]] if len(found) == 1 else None
+
+
+def _zoombench_leading_letter(text: str, options: list[str], letters: str) -> str | None:
+    """Letter at the start of ``text``: ``(B)``, ``[B]``, ``B``, ``B.``, ``B)``, ``B: tan``, a letter
+    alone on its line, or a letter followed by words (``A`` + a lowercase word only when the words
+    match option A or read like "A is ..."; "A red cup" is the article). A letter glued to other
+    characters ("C-shaped", "B's") is not a choice. Two different letters joined by "or", "and", ","
+    or "/" give ZOOMBENCH_CONFLICT."""
+    text = text.strip()
+    match = _ZOOMBENCH_LETTER_RE.match(text)
+    if not match:
+        return None
+    letter = match.group(1) or match.group(2) or match.group(3)
+    if letter not in letters:
+        return None
+    rest = text[match.end() :]
+    second = _ZOOMBENCH_SECOND_LETTER_RE.match(rest)
+    if second and second.group(1) != letter:
+        return ZOOMBENCH_CONFLICT
+    line = rest.split("\n", 1)[0].strip()
+    if match.group(3) is None or not rest or rest[0] in _ZOOMBENCH_LETTER_DELIMITERS or not line:
+        return letter
+    if not rest[0].isspace():
+        return None
+    index = letters.index(letter)
+    if index < len(options) and _zoombench_norm(line) == _zoombench_norm(options[index]):
+        return letter
+    if letter == "A" and line[0].islower() and not _ZOOMBENCH_LETTER_WORDS_RE.match(line):
+        return None
+    return letter
+
+
+def _zoombench_span_letter(span: str, options: list[str], letters: str) -> str | None:
+    text = _ZOOMBENCH_ANSWER_PREFIX_RE.sub("", _clean_answer_text(span)).strip()
+    if not text:
+        return None
+    return _zoombench_leading_letter(text, options, letters) or _zoombench_option_letter(text, options, letters)
+
+
+def zoombench_choice(response: str, options: list[str] | None) -> str | None:
+    """Option letter of a ZoomBench multiple-choice response, ZOOMBENCH_CONFLICT when its final
+    answer names two different letters, or None.
+
+    Order: the last ``<answer>`` span, the last ``\\boxed{}``, the line after "Answer:",
+    "answer is" or "Final Answer:" (last one first), the line after "option" / "choice", a
+    response that starts with a letter, and the option texts (the response equals one or mentions
+    exactly one, which maps "Yes" / "No" in the two-option questions). A letter must stand alone
+    (never inside a word, never the first capital letter of the response) and be one of the
+    question's options.
+    """
+    options = [str(option) for option in options or []]
+    letters = "ABCD"[: len(options)] if options else "ABCD"
+    text = zoombench_text(response)
+    for span in _zoombench_answer_spans(text, (_ZOOMBENCH_ANSWER_MARKER_RE, _ZOOMBENCH_OPTION_MARKER_RE)):
+        letter = _zoombench_span_letter(span, options, letters)
+        if letter is not None:
+            return letter
+    return _zoombench_leading_letter(text, options, letters) or _zoombench_option_letter(text, options, letters)
+
+
+def _zoombench_numbers(text: str) -> list[float]:
+    values = []
+    for match in _ZOOMBENCH_NUMBER_RE.finditer(text):
+        if match.group("digits"):
+            values.append(float(match.group("digits").replace(",", "")))
+        elif match.group("tens"):
+            value = _ZOOMBENCH_TENS[match.group("tens").lower()]
+            if match.group("tens_unit"):
+                value += _ZOOMBENCH_UNITS.index(match.group("tens_unit").lower())
+            values.append(float(value))
+        else:
+            word = match.group("unit").lower()
+            previous = re.search(r"([A-Za-z]+)\s+$", text[: match.start()])
+            if word == "one" and previous and previous.group(1).lower() in _ZOOMBENCH_PRONOUN_ONE_AFTER:
+                continue
+            values.append(float(_ZOOMBENCH_UNITS.index(word)))
+    return values
+
+
+def zoombench_count(response: str) -> float | None:
+    """Count given by a ZoomBench counting response, or None.
+
+    Order: the first number of the last ``<answer>`` span, of the last ``\\boxed{}`` and of the
+    line after "Answer:" / "answer is" (last one first); a first line that is just a number; the
+    only number of the last line; the last number of the response. Digits (thousands separators
+    allowed, "4." and "4.0" read as 4) and English number words up to ninety-nine are read.
+    """
+    text = zoombench_text(response)
+    for span in _zoombench_answer_spans(text, (_ZOOMBENCH_ANSWER_MARKER_RE,)):
+        numbers = _zoombench_numbers(span)
+        if numbers:
+            return numbers[0]
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if lines:
+        if _ZOOMBENCH_NUMBER_RE.fullmatch(_clean_answer_text(lines[0])):
+            return _zoombench_numbers(lines[0])[0]
+        last_line = set(_zoombench_numbers(lines[-1]))
+        if len(last_line) == 1:
+            return last_line.pop()
+    numbers = _zoombench_numbers(text)
+    return numbers[-1] if numbers else None
+
+
+def zoombench_response(row: dict[str, Any], response_index: int, response: str) -> tuple[bool, Any, str]:
+    """(correct, prediction, source) of one response. ``source`` is ``mathruler`` (the official first
+    stage accepts the answer), ``rule``, ``conflict``, ``unparsed`` or ``truncated``."""
+    if is_truncated_without_final_answer(row, response_index, response):
+        return False, None, "truncated"
+    extra = row.get("extra_info") or {}
+    target = str(row.get("target")).strip()
+    if extra.get("question_type") == "mcq":
+        prediction: Any = zoombench_choice(response, extra.get("options"))
+        correct = prediction == target.upper()
+    else:
+        prediction = zoombench_count(response)
+        correct = prediction is not None and _to_float(target) == prediction
+    if _zoombench_mathruler(target, zoombench_text(response)):
+        return True, prediction, "mathruler"
+    if prediction is None:
+        return False, None, "unparsed"
+    if prediction == ZOOMBENCH_CONFLICT:
+        return False, prediction, "conflict"
+    return correct, prediction, "rule"
+
+
+def zoombench_row_score(row: dict[str, Any]) -> float:
+    scores = [
+        float(zoombench_response(row, index, str(response))[0])
+        for index, response in enumerate(row.get("responses") or [])
+    ]
+    return sum(scores) / len(scores) if scores else 0.0
+
+
+def score_zoombench(
+    spec: BenchmarkSpec, rows: PredictionRows, judge_config: JudgeConfig | None, output_dir: Path
+) -> MetricResult:
+    """Accuracy over all 845 questions (Vision-OPD's ZoomBench score), with the multiple-choice and
+    counting accuracies and how the answers were decided."""
+    scores, question_types, per_sample = [], [], []
+    source_counts = {"mathruler": 0, "rule": 0, "conflict": 0, "unparsed": 0, "truncated": 0}
+    for row in rows:
+        question_type = str((row.get("extra_info") or {}).get("question_type") or "")
+        judged = [
+            zoombench_response(row, index, str(response)) for index, response in enumerate(row.get("responses") or [])
+        ]
+        for _, _, source in judged:
+            source_counts[source] += 1
+        score = sum(float(correct) for correct, _, _ in judged) / len(judged) if judged else 0.0
+        scores.append(score)
+        question_types.append(question_type)
+        per_sample.append(
+            {
+                "sample_id": row.get("sample_id"),
+                "target": row.get("target"),
+                "question_type": question_type,
+                "predictions": [prediction for _, prediction, _ in judged],
+                "sources": [source for _, _, source in judged],
+                "mean_accuracy": score,
+                "category": question_type,
+            }
+        )
+    by_type = _mean_by_group(scores, question_types)
+    accuracy = sum(scores) / len(scores) if scores else 0.0
+    responses = sum(source_counts.values())
+    raw = accuracy * 100.0
+    write_jsonl(output_dir / f"{spec.key}_per_sample.jsonl", per_sample)
+    return MetricResult(
+        spec.key,
+        spec.group,
+        spec.primary_metric,
+        raw,
+        raw,
+        len(rows),
+        details={
+            "accuracy": accuracy,
+            "mcq_accuracy": by_type.get("mcq"),
+            "counting_accuracy": by_type.get("blank"),
+            "mcq_count": question_types.count("mcq"),
+            "counting_count": question_types.count("blank"),
+            "answer_source_counts": source_counts,
+            "unparsed_response_rate": (source_counts["unparsed"] + source_counts["conflict"]) / responses
+            if responses
+            else 0.0,
         },
     )
 
@@ -1860,6 +2396,12 @@ def _sample_score_and_correct(spec: BenchmarkSpec, row: dict[str, Any]) -> tuple
     if spec.scorer == "mcq":
         score = mcq_row_score(row)
         return score, score >= 0.5
+    if spec.scorer == "mmmu":
+        score = mmmu_row_score(row)
+        return score, score >= 0.5
+    if spec.scorer == "zoombench":
+        score = zoombench_row_score(row)
+        return score, score >= 0.5
     return None, None
 
 
@@ -2318,6 +2860,8 @@ SCORERS: dict[str, Scorer] = {
     "mmvet": score_mmvet,
     "seed_bench": score_seed_bench,
     "mcq": score_mcq,
+    "mmmu": score_mmmu,
+    "zoombench": score_zoombench,
     "answer_bbox": score_answer_bbox,
     "grounding_iou": score_grounding_iou,
     "refcoco": score_refcoco,

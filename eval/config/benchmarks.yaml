@@ -299,6 +299,65 @@ benchmarks:
     num_samples: 8
 
   # ---------------------------------------------------------------------------
+  # General multimodal benchmarks (VA-OPD, VCSD and Vision-OPD tables), greedy, single
+  # sample: option accuracy with rule-based letter extraction; MMMU scores its open
+  # questions with the rule-based answer matching of the official MMMU evaluation.
+  # ---------------------------------------------------------------------------
+  - key: mmstar
+    label: MMStar
+    group: Perception
+    loader: mmstar
+    scorer: mcq
+    primary_metric: overall_accuracy
+    source: Lin-Chen/MMStar (val)
+    path: mmstar/val.parquet
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+    metadata:
+      aggregate: micro
+
+  - key: blink
+    label: BLINK (val)
+    group: Perception
+    loader: blink
+    scorer: mcq
+    primary_metric: overall_accuracy
+    source: BLINK-Benchmark/BLINK (14 subtasks, val)
+    path: blink/*.parquet
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+    metadata:
+      aggregate: micro
+
+  - key: ai2d
+    label: AI2D
+    group: Perception
+    loader: ai2d
+    scorer: mcq
+    primary_metric: overall_accuracy
+    source: lmms-lab/ai2d (test)
+    path: ai2d/*.parquet
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+    metadata:
+      aggregate: micro
+
+  - key: mmmu_val
+    label: MMMU (val)
+    group: Perception
+    loader: mmmu
+    scorer: mmmu
+    primary_metric: overall_accuracy
+    source: lmms-lab/MMMU (validation)
+    path: mmmu_val/validation.parquet
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+
+  # ---------------------------------------------------------------------------
   # High-resolution perception (DeepEyes tables): MCQ accuracy with rule-based
   # option-letter extraction. Works with one-shot and agentic (DeepEyes) inference.
   # ---------------------------------------------------------------------------
@@ -361,6 +420,21 @@ benchmarks:
     num_samples: 1
     metadata:
       aggregate: micro
+
+  # ZoomBench (Vision-OPD tables): the dataset's query on the full image; the multiple-choice
+  # and counting questions are scored by the rule-based `zoombench` scorer (eval/README.md).
+  - key: zoombench
+    label: ZoomBench
+    group: HighRes
+    loader: zoombench
+    scorer: zoombench
+    primary_metric: overall_accuracy
+    source: inclusionAI/ZoomBench (test)
+    path: zoombench/annotations.jsonl
+    image_root: zoombench
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
 
   # ---------------------------------------------------------------------------
   # Grounding. GRIT sets (official GRIT_data annotations) follow the GRIT paper: answer

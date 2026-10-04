@@ -2,9 +2,10 @@
 
 One-command evaluation of the base models and checkpoints produced by this repository.
 The harness covers the benchmarks used by the reproduced papers (PAPO, VPPO, DVRP, ToR,
-PGPO, PEPO, CFPO, VEPO, GRIT, DeepEyes) and CGPO, downloads them from public sources, runs
-inference with vLLM on all visible GPUs, and scores every benchmark with a documented,
-rule-based protocol (an LLM judge is only used for MM-Vet and, optionally, GQA).
+PGPO, PEPO, CFPO, VEPO, GRIT, DeepEyes, VA-OPD, VGS, VCSD, Vision-OPD) and CGPO, downloads
+them from public sources, runs inference with vLLM on all visible GPUs, and scores every
+benchmark with a documented, rule-based protocol (an LLM judge is only used for MM-Vet and,
+optionally, GQA).
 
 ```
 eval/
@@ -50,7 +51,7 @@ the visualization server. If huggingface.co is slow or blocked, set
 bash scripts/prepare_eval_data.sh --list                 # benchmarks, sources, sizes, suites
 bash scripts/prepare_eval_data.sh geo3k pope vstar       # individual benchmarks
 bash scripts/prepare_eval_data.sh vppo deepeyes          # suites
-bash scripts/prepare_eval_data.sh all                    # every non-optional benchmark (~11 GB on disk)
+bash scripts/prepare_eval_data.sh all                    # every non-optional benchmark (~16 GB on disk)
 bash scripts/prepare_eval_data.sh refcoco                # optional: RefCOCO family (~0.5 GB)
 bash scripts/prepare_eval_data.sh seed_bench             # optional: SEED-Bench (27 GB download, ~25 GB on disk)
 python -m eval.prepare papo --data-root /data/eval       # same CLI as a module (from the repo root)
@@ -101,8 +102,13 @@ also set prompt defaults (see [Prompts](#prompts)); explicit flags always win.
 | `cfpo` | cvqa_real, mars_bench, pope, textvqa, mmmu_pro, geo3k, wemath, mmk12, mathverse, logicvista | CFPO Table 1; CFPO reports POPE as pooled accuracy with avg@8 (same 9,000 questions; our primary is greedy macro F1, pooled accuracy in the details); CFPO's LogicVista file has 448 items, PAPO-Eval's 447 |
 | `grit` | grit_vsr, grit_tallyqa, grit_gqa, ovdeval_position | GRIT Table 1 (GRIT judges answers with GPT-4o, we use relaxed exact match); defaults follow GRIT's evaluation, for models trained with GRIT's prompt: its prompt (`grit.jinja`, no system prompt), the bare question (`--grounding-instruction none`; elsewhere a box instruction is appended to these sets) and 3,136–200,704 pixels. Evaluate other models on these sets with `--benchmarks grit_vsr,grit_tallyqa,grit_gqa,ovdeval_position` and their own prompt flags |
 | `deepeyes` | vstar, hrbench_4k, hrbench_8k, mme_realworld_lite, pope | DeepEyes Tables 1-3; default: agentic DeepEyes inference (see [Agentic evaluation](#agentic-evaluation-deepeyes)) |
+| `va_opd` | wemath, mathvista, mathverse, hallusionbench, ai2d, mmmu_val, mmstar | VA-OPD Table 1 without OCRBench (not available); the paper reports avg@8 at T=1.0 with official scoring and a GPT-4o judge where applicable, for the best checkpoint; our math sets are avg@8, the other four greedy by default (`--temperature 1.0 --num-samples 8` for avg@8; HallusionBench scores the first sample only); our MathVerse holds the 2,180 multiple-choice testmini questions with an image; defaults: the training prompt (`math.jinja`) and image size |
+| `vgs` | mathvision, mathverse_v, logicvista, mmmu_pro | VGS Table 1, the 4 of 7 benchmarks available (no VisualPuzzles, VlmsAreBlind); the paper reports Acc@1 (greedy) and Acc@16 (T=1); our MathVerse-V and MMMU-Pro come from PAPO-Eval and differ from the subsets the VGS authors use (MathVerse VD / VO multiple choice, 4-option MMMU-Pro); defaults: the training prompt (VGS' system prompt) and image size |
+| `vcsd` | blink, mmstar, vstar, mathvista, hrbench_4k, hrbench_8k, hallusionbench | VCSD Table 1; the paper's HallusionBench score is (aAcc+fAcc+qAcc)/3 (`aqf_mean` in the details) and its Acc. the mean of the seven scores; decoding and scoring are not given in the paper (we use greedy rule-based scoring, MathVista avg@8); defaults: the training prompt (the bare problem) and image size; add the training chat template (see [Prompts](#prompts)) |
+| `vision_opd` | vstar, zoombench, hrbench_4k, hrbench_8k, mme_realworld_lite, mmstar, pope | Vision-OPD Table 1 + holdout set of Table 2; the paper uses the full MME-RealWorld EN/CN (we have the lite version) and a gpt-oss-120b judge; MMVP and CV-Bench are not available; defaults: the training prompt (the dataset prompt, no system prompt) and image size (65,536-16,777,216 pixels); evaluate Qwen3.5 models in non-thinking mode (see [Prompts](#prompts)) |
 | `cgpo` | = `papo` | CGPO natural-image reproduction (trained on ViRL39K); default prompt `xml_grounded_reasoning.jinja` |
 | `comparison` | `papo` + `vppo` + pope, hallusionbench | the benchmark set used by `examples/comparison/` |
+| `opd` | = `comparison` | the benchmark set used by `examples/comparison/opd_qwen3_vl_2b` |
 | `perception` | pope, hallusionbench, mme, gqa, mm_vet | general perception / hallucination |
 | `refcoco` | refcoco_val, refcoco_plus_val, refcocog_val | optional (COCO images) |
 | `all` | every non-optional benchmark | |
@@ -110,8 +116,10 @@ also set prompt defaults (see [Prompts](#prompts)); explicit flags always win.
 The reasoning columns of all papers are scored with one protocol (PAPO-Eval, below), which
 is what PAPO, VPPO, DVRP, PGPO, PEPO (Table 5) and CFPO use. Where a paper used another
 protocol (VEPO and ToR: greedy decoding and an LLM answer parser; PEPO Table 1: the official
-MathVista checker; GRIT: a GPT-4o judge; DeepEyes: a Qwen2.5-72B judge fallback), numbers
-are comparable across methods within this harness but not digit-for-digit with the paper.
+MathVista checker; GRIT: a GPT-4o judge; DeepEyes: a Qwen2.5-72B judge fallback; VA-OPD: a
+GPT-4o judge where applicable; Vision-OPD: a gpt-oss-120b judge; VGS and VCSD do not describe
+their scoring), numbers are comparable across methods within this harness but not
+digit-for-digit with the paper.
 `--temperature 0 --num-samples 1` switches any run to greedy decoding.
 
 Sampling uses no top-k limit and images of 200,704-1,003,520 pixels by default, the settings
@@ -131,18 +139,18 @@ temperature 1.0, top_p 1.0 and 2048 new tokens; "greedy" = 1 sample at temperatu
 | Key | Benchmark | Source (HF) | #Samples | Primary metric | Decoding | Used by |
 |---|---|---|---:|---|---|---|
 | `geo3k` | Geometry3K test | `PAPO-Galaxy/PAPO_eval` | 601 | boxed exact match, mean acc@k | avg@8 | PAPO, VPPO, DVRP, PGPO, PEPO, CFPO, VEPO, CGPO |
-| `mathvista` | MathVista testmini | `PAPO-Galaxy/PAPO_eval` | 1000 | boxed exact match | avg@8 | PAPO, DVRP, PEPO, VEPO, ToR, CGPO |
-| `wemath` | We-Math | `PAPO-Galaxy/PAPO_eval` | 1740 | boxed exact match | avg@8 | PAPO, VPPO, DVRP, PEPO, CFPO, VEPO, ToR, CGPO |
+| `mathvista` | MathVista testmini | `PAPO-Galaxy/PAPO_eval` | 1000 | boxed exact match | avg@8 | PAPO, DVRP, PEPO, VEPO, ToR, CGPO, VA-OPD, VCSD |
+| `wemath` | We-Math | `PAPO-Galaxy/PAPO_eval` | 1740 | boxed exact match | avg@8 | PAPO, VPPO, DVRP, PEPO, CFPO, VEPO, ToR, CGPO, VA-OPD |
 | `mmk12` | MMK12 test | `PAPO-Galaxy/PAPO_eval` | 2000 | boxed exact match | avg@8 | PAPO, VPPO, DVRP, PGPO, CFPO, VEPO, CGPO |
-| `mathverse` | MathVerse testmini (multi-choice) | `PAPO-Galaxy/PAPO_eval` | 2180 | boxed exact match | avg@8 | PAPO, VPPO, DVRP, PGPO, PEPO, CFPO, VEPO, ToR, CGPO |
-| `mathverse_v` | MathVerse vision-dependent | `PAPO-Galaxy/PAPO_eval` | 1308 | boxed exact match | avg@8 | PAPO, DVRP, PGPO, CGPO |
-| `logicvista` | LogicVista | `PAPO-Galaxy/PAPO_eval` | 447 | boxed exact match | avg@8 | PAPO, VPPO, PGPO, PEPO, CFPO, CGPO |
+| `mathverse` | MathVerse testmini (multi-choice) | `PAPO-Galaxy/PAPO_eval` | 2180 | boxed exact match | avg@8 | PAPO, VPPO, DVRP, PGPO, PEPO, CFPO, VEPO, ToR, CGPO, VA-OPD |
+| `mathverse_v` | MathVerse vision-dependent | `PAPO-Galaxy/PAPO_eval` | 1308 | boxed exact match | avg@8 | PAPO, DVRP, PGPO, CGPO, VGS |
+| `logicvista` | LogicVista | `PAPO-Galaxy/PAPO_eval` | 447 | boxed exact match | avg@8 | PAPO, VPPO, PGPO, PEPO, CFPO, CGPO, VGS |
 | `clevr_count` | Counting (PAPO's "SuperClevr counting" column) | `PAPO-Galaxy/PAPO_eval` | 200 | boxed exact match | avg@8 | PAPO, PEPO, CGPO |
-| `mmmu_pro` | MMMU-Pro (vision setting) | `PAPO-Galaxy/PAPO_eval` | 1730 | boxed exact match | avg@8 | PAPO, VPPO, PGPO, PEPO, CFPO, CGPO |
+| `mmmu_pro` | MMMU-Pro (vision setting) | `PAPO-Galaxy/PAPO_eval` | 1730 | boxed exact match | avg@8 | PAPO, VPPO, PGPO, PEPO, CFPO, CGPO, VGS |
 | `dynamath` | DynaMath (verifiable subset) | `chamber111/VPPO-Eval` | 3666 | boxed exact match | avg@8 | VPPO, PGPO |
-| `mathvision` | MathVision (verifiable subset) | `chamber111/VPPO-Eval` | 2907 | boxed exact match | avg@8 | VPPO, PGPO, VEPO, ToR |
-| `pope` | POPE random/popular/adversarial | `lmms-lab/POPE` | 9000 | macro F1 over the 3 splits (accuracy in details) | greedy | CFPO, DeepEyes |
-| `hallusionbench` | HallusionBench (image questions) | `lmms-lab/HallusionBench` | 951 | question accuracy aAcc (fAcc, qAcc in details) | greedy | VEPO, ToR |
+| `mathvision` | MathVision (verifiable subset) | `chamber111/VPPO-Eval` | 2907 | boxed exact match | avg@8 | VPPO, PGPO, VEPO, ToR, VGS |
+| `pope` | POPE random/popular/adversarial | `lmms-lab/POPE` | 9000 | macro F1 over the 3 splits (accuracy in details) | greedy | CFPO, DeepEyes, Vision-OPD |
+| `hallusionbench` | HallusionBench (image questions) | `lmms-lab/HallusionBench` | 951 | question accuracy aAcc (fAcc, qAcc and their mean `aqf_mean` in details) | greedy | VEPO, ToR, VA-OPD, VCSD |
 | `mme` | MME | `lmms-lab/MME` | 2374 | total score (acc + acc+); /2800 in averages | greedy (PGPO averages 8 samples) | PGPO |
 | `gqa` | GQA testdev-balanced | `lmms-lab/GQA` | 12578 | exact match (EM→judge cascade with a judge) | greedy | general |
 | `mm_vet` | MM-Vet | `lmms-lab/MMVet` | 218 | LLM-judge score; **skipped without a judge** | greedy | general |
@@ -150,10 +158,15 @@ temperature 1.0, top_p 1.0 and 2048 new tokens; "greedy" = 1 sample at temperatu
 | `mars_bench` | MARS-Bench | `RavenInJuly/CFPO_Datasets` + COCO val2014 | 5110 | CFPO match, mean acc@k | avg@8 | CFPO |
 | `textvqa` | TextVQA val | `RavenInJuly/CFPO_Datasets` | 5000 | CFPO match, mean acc@k (VQA accuracy in details) | avg@8 | CFPO |
 | `seed_bench` | SEED-Bench (optional, ~27 GB) | `lmms-lab/SEED-Bench` | 17990 | option accuracy (image / video split in details) | greedy | general |
-| `vstar` | V* Bench | `craigwu/vstar_bench` | 191 | accuracy over all questions | greedy | DeepEyes |
-| `hrbench_4k` | HR-Bench 4K | `DreamMr/HR-Bench` | 800 | mean of FSP and FCP accuracy | greedy | DeepEyes |
-| `hrbench_8k` | HR-Bench 8K | `DreamMr/HR-Bench` | 800 | mean of FSP and FCP accuracy | greedy | DeepEyes |
-| `mme_realworld_lite` | MME-RealWorld-Lite | `yifanzhang114/MME-RealWorld-lite-lmms-eval` | 1919 | accuracy over all questions (Perception / Reasoning and per-subtask in details) | greedy | DeepEyes |
+| `mmstar` | MMStar | `Lin-Chen/MMStar` | 1500 | accuracy over all questions (per category in details) | greedy | VA-OPD, VCSD, Vision-OPD |
+| `blink` | BLINK val (14 subtasks, 1-4 images) | `BLINK-Benchmark/BLINK` | 1901 | accuracy over all questions (per subtask in details) | greedy | VCSD |
+| `ai2d` | AI2D test | `lmms-lab/ai2d` | 3088 | accuracy | greedy | VA-OPD |
+| `mmmu_val` | MMMU validation (847 multiple-choice, 53 open) | `lmms-lab/MMMU` | 900 | accuracy over all questions (by question type, discipline and subject in details) | greedy | VA-OPD |
+| `vstar` | V* Bench | `craigwu/vstar_bench` | 191 | accuracy over all questions | greedy | DeepEyes, VCSD, Vision-OPD |
+| `hrbench_4k` | HR-Bench 4K | `DreamMr/HR-Bench` | 800 | mean of FSP and FCP accuracy | greedy | DeepEyes, VCSD, Vision-OPD |
+| `hrbench_8k` | HR-Bench 8K | `DreamMr/HR-Bench` | 800 | mean of FSP and FCP accuracy | greedy | DeepEyes, VCSD, Vision-OPD |
+| `mme_realworld_lite` | MME-RealWorld-Lite | `yifanzhang114/MME-RealWorld-lite-lmms-eval` | 1919 | accuracy over all questions (Perception / Reasoning and per-subtask in details) | greedy | DeepEyes, Vision-OPD (full EN/CN in the paper) |
+| `zoombench` | ZoomBench (621 multiple-choice, 224 counting; full image) | `inclusionAI/ZoomBench` | 845 | accuracy over all questions (multiple-choice and counting accuracy in details) | greedy | Vision-OPD |
 | `grit_vsr` | GRIT VSR | `yfan1997/GRIT_data` + COCO 2017 | 288 | answer accuracy (GRIT grounding IoU in details) | greedy | GRIT |
 | `grit_tallyqa` | GRIT TallyQA (official file) | `yfan1997/GRIT_data` + Visual Genome | 491 | answer accuracy (+ GRIT grounding IoU) | greedy | GRIT |
 | `grit_gqa` | GRIT GQA | `yfan1997/GRIT_data` + Visual Genome | 509 | answer accuracy (+ GRIT grounding IoU) | greedy | GRIT |
@@ -164,7 +177,8 @@ temperature 1.0, top_p 1.0 and 2048 new tokens; "greedy" = 1 sample at temperatu
 | `refcocog_val` | RefCOCOg val (optional) | `PaDT-MLLM/RefCOCO` + COCO train2014 | 4896 | Acc@0.5 IoU | greedy | DeepEyes |
 
 Not included: the medical benchmarks of DVRP, LISA grounding and the few-shot / puzzle tasks
-of PEPO, and GRIT's GPT-judged MathVista/MME subsets.
+of PEPO, GRIT's GPT-judged MathVista/MME subsets, OCRBench (VA-OPD), VisualPuzzles and
+VlmsAreBlind (VGS), MMVP, CV-Bench and the full MME-RealWorld EN/CN sets (Vision-OPD).
 
 ### Scoring protocols
 
@@ -180,7 +194,11 @@ of PEPO, and GRIT's GPT-judged MathVista/MME subsets.
 - **POPE / MME / HallusionBench** parse yes/no from the final answer (`\boxed{}`,
   `<answer>`, "answer is ..." or the first yes/no word). HallusionBench reports question
   accuracy (aAcc, primary), figure accuracy (fAcc: every question about a figure correct) and
-  question-pair accuracy (qAcc) as defined by the official evaluation.
+  question-pair accuracy (qAcc) as defined by the official evaluation (questions grouped by
+  category, subcategory and set; VS questions without a figure are left out of fAcc), and
+  `aqf_mean` = (aAcc + fAcc + qAcc) / 3, the HallusionBench score that VCSD reports. The details
+  also hold the three accuracies as `aAcc`, `fAcc` and `qAcc`. Only the first sample of each
+  question is scored.
 - **V\* / HR-Bench (`mcq`)** extract the chosen option letter from the final answer (`C`,
   `(C)`, `C.`, `C. text`, `Option C`, ...) and fall back to a unique option-text match.
   V\* reports accuracy over all 191 questions; HR-Bench reports the mean of the FSP
@@ -195,6 +213,63 @@ of PEPO, and GRIT's GPT-judged MathVista/MME subsets.
   (`Perception/OCR`, `Perception/RS`, `Perception/DT`, `Perception/MO`, `Perception/AD`,
   `Reasoning/OCR`, `Reasoning/DT`, `Reasoning/MO`, `Reasoning/AD`), the breakdown of the
   DeepEyes table.
+- **MMStar / BLINK / AI2D (`mcq`)** ask the released question with its options (MMStar's
+  question text, which contains the options; BLINK's `prompt` field, the question followed by
+  `(A)` options, with the 1-4 images of a question in dataset order; AI2D's question with
+  `(A)`-`(D)` option lines), followed by "Answer with the option's letter from the given
+  choices." (lmms-eval's instruction without "directly", as for V\*, so that it does not
+  contradict a reasoning format prompt), and use the letter extraction of V\*. The primary
+  metric is the accuracy over all questions; `accuracy_by_category` holds MMStar's six
+  categories (250 questions each, so their mean equals the overall accuracy) and BLINK's 14
+  subtasks.
+- **MMMU validation (`mmmu`)** asks the multiple-choice questions with `(A)` option lines and
+  the letter instruction, and the open questions with "Answer the question using a single word
+  or phrase." (lmms-eval's instruction). As in lmms-eval, the images are those that the question
+  and the options reference with `<image n>`, in that order, placed before the text, which keeps
+  the placeholders (four questions have an extra image that no placeholder references; it is
+  not passed). Multiple-choice answers use the letter extraction of V\*; an answer without a
+  recognizable letter is wrong (the official `parse_multi_choice_response` picks a random letter
+  instead). Open answers are scored with the rule-based matching of the official
+  `mmmu/utils/eval_utils.py` (`parse_open_response` and `eval_open`: the shortest tails after
+  "is", "so", "therefore", ... of each line and the numbers in them, numbers compared after
+  rounding to 2 decimals, text by containment) applied to the final answer (`\boxed{}`,
+  `<answer>` or "answer is", else the whole response); the three questions with several
+  accepted answers keep them as a list, as the official answer file does. The primary metric is
+  the accuracy over all 900 questions; the details hold the accuracy by question type, by
+  discipline (6) and by subject (30).
+- **ZoomBench (`zoombench`)** asks the dataset's `query` (the question, the `A.`-`D.` options and,
+  for most multiple-choice questions, "Answer with the option's letter from the given choices.";
+  counting questions end with "Please answer using Arabic numerals.") on the full image, as
+  Vision-OPD does. The dataset also provides the crop of the key region (the region view of the
+  ZoomBench paper); the prepare step keeps it in `data/eval/zoombench/crops/`, but it is not
+  evaluated. The official evaluation (Vision-OPD's `eval/judge_qwenlm.py`; the ZoomBench
+  repository has the same two stages with another judge model) extracts the `<answer>` span or
+  the text from `Answer:` on, accepts the answer when `mathruler`'s
+  `grade_answer(reference, answer)` matches, and otherwise asks an LLM judge (gpt-oss-120b in
+  Vision-OPD) whether the response means the same as the reference. We keep the first stage and
+  replace the judge with rules, applied to the text after the last `</think>` with markdown
+  emphasis removed:
+  - multiple choice: the letter of the last `<answer>` span, else of the last `\boxed{}`, else of
+    the line after "Answer:", "answer is" or "Final Answer:" (then after "option" / "choice"),
+    else of a response that starts with a letter (`B`, `(B)`, `B.`, `B)`, `B: text`), else the
+    option whose text the answer equals or the only option text it mentions; this maps "Yes" /
+    "No" in the 15 two-option questions, whose option order varies. A letter must stand alone
+    and be an option of the question; it is never the first capital letter of the response
+    (which would read "Answer: D" as A), and an answer that names two different letters
+    ("A or C") is wrong.
+  - counting: the first number of the `<answer>` span, the `\boxed{}` or the answer line, else a
+    first line that is only a number, else the only number of the last line, else the last
+    number of the response; digits ("4.", "4.0", "1,200") and English number words are read and
+    compared with the integer reference.
+
+  The primary metric is the accuracy over all 845 questions; the details hold `mcq_accuracy`,
+  `counting_accuracy` and `answer_source_counts` (how many answers `mathruler` accepted, the
+  rules decided, named two letters, could not be read or were truncated). The rules cannot
+  credit paraphrased option texts or other answers that an LLM judge accepts by meaning, and
+  the judge itself is not deterministic (about one point between two judging runs of the same
+  outputs, reported in a Vision-OPD issue), so ZoomBench numbers are comparable within this
+  harness rather than digit-for-digit with the papers. One multiple-choice item has the gold
+  letter D for the options A and B.
 - **C-VQA-Real / MARS-Bench / TextVQA (`cfpo_match`)** reproduce CFPO's
   `Counterfactual-Eval/inference_eval.py`: the last `\boxed{}` is extracted with
   `mathruler.grader.extract_boxed_content` (the whole response when there is no box) and
@@ -270,7 +345,7 @@ Evaluate a model with the prompt it was trained with:
 
 | Model | Flags (or suite default) |
 |---|---|
-| PAPO, VPPO, DVRP, PGPO, ToR, GRPO/DAPO baselines | default (`math_perception.jinja`) |
+| PAPO, VPPO, DVRP, PGPO, ToR, GRPO/DAPO baselines, the OPD comparison | default (`math_perception.jinja`) |
 | CFPO | `--format-prompt none --system-prompt examples/system_prompt/cfpo.txt` (suite `cfpo`) |
 | VEPO | `--format-prompt none --system-prompt examples/system_prompt/vepo.txt` (suite `vepo`) |
 | PEPO (Geometry3K setting) | `--format-prompt examples/format_prompt/pepo.jinja` (suite `pepo_geometry`) |
@@ -278,6 +353,10 @@ Evaluate a model with the prompt it was trained with:
 | GRIT (`examples/reproduction/grit`) | `--format-prompt examples/format_prompt/grit.jinja --system-prompt none --min-pixels 3136 --max-pixels 200704` (suite `grit`) |
 | GRIT in the comparison (`examples/comparison/qwen3_vl_4b/grit.sh`) | `--format-prompt none --system-prompt examples/system_prompt/grit_GR.txt`; on the GRIT sets with `--benchmarks grit_vsr,grit_tallyqa,grit_gqa,ovdeval_position`, not `--suite grit` |
 | DeepEyes, Qwen2.5-VL (`qwen2_5_vl_7b_grpo_deepeyes.sh`, DeepEyes' own prompts) | `--interaction-mode agentic --agent-prompt-style official` (suite `deepeyes` plus `--agent-prompt-style official`) |
+| VA-OPD (`examples/reproduction/va_opd`) | `--format-prompt examples/format_prompt/math.jinja --min-pixels 262144 --max-pixels 4194304` (suite `va_opd`) |
+| VGS (`examples/reproduction/vgs`) | `--format-prompt none --system-prompt examples/system_prompt/vgs.txt --min-pixels 262144 --max-pixels 4194304` (suite `vgs`) |
+| VCSD (`examples/reproduction/vcsd`) | `--format-prompt none --min-pixels 262144 --max-pixels 4194304` (suite `vcsd`) plus `--chat-template examples/chat_template/qwen_no_thinking.jinja --plain-think-tokens false` |
+| Vision-OPD (`examples/reproduction/vision_opd`) | `--format-prompt none --system-prompt none --min-pixels 65536 --max-pixels 16777216` (suite `vision_opd`) plus `--chat-template examples/chat_template/qwen_no_thinking.jinja` |
 | DeepEyes, rewritten prompt (Qwen3-VL and `*_native.sh`) | `--interaction-mode agentic --system-prompt examples/system_prompt/deepeyes.txt` (suite `deepeyes`; `deepeyes_pixel.txt` is picked for Qwen2-VL / Qwen2.5-VL) |
 
 ## LLM judge

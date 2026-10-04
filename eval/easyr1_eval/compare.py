@@ -242,6 +242,14 @@ def _extract_mcq(spec: BenchmarkSpec, rows: list[dict[str, Any]], results_dir: P
     )
 
 
+def _extract_mmmu(spec: BenchmarkSpec, rows: list[dict[str, Any]], results_dir: Path) -> BenchmarkSamples:
+    return mean_samples(_row_ids(rows), [S.mmmu_row_score(row) for row in rows])
+
+
+def _extract_zoombench(spec: BenchmarkSpec, rows: list[dict[str, Any]], results_dir: Path) -> BenchmarkSamples:
+    return mean_samples(_row_ids(rows), [S.zoombench_row_score(row) for row in rows])
+
+
 def _extract_refcoco(spec: BenchmarkSpec, rows: list[dict[str, Any]], results_dir: Path) -> BenchmarkSamples:
     values = []
     for row in rows:
@@ -324,6 +332,8 @@ SCORER_EXTRACTORS: dict[str, Callable[[BenchmarkSpec, list[dict[str, Any]], Path
     "cfpo_match": _extract_cfpo_match,
     "hallusionbench": _extract_hallusionbench,
     "mcq": _extract_mcq,
+    "mmmu": _extract_mmmu,
+    "zoombench": _extract_zoombench,
     "gqa": _extract_gqa,
     "seed_bench": _extract_seed_bench,
     "refcoco": _extract_refcoco,

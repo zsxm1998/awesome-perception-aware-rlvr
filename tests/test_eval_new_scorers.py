@@ -155,6 +155,9 @@ def test_hallusionbench_question_figure_and_pair_accuracy(tmp_path):
     assert result.details["question_pair_count"] == 3
     assert result.details["question_pair_accuracy"] == pytest.approx(2 / 3)
     assert result.details["accuracy_by_category"] == {"VD": pytest.approx(0.75), "VS": pytest.approx(1.0)}
+    # the paper's names for the same accuracies and their mean (VCSD's HallusionBench score)
+    assert (result.details["aAcc"], result.details["fAcc"], result.details["qAcc"]) == pytest.approx((0.8, 0.5, 2 / 3))
+    assert result.details["aqf_mean"] == pytest.approx((0.8 + 0.5 + 2 / 3) / 3)
 
 
 def test_hallusionbench_truncated_response_is_wrong(tmp_path):
@@ -309,6 +312,8 @@ def test_skipped_result_and_scorer_registry():
         "mmvet",
         "seed_bench",
         "mcq",
+        "mmmu",
+        "zoombench",
         "answer_bbox",
         "grounding_iou",
         "refcoco",

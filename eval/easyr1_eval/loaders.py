@@ -59,9 +59,14 @@ def load_samples(spec: BenchmarkSpec, data_root: Path, limit: int | None = None)
         "seed_bench": load_seed_bench,
         "mme": load_mme,
         "mmvet": load_mmvet,
+        "mmstar": load_mmstar,
+        "blink": load_blink,
+        "ai2d": load_ai2d,
+        "mmmu": load_mmmu,
         "vstar": load_vstar,
         "hrbench": load_hrbench,
         "mme_realworld": load_mme_realworld,
+        "zoombench": load_zoombench,
         "cfpo_json": load_cfpo_json,
         "grit_jsonl": load_grit_jsonl,
         "refcoco": load_refcoco,
@@ -565,6 +570,52 @@ def load_mme_realworld(spec: BenchmarkSpec, data_root: Path, limit: int | None =
     return samples
 
 
+_ZOOMBENCH_OPTION_RE = re.compile(r"^([A-D])\.\s*(.+?)\s*$", flags=re.MULTILINE)
+
+
+def zoombench_options(query: str) -> list[str]:
+    """Option texts of a ZoomBench multiple-choice query (its ``A. text`` lines, in letter order)."""
+    options: list[str] = []
+    for letter, text in _ZOOMBENCH_OPTION_RE.findall(query):
+        if letter == "A":
+            options = []
+        if letter == chr(ord("A") + len(options)):
+            options.append(text)
+    return options
+
+
+def load_zoombench(spec: BenchmarkSpec, data_root: Path, limit: int | None = None) -> list[EvalSample]:
+    """ZoomBench annotations written by the prepare step.
+
+    The prompt is the dataset's ``query`` (options and answer instruction included), stripped, as
+    Vision-OPD asks it; the image is the full image (global view), not the key-region crop.
+    ``question_type`` is ``mcq`` (gold letter) or ``blank`` (counting, gold integer).
+    """
+    path = _require_paths(spec, data_root)[0]
+    image_root = spec.resolved_image_root(data_root) or path.parent
+    samples = []
+    for index, row in enumerate(read_jsonl(path)):
+        if limit is not None and len(samples) >= limit:
+            break
+        query = str(row["query"]).strip()
+        question_type = str(row["question_type"])
+        samples.append(
+            EvalSample(
+                benchmark=spec.key,
+                sample_id=str(row["id"]),
+                prompt=query,
+                target=str(row["response"]).strip(),
+                images=[_required_image(image_root, str(row["image"]))],
+                extra_info={
+                    "options": zoombench_options(query) if question_type == "mcq" else [],
+                    "question_type": question_type,
+                },
+                metadata={"category": question_type, "row_index": index, "question": query},
+            )
+        )
+    return samples
+
+
 def load_cfpo_json(spec: BenchmarkSpec, data_root: Path, limit: int | None = None) -> list[EvalSample]:
     """CFPO_Datasets rows ``{images, problem, answer, id, type, is_cf}``.
 
@@ -595,6 +646,170 @@ def load_cfpo_json(spec: BenchmarkSpec, data_root: Path, limit: int | None = Non
                 },
             )
         )
+    return samples
+
+
+# ---------------------------------------------------------------------------
+# General multimodal MCQ (MMStar, BLINK, AI2D, MMMU; parquet files with embedded images)
+# ---------------------------------------------------------------------------
+
+_MMSTAR_INLINE_OPTIONS_RE = re.compile(
+    r"Options:\s*A:\s*(.*?),\s*B:\s*(.*?),\s*C:\s*(.*?),\s*D:\s*(.*?)\s*$", flags=re.DOTALL
+)
+MMMU_OPEN_SUFFIX = "Answer the question using a single word or phrase."
+_MMMU_IMAGE_TOKEN_RE = re.compile(r"<image (\d+)>")
+
+
+def mmstar_options(question: str) -> list[str]:
+    """Option texts written into an MMStar question ([] when none are found).
+
+    Most questions end with ``Options: A: ..., B: ..., C: ..., D: ...``; the items taken from
+    MathVista list ``Choices:`` as ``(A) ...`` lines.
+    """
+    match = _MMSTAR_INLINE_OPTIONS_RE.search(question)
+    if match:
+        return [text.strip() for text in match.groups()]
+    options: list[str] = []
+    for line in question.splitlines():
+        option = _VSTAR_OPTION_RE.match(line.strip())
+        if option and option.group(1) == chr(ord("A") + len(options)):
+            options.append(option.group(2).strip())
+    return options if len(options) >= 2 else []
+
+
+def load_mmstar(spec: BenchmarkSpec, data_root: Path, limit: int | None = None) -> list[EvalSample]:
+    """MMStar ``val``: the released question (options included) followed by the letter instruction."""
+    samples = []
+    for path in _expand_paths(spec, data_root):
+        df = pd.read_parquet(path)
+        for index, row in df.iterrows():
+            if limit is not None and len(samples) >= limit:
+                return samples
+            question = str(row["question"]).strip()
+            samples.append(
+                EvalSample(
+                    benchmark=spec.key,
+                    sample_id=str(row["index"]),
+                    prompt=f"{question}\n{MCQ_LETTER_SUFFIX}",
+                    target=str(row["answer"]).strip().upper(),
+                    images=[_decode_image(row["image"])],
+                    extra_info={"options": mmstar_options(question)},
+                    metadata={
+                        "category": str(row["category"]),
+                        "l2_category": str(row["l2_category"]),
+                        "row_index": int(index),
+                        "question": question,
+                    },
+                )
+            )
+    return samples
+
+
+def load_blink(spec: BenchmarkSpec, data_root: Path, limit: int | None = None) -> list[EvalSample]:
+    """BLINK ``val`` (one parquet per subtask): the official ``prompt`` (question + ``(A) ...``
+    options) followed by the letter instruction; the 1-4 images in their dataset order."""
+    samples = []
+    for path in _expand_paths(spec, data_root):
+        df = pd.read_parquet(path)
+        for index, row in df.iterrows():
+            if limit is not None and len(samples) >= limit:
+                return samples
+            images = [
+                _decode_image(row[name])
+                for name in ("image_1", "image_2", "image_3", "image_4")
+                if not _is_missing(row.get(name))
+            ]
+            samples.append(
+                EvalSample(
+                    benchmark=spec.key,
+                    sample_id=str(row["idx"]),
+                    prompt=f"{str(row['prompt']).strip()}\n{MCQ_LETTER_SUFFIX}",
+                    target=str(row["answer"]).strip().strip("()").upper(),
+                    images=images,
+                    extra_info={"options": [str(choice) for choice in row["choices"]]},
+                    metadata={
+                        "category": str(row["sub_task"]),
+                        "row_index": int(index),
+                        "question": str(row["question"]).strip(),
+                    },
+                )
+            )
+    return samples
+
+
+def load_ai2d(spec: BenchmarkSpec, data_root: Path, limit: int | None = None) -> list[EvalSample]:
+    """AI2D test (lmms-lab): diagram questions with four options; ``answer`` is the option index."""
+    samples = []
+    for path in _expand_paths(spec, data_root):
+        df = pd.read_parquet(path)
+        for index, row in df.iterrows():
+            if limit is not None and len(samples) >= limit:
+                return samples
+            question = str(row["question"]).strip()
+            options = [str(option).strip() for option in row["options"]]
+            samples.append(
+                EvalSample(
+                    benchmark=spec.key,
+                    sample_id=f"{spec.key}:{len(samples)}",
+                    prompt=_mcq_prompt(question, options),
+                    target=chr(ord("A") + int(row["answer"])),
+                    images=[_decode_image(row["image"])],
+                    extra_info={"options": options},
+                    metadata={"row_index": int(index), "source_file": path.name, "question": question},
+                )
+            )
+    return samples
+
+
+def load_mmmu(spec: BenchmarkSpec, data_root: Path, limit: int | None = None) -> list[EvalSample]:
+    """MMMU validation (lmms-lab): 847 multiple-choice and 53 open questions over 30 subjects.
+
+    As in lmms-eval, the images are the ``image_<n>`` columns that the question and the options
+    reference with ``<image n>``, in placeholder order; the placeholders stay in the text and the
+    images are put before it. Open answers that list several accepted forms
+    (``"['24/7', '3.429']"``) become lists.
+    """
+    samples = []
+    for path in _expand_paths(spec, data_root):
+        df = pd.read_parquet(path)
+        for index, row in df.iterrows():
+            if limit is not None and len(samples) >= limit:
+                return samples
+            question = str(row["question"]).strip()
+            options = [str(option) for option in ast.literal_eval(str(row["options"]))]
+            referenced = sorted(
+                {int(number) for number in _MMMU_IMAGE_TOKEN_RE.findall(" ".join([question, *options]))}
+            )
+            question_type = str(row["question_type"])
+            if question_type == "multiple-choice":
+                prompt = _mcq_prompt(question, options)
+                target: Any = str(row["answer"]).strip().upper()
+            else:
+                prompt = f"{question}\n{MMMU_OPEN_SUFFIX}"
+                answer = _parse_maybe_literal(str(row["answer"]))
+                target = [str(item) for item in answer] if isinstance(answer, list) else str(row["answer"]).strip()
+            sample_id = str(row["id"])
+            samples.append(
+                EvalSample(
+                    benchmark=spec.key,
+                    sample_id=sample_id,
+                    prompt=prompt,
+                    target=target,
+                    images=[_decode_image(row[f"image_{number}"]) for number in referenced],
+                    extra_info={
+                        "options": options if question_type == "multiple-choice" else [],
+                        "question_type": question_type,
+                    },
+                    metadata={
+                        "category": re.sub(r"^[a-z]+_|_\d+$", "", sample_id),
+                        "subfield": str(row.get("subfield")),
+                        "question_type": question_type,
+                        "topic_difficulty": str(row.get("topic_difficulty")),
+                        "row_index": int(index),
+                        "question": question,
+                    },
+                )
+            )
     return samples
 
 

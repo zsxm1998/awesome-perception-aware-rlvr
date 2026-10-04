@@ -42,9 +42,11 @@ from easyr1_eval.scorers import (  # noqa: E402
     score_hallusionbench,
     score_mcq,
     score_mme,
+    score_mmmu,
     score_pope,
     score_refcoco,
     score_seed_bench,
+    score_zoombench,
 )
 
 
@@ -131,6 +133,38 @@ MCQ_ROWS = [
     },
 ]
 
+MMMU_ROWS = [
+    {
+        "sample_id": "m1",
+        "target": "B",
+        "responses": [r"\boxed{B}", "A"],
+        "extra_info": {"options": ["x", "y"], "question_type": "multiple-choice"},
+        "metadata": {"category": "Math"},
+    },
+    {
+        "sample_id": "m2",
+        "target": ["24/7", "3.429"],
+        "responses": ["So the answer is 3.43."],
+        "extra_info": {"options": [], "question_type": "open"},
+        "metadata": {"category": "Math"},
+    },
+]
+
+ZOOMBENCH_ROWS = [
+    {
+        "sample_id": "z1",
+        "target": "B",
+        "responses": ["Answer: B", "Answer: A"],
+        "extra_info": {"options": ["No", "Yes"], "question_type": "mcq"},
+    },
+    {
+        "sample_id": "z2",
+        "target": "4",
+        "responses": ["There are four."],
+        "extra_info": {"options": [], "question_type": "blank"},
+    },
+]
+
 REFCOCO_ROWS = [
     {
         "sample_id": "r1",
@@ -209,6 +243,8 @@ GROUNDING_IOU_ROWS = [
         ("hallusionbench", score_hallusionbench, HALLUSION_ROWS, {}),
         ("mcq", score_mcq, MCQ_ROWS, {"aggregate": "micro"}),
         ("mcq", score_mcq, MCQ_ROWS, {"aggregate": "category_mean"}),
+        ("mmmu", score_mmmu, MMMU_ROWS, {}),
+        ("zoombench", score_zoombench, ZOOMBENCH_ROWS, {}),
         ("refcoco", score_refcoco, REFCOCO_ROWS, {}),
         ("pope", score_pope, POPE_ROWS, {}),
         ("mme", score_mme, MME_ROWS, {}),

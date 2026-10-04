@@ -65,7 +65,8 @@ train with `trainer.save_model_only=false` to be able to resume). Evaluate every
 benchmarks, and report the last step as well:
 
 ```bash
-bash scripts/eval.sh checkpoints/VA-OPD-Reproduce/qwen3_vl_2b_va_opd --suite va_opd --all-steps
+bash scripts/eval.sh checkpoints/VA-OPD-Reproduce/qwen3_vl_2b_va_opd --suite va_opd --all-steps \
+    --temperature 1.0 --num-samples 8
 python3 scripts/finalize_run.py checkpoints/VA-OPD-Reproduce/qwen3_vl_2b_va_opd/global_step_N   # keep step N
 ```
 
@@ -97,9 +98,11 @@ There is no released code; everything below that the paper does not state is our
   no settings for them. CoT-SFT and off-policy KD (Table 1) need supervised fine-tuning, which this repository does
   not provide.
 - **Evaluation** (suite `va_opd`): the paper reports avg@8 at T=1.0 with official scoring and a GPT-4o judge where
-  applicable; we score with rules. OCRBench is not available; see [eval/README.md](../../../eval/README.md) for
-  the splits of the other benchmarks. Evaluate the untrained student first and compare it with the Base row of
-  Table 1 to calibrate the protocols.
+  applicable; we score with rules. The suite asks with the training prompt at the training image size and decodes
+  HallusionBench, AI2D, MMMU and MMStar greedily by default; the command above samples 8 responses at T=1.0
+  everywhere, as the paper (HallusionBench then scores the first). OCRBench is not available; see
+  [eval/README.md](../../../eval/README.md) for the splits of the other benchmarks. Evaluate the untrained student
+  first and compare it with the Base row of Table 1 to calibrate the protocols.
 
 ## Results
 

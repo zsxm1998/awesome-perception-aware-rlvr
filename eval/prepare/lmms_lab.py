@@ -21,6 +21,8 @@ are tried. Layouts::
     <data_root>/hallusionbench/{image,non_image}.parquet
     <data_root>/gqa/testdev_balanced_{instructions,images}.parquet
     <data_root>/mm_vet/test.parquet
+    <data_root>/ai2d/test-0000X-of-00002.parquet
+    <data_root>/mmmu_val/validation.parquet
 """
 
 from __future__ import annotations
@@ -156,6 +158,28 @@ SOURCES = [
             "repos": _repos("MMVet"),
             "files": {"data/test-00000-of-00001.parquet": "test.parquet"},
             "expected_rows": 218,
+        },
+    ),
+    BenchmarkSource(
+        key="ai2d",
+        target="ai2d",
+        outputs=("ai2d",),
+        source="lmms-lab/ai2d (test)",
+        approx_size="140 MB",
+        prepare=prepare_glob,
+        options={"repos": _repos("ai2d"), "pattern": "data/test-*.parquet", "expected_rows": 3088},
+    ),
+    BenchmarkSource(
+        key="mmmu_val",
+        target="mmmu_val",
+        outputs=("mmmu_val/validation.parquet",),
+        source="lmms-lab/MMMU (validation)",
+        approx_size="340 MB",
+        prepare=prepare_renamed,
+        options={
+            "repos": _repos("MMMU"),
+            "files": {"data/validation-00000-of-00001.parquet": "validation.parquet"},
+            "expected_rows": 900,
         },
     ),
 ]

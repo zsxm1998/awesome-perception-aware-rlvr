@@ -43,7 +43,7 @@ See [docs/algorithm_parameters.md](../../../docs/algorithm_parameters.md#on-poli
 bash scripts/prepare_data.sh vcsd
 bash examples/reproduction/vcsd/qwen3_vl_2b_vcsd.sh
 bash scripts/prepare_eval_data.sh vcsd
-bash scripts/eval.sh checkpoints/VCSD-Reproduce/qwen3_vl_2b_vcsd --suite vcsd --format-prompt none \
+bash scripts/eval.sh checkpoints/VCSD-Reproduce/qwen3_vl_2b_vcsd --suite vcsd \
     --chat-template examples/chat_template/qwen_no_thinking.jinja --plain-think-tokens false
 ```
 
@@ -88,8 +88,8 @@ validated with `DRY_RUN=1` only; the 8B and 9B runs have not been run in this re
   with the reference answer) is not scripted.
 - **Evaluation** (suite `vcsd`): the paper does not state its evaluation protocol. The suite uses greedy decoding
   for the high-resolution benchmarks and reports HallusionBench as (aAcc + fAcc + qAcc) / 3 (`aqf_mean` in the
-  details), as the paper; Acc. is the unweighted mean of the seven scores. Evaluate with the training prompt
-  (no format instruction), chat template and tokenizer, as in the command above.
+  details), as the paper; Acc. is the unweighted mean of the seven scores. The suite asks the bare
+  problem at the training image size; add the training chat template and tokenizer, as in the command above.
 
 ## Results
 

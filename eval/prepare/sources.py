@@ -15,12 +15,40 @@
 
 from __future__ import annotations
 
-from . import cfpo, grit, hrbench, lmms_lab, mme_realworld, papo_eval, refcoco, seed_bench, vppo_eval, vstar
+from . import (
+    blink,
+    cfpo,
+    grit,
+    hrbench,
+    lmms_lab,
+    mme_realworld,
+    mmstar,
+    papo_eval,
+    refcoco,
+    seed_bench,
+    vppo_eval,
+    vstar,
+    zoombench,
+)
 from .base import BenchmarkSource
 
 
 SOURCES: dict[str, BenchmarkSource] = {
     source.key: source
-    for module in (papo_eval, vppo_eval, lmms_lab, seed_bench, cfpo, grit, vstar, hrbench, mme_realworld, refcoco)
+    for module in (
+        papo_eval,
+        vppo_eval,
+        lmms_lab,
+        mmstar,
+        blink,
+        seed_bench,
+        cfpo,
+        grit,
+        vstar,
+        hrbench,
+        mme_realworld,
+        zoombench,
+        refcoco,
+    )
     for source in module.SOURCES
 }

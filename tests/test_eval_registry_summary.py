@@ -65,8 +65,12 @@ def test_registry_groups_and_keys():
             "cvqa_real",
             "mars_bench",
             "textvqa",
+            "mmstar",
+            "blink",
+            "ai2d",
+            "mmmu_val",
         ],
-        "HighRes": ["vstar", "hrbench_4k", "hrbench_8k", "mme_realworld_lite"],
+        "HighRes": ["vstar", "hrbench_4k", "hrbench_8k", "mme_realworld_lite", "zoombench"],
         "Grounding": [
             "grit_vsr",
             "grit_tallyqa",
@@ -119,6 +123,21 @@ def test_registry_metric_contracts():
     for key in ["cvqa_real", "mars_bench", "textvqa"]:
         spec = by_key[key]
         assert (spec.loader, spec.scorer, spec.num_samples, spec.temperature) == ("cfpo_json", "cfpo_match", 8, 1.0)
+    for key, scorer in [
+        ("mmstar", "mcq"),
+        ("blink", "mcq"),
+        ("ai2d", "mcq"),
+        ("mmmu_val", "mmmu"),
+        ("zoombench", "zoombench"),
+    ]:
+        spec = by_key[key]
+        assert (spec.scorer, spec.primary_metric, spec.num_samples, spec.temperature) == (
+            scorer,
+            "overall_accuracy",
+            1,
+            0.0,
+        )
+        assert spec.metadata.get("aggregate", "micro") == "micro"
     assert by_key["mm_vet"].requires_judge
     assert not by_key["gqa"].requires_judge
     assert {key for key, spec in by_key.items() if spec.optional} == {
