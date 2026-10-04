@@ -53,12 +53,15 @@ MAX_SUBJECT = 72
 SUBJECT = re.compile(r"^\[(?P<type>[a-z]+)\] (?:(?P<scope>[a-z0-9][a-z0-9_.-]*): )?(?P<summary>\S.*)$")
 # messages that git or a pull request workflow writes and that a squash merge replaces
 EXEMPT = re.compile(r"^(Merge (branch|pull request|remote-tracking branch|tag) |fixup! |squash! |amend! )")
+# the number GitHub appends to the pull request title in the subject of a squash merge
+PULL_REQUEST_NUMBER = re.compile(r" \(#\d+\)$")
 
 
 def check_subject(subject: str) -> list[str]:
     """Problems of one subject line (empty when it follows the format)."""
     if EXEMPT.match(subject):
         return []
+    subject = PULL_REQUEST_NUMBER.sub("", subject)
     problems = []
     match = SUBJECT.match(subject)
     if match is None:

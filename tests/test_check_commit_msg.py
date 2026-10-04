@@ -37,6 +37,7 @@ SPEC.loader.exec_module(check_commit_msg)
         "[config] qwen3-vl.8b: save a checkpoint every 25 steps",
         "Merge pull request #12 from someone/branch",
         "fixup! [fix] eval: read the boxes",
+        "[fix] reward: " + "a" * 58 + " (#123)",  # a squash merge: 72 characters before the number
     ],
 )
 def test_subjects_that_follow_the_format(subject):
@@ -54,6 +55,8 @@ def test_subjects_that_follow_the_format(subject):
         ("[fix] reward: zero long answers.", "period"),
         ("[fix]reward: zero long answers", "'[type] scope: summary'"),
         ("[fix] reward: " + "a" * 70, "characters"),
+        ("[fix] reward: zero long answers. (#123)", "period"),
+        ("Fix the reward (#123)", "'[type] scope: summary'"),
     ],
 )
 def test_subjects_that_do_not(subject, problem):
