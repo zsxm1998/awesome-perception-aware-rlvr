@@ -34,7 +34,9 @@ class CriticConfig:
     cliprange_value: float = 0.5
     """clip range for value loss"""
     loss_avg_mode: str = "token"
-    """loss average mode: `token`, `seq`"""
+    """loss average mode: `token` weights every response token of the mini-batch (all ranks) equally;
+    `seq` averages over the tokens of each response, then weights every response equally (verl's
+    seq-mean-token-mean)"""
     ppo_epochs: int = 1
     """number of ppo epochs for each rollout batch"""
     padding_free: bool = False
