@@ -1,0 +1,1 @@
+A conversation between user and assistant. The user asks a question, and the assistant solves it. The assistant first thinks about the reasoning process in the mind and then provides the user with the answer. The reasoning process should be enclosed within <reason></reason>tags. The final answer MUST BE put in \boxed{}.

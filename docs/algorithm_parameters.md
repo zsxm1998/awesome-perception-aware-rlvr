@@ -42,14 +42,14 @@ Used by PAPO, VPPO, ToR, CGPO, DVRP, PGPO, CFPO and VEPO whenever a decremental 
 
 Used by perception-token selection and response-level scaling. The default keeps the existing sampled low-var KL behavior; full-vocab options compare original and counterfactual output distributions.
 
-- `algorithm.visual_sensitivity_metric`: sampled-token metrics `sampled_low_var_kl` (k3), `sampled_boxcox`, `sampled_abs_log_ratio` (\|log p − log q\|, ToR), full-vocabulary metrics, `vepo`, or `hidden_state_similarity` (PEPO)
+- `algorithm.visual_sensitivity_metric`: sampled-token metrics `sampled_low_var_kl` (k3), `sampled_boxcox`, `sampled_abs_log_ratio` (\|log p − log q\|, ToR), `sampled_positive_log_ratio` (max(log p − log q, 0), VA-OPD's visual advantage), full-vocabulary metrics, `vepo`, or `hidden_state_similarity` (PEPO)
 - `algorithm.visual_sensitivity_boxcox_alpha`
 - `algorithm.visual_sensitivity_hidden_metric`
 - `algorithm.visual_token`
 - `algorithm.visual_sensitivity_log_metrics`
 - `algorithm.visual_sensitivity_jsd_weight`
 - `algorithm.visual_sensitivity_entropy_gate`
-- `algorithm.visual_sensitivity_reference`
+- `algorithm.visual_sensitivity_reference`: `current`, `old`, or `teacher` (the distillation teacher scores both views; VA-OPD, with `distill_weighting`)
 - `algorithm.visual_sensitivity_loss_coef`
 - `algorithm.decremental_entropy_coef`
 - `algorithm.top_perception_quantile`
@@ -106,3 +106,59 @@ Used by CGPO.
 - `algorithm.grounding_dino_device`: `worker` (default, one detector per rollout worker GPU), `auto`, `cpu`, or a torch CUDA device such as `cuda:0`
 - `algorithm.grounding_dino_batch_size`: mini-batch size for Grounding DINO detector inference, default `4`
   - On CUDA, Grounding DINO is loaded in `float16` and runs under autocast; the detector model is unloaded after each detection pass to release GPU memory.
+
+## On-Policy Distillation
+
+Used by the OPD comparison ([examples/comparison/opd_qwen3_vl_2b](../examples/comparison/opd_qwen3_vl_2b)) and by
+VA-OPD, VGS, VCSD and Vision-OPD. The losses are in [`verl/trainer/distillation.py`](../verl/trainer/distillation.py);
+see the [implementation notes](implementation_notes.md#on-policy-distillation).
+
+Teacher (`worker.teacher`, off by default):
+
+- `worker.teacher.source`: `none` (default), `model` (a frozen model, `worker.teacher.model.model_path`; the trainer
+  checks at startup that it shares the student's token ids, vocabulary size, visual special tokens, rotary layout
+  and image preprocessing) or `ema` (an fp32 exponential moving average of the actor, saved with its checkpoints)
+- `worker.teacher.ema_rate` (`ema`, default 0.05)
+- `worker.teacher.fsdp.*`, `worker.teacher.offload.offload_params`: as for the reference model
+
+With a teacher, the rollout must sample from the student's own distribution (`temperature=1.0`, `top_p=1.0`,
+`top_k=-1`) and never samples the ids at or beyond `len(tokenizer)` (padding rows of the LM head).
+
+Objective from sampled tokens (as verl's and NeMo-RL's OPD):
+
+- `algorithm.adv_estimator=teacher_log_ratio`: advantage log q(y_t) − log π_old(y_t) per token, with the PPO loss
+- `algorithm.teacher_log_ratio_clip` (default 10, `null` for none)
+
+Objective on the full distributions (a direct loss, no PPO ratio):
+
+- `algorithm.distill_loss_coef` (0 = off) and `algorithm.policy_loss_coef` (weight of the policy loss next to it;
+  0 = distillation only)
+- `algorithm.distill_divergence`: `reverse_kl` KL(p‖q), `forward_kl` KL(q‖p), `jsd` with `algorithm.distill_jsd_beta`
+  (M = (1 − β) p + β q, β in (0, 1))
+- `algorithm.distill_support`: `full` (every id of the tokenizer) or `student_top_k` (the student's top
+  `algorithm.distill_top_k` ids plus a tail bucket; Vision-OPD)
+- `algorithm.distill_temperature` and `algorithm.distill_temperature_scope` (`all`: the distributions use T and the
+  loss is multiplied by T²; `loss_scale_only`: only the T² factor, as VCSD's released code)
+- `algorithm.distill_chunk_size` (response rows per fp32 chunk, default 256), `algorithm.distill_is_clip`
+  (detached truncated importance weight, default none)
+- `worker.actor.loss_avg_mode` averages it as the policy loss (`token` or `seq`)
+
+Inputs of the teacher and of the target:
+
+- `algorithm.teacher_view`: `original` (default) or `data_image` (the same prompt with the images of
+  `data.teacher_image_key`; Vision-OPD)
+- `algorithm.distill_target`: `teacher`, `contrast_sharpened` (VCSD) or `visual_gain` (VGS)
+- `algorithm.distill_contrast_view`: `black` (VCSD: a black image of the same size) or `no_image` (VGS: the prompt
+  without its images, read by the teacher and the student)
+- VCSD: `algorithm.vcsd_alpha`, `algorithm.vcsd_support_beta`, `algorithm.vcsd_anchor_coef`,
+  `algorithm.vcsd_keep_token_ids` (`auto`: the generation config's end-of-sequence ids)
+- VGS: `algorithm.vgs_steering_coef` (γ), `algorithm.vgs_text_prior_coef` (λ), `algorithm.vgs_vds_quantile`,
+  `algorithm.vgs_vds_scope` (`micro_batch` or `global`), `algorithm.vgs_loss_scale` (η)
+
+Per-token weights (VA-OPD):
+
+- `algorithm.distill_weighting=va_opd` with `algorithm.corrupt_image=pixelation`,
+  `algorithm.visual_sensitivity_reference=teacher` and `algorithm.visual_sensitivity_metric=sampled_positive_log_ratio`;
+  needs one token-mean update per rollout batch
+- `algorithm.va_opd_softmax_temperature` (τ), `algorithm.va_opd_high_fraction` (p_v),
+  `algorithm.va_opd_high_weight` (λ)

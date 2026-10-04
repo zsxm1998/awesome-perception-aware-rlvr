@@ -18,6 +18,9 @@ data/
 ├── cfpo/train.parquet           # CFPO's ViRL39K (CFPO's problem text, ViRL39K images)
 ├── grit/{train,test}.parquet
 ├── deepeyes/train.parquet
+├── vision_opd/train.parquet     # Vision-OPD-6K: student images with a red box + the teacher's crops (about 31 GB)
+├── vision_sr1/train.parquet     # Vision-SR1-47K, the VGS authors' training split (tomyoon2/OPD_train)
+├── vision_sr1_val/val.parquet   # its validation split (tomyoon2/OPD_val)
 └── eval/<benchmark>/...         # created by scripts/prepare_eval_data.sh
 ```
 

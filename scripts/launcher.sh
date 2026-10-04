@@ -29,7 +29,6 @@ pr_default() {
 
 pr_default DATA_ROOT "$ROOT_DIR/data"
 pr_default LOGGER '["console","file"]'
-pr_default NNODES "1"
 
 # Fail early with an actionable message when a prepared data file is missing.
 require_data() {
@@ -67,6 +66,7 @@ launch_training() {
         esac
     done
 
+    pr_default NNODES "1"  # here, so that a script sourcing this file can set another default
     local -a runtime_args=(
         "trainer.logger=$LOGGER"
         "trainer.nnodes=$NNODES"

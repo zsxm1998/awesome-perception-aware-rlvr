@@ -102,3 +102,42 @@ the batch is full:
   `first_round` drops such a round and trains on the first round unfiltered once the rounds run out,
   as ms-swift (`max_resample_times=3` checks the first round and two resamples); it needs whole
   rounds, so `data.mini_rollout_batch_size` must be unset or at least `data.rollout_batch_size`.
+
+## On-policy distillation
+
+The OPD methods (the [OPD comparison](../examples/comparison/opd_qwen3_vl_2b/README.md), VA-OPD, VGS, VCSD and
+Vision-OPD) share one teacher and two objectives; the parameters are listed in
+[algorithm_parameters.md](algorithm_parameters.md#on-policy-distillation).
+
+**Teacher.** `worker.teacher` lives in the actor's worker. A teacher model (`source=model`) is a frozen FSDP
+module with its own config, fed the student's token ids and pixel values; the trainer refuses a teacher whose
+token-to-id map (apart from `<think>` / `</think>`, which the student may tokenize as plain text), vocabulary
+size, visual special tokens, multimodal rotary layout or image preprocessing differ from the student's. An EMA
+teacher (`source=ema`) is built with the actor's wrapping, copies the actor's parameters and buffers (a bf16
+actor holds bf16-rounded rotary frequencies), is kept in fp32, and after the optimizer steps of each training
+step, if at least one applied, takes φ ← (1 − ρ) φ + ρ θ on the local shards, paired by parameter name. It is
+saved with the actor's checkpoints and restored on resume; `scripts/finalize_run.py` deletes it with the other
+`.pt` files.
+
+**Objective from sampled tokens.** `adv_estimator=teacher_log_ratio` scores the sampled tokens with the teacher
+before the update (as the reference model) and uses A_t = log q(y_t) − log π_old(y_t) as the advantage of the
+PPO loss: E_{y∼π}[A ∇log π] = −∇KL(π ‖ q), the per-token reverse KL estimated at the sampled token (k1).
+
+**Objective on the full distributions.** With `distill_loss_coef > 0` the student and the teacher run on the
+response rows of each update micro-batch only (`logits_to_keep`; the prompt rows are never projected to the
+vocabulary), and the per-token divergence between the two next-token distributions is computed exactly over
+the tokenizer's ids, in fp32 chunks of 256 rows under activation checkpointing (adapted from TRL). Its gradient is
+that of the divergence itself; there is no PPO ratio or clipping on it. The ids at or beyond `len(tokenizer)`
+(padding rows of the LM head, whose logits are not zero in Qwen models) are sliced away, and the rollout never
+samples them. The loss is averaged with `worker.actor.loss_avg_mode` and the same global token or response
+counts as the policy loss, so it does not depend on how a batch is split into micro-batches and ranks.
+
+**Views.** A view keeps the responses and changes the prompt: `data_image` (Vision-OPD's teacher image) and
+`no_image` (VGS) are rebuilt by the driver and sent with the batch, left-padded, so their response rows line up
+with the student's (checked in every micro-batch); `black` (VCSD) only replaces the pixel values. Several views
+of a micro-batch run in one padding-free forward (the sequences are concatenated; positions restart at every
+sample), so the student reads its two inputs of VGS in a single forward before the backward.
+
+**Token weights.** VA-OPD's weights depend on the K responses of a prompt and on the whole response, so the
+driver computes them before the update, for the whole step, and rescales them for the token-mean loss (one
+update per rollout batch is required).

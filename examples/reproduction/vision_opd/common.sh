@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+THIS_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "$THIS_DIR/../common.sh"
+
+# Vision-OPD (arXiv 2605.18740) setting: Vision-OPD-6K (the student sees the image with a red box, the teacher
+# the released crop around the box, with the same question), self-distillation from an EMA of the student
+# (rate 0.05), JSD (beta 0.5) on the student's top-100 ids plus a tail bucket, 96 prompts x 8 rollouts and one
+# update per step, 1 epoch (65 steps), lr 2e-6 after 10 warm-up steps, max response 1,024, Qwen3.5 in
+# non-thinking mode (the official chat template). Qwen3.5 needs the fast path (scripts/install_env.sh).
+launch_vision_opd() {
+    METHOD_COMMON_ARGS=(
+        "data.train_files=$DATA_ROOT/vision_opd/train.parquet"
+        "data.val_files=$DATA_ROOT/mmk12/test.parquet"
+        "data.prompt_key=problem"
+        "data.answer_key=answer"
+        "data.image_key=images"
+        "data.video_key=videos"
+        "data.teacher_image_key=teacher_images"
+        "data.format_prompt=null"
+        "data.override_chat_template=$ROOT_DIR/examples/chat_template/qwen_no_thinking.jinja"
+        "data.filter_overlong_prompts=false"
+        "data.min_pixels=65536"
+        "data.max_pixels=16777216"
+        "data.max_prompt_length=8192"
+        "data.max_response_length=1024"
+        "data.rollout_batch_size=96"
+        "data.val_batch_size=512"
+        "algorithm.disable_kl=true"
+        "algorithm.use_kl_loss=false"
+        "algorithm.log_entropy=true"
+        "worker.teacher.source=ema"
+        "worker.teacher.ema_rate=0.05"
+        "algorithm.teacher_view=data_image"
+        "algorithm.distill_loss_coef=1.0"
+        "algorithm.policy_loss_coef=0.0"
+        "algorithm.distill_divergence=jsd"
+        "algorithm.distill_jsd_beta=0.5"
+        "algorithm.distill_support=student_top_k"
+        "algorithm.distill_top_k=100"
+        "worker.actor.loss_avg_mode=token"
+        "worker.actor.model.enable_gradient_checkpointing=true"
+        "worker.actor.model.trust_remote_code=true"
+        "worker.actor.model.freeze_vision_tower=false"
+        "worker.actor.optim.lr=2e-6"
+        "worker.actor.optim.lr_warmup_steps=10"
+        "worker.actor.optim.weight_decay=1e-2"
+        "worker.actor.optim.strategy=adamw"
+        "worker.actor.max_grad_norm=1.0"
+        "worker.actor.global_batch_size=96"
+        "worker.actor.micro_batch_size_per_device_for_update=4"
+        "worker.actor.micro_batch_size_per_device_for_experience=8"
+        "worker.rollout.n=8"
+        "worker.rollout.temperature=1.0"
+        "worker.rollout.top_p=1.0"
+        "worker.rollout.tensor_parallel_size=1"
+        "worker.rollout.gpu_memory_utilization=0.6"
+        "worker.rollout.max_num_batched_tokens=9216"
+        "worker.rollout.enable_chunked_prefill=false"
+        "worker.rollout.enforce_eager=true"
+        "worker.rollout.val_override_config.n=1"
+        "worker.rollout.val_override_config.temperature=1.0"
+        "worker.reward.reward_function=$ROOT_DIR/examples/reward_function/math.py:compute_score"
+        "trainer.project_name=Vision-OPD-Reproduce"
+        "trainer.n_gpus_per_node=8"
+        "trainer.total_epochs=1"
+        "trainer.val_freq=-1"
+        "trainer.save_freq=-1"
+        "trainer.save_limit=1"
+        "trainer.val_generations_to_log=5"
+        "trainer.val_before_train=false"
+        "trainer.find_last_checkpoint=true"
+    )
+    launch_training "$@"
+}

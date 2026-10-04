@@ -13,6 +13,7 @@ blocks plus a launcher script.
 | Auxiliary losses | `perception_reasoning_loss.py` (step 5) | PAPO implicit-perception KL, entropy terms, DVRP robustness KL |
 | Extra rewards | `grounding_consistency.py`, `examples/reward_function/` | CGPO grounding consistency reward, GRIT reward, DeepEyes tool reward |
 | Rollout mode | `verl/workers/agent/` | DeepEyes multi-turn zoom-in tool use |
+| Teacher and distillation losses | `worker.teacher` (`verl/workers/fsdp_workers.py`), `distillation.py` | OPD from sampled tokens (`teacher_log_ratio`), full-distribution OPD, targets (`contrast_sharpened` for VCSD, `visual_gain` for VGS), token weights (`va_opd`), teacher views (`data_image` for Vision-OPD) |
 
 All switches are fields of `AlgorithmConfig` in `verl/trainer/config.py`; see
 [algorithm_parameters.md](algorithm_parameters.md) for which method uses which field.
@@ -32,7 +33,10 @@ All switches are fields of `AlgorithmConfig` in `verl/trainer/config.py`; see
      `corrupt_image` choices in `config.py`;
    - a new advantage scaling: add a branch to `_compute_advantage_scaling` that returns a
      `[batch, response_len]` tensor of multiplicative factors and a metrics dict;
-   - a new auxiliary loss: add it in step 5 of `compute_perception_reasoning_policy_loss`.
+   - a new auxiliary loss: add it in step 5 of `compute_perception_reasoning_policy_loss`;
+   - a new distillation target or weighting: add it to `verl/trainer/distillation.py` (a target in
+     `_distill_rows`, per-token weights computed on the driver before the update, as `va_opd`) and keep the
+     loss averaged by `worker.actor.loss_avg_mode` (see [implementation notes](implementation_notes.md#on-policy-distillation)).
    Log method-internal quantities under `algo/<method>/...`.
 4. **Tests.** Add unit tests to `tests/test_perception_reasoning.py` that run the loss on tiny
    synthetic tensors (see the existing PGPO/PEPO tests) and, for transforms, on a small PIL
@@ -40,7 +44,8 @@ All switches are fields of `AlgorithmConfig` in `verl/trainer/config.py`; see
 5. **Launchers.** Create `examples/reproduction/<method>/common.sh` with the paper's data, model and
    hyper-parameters (copy the closest existing method), a GRPO/DAPO baseline leaf and the method
    leaf. If the method should also take part in the controlled comparison, add
-   `examples/comparison/qwen3_vl_4b/<method>.sh` that only sets `ALGO_ARGS`.
+   `examples/comparison/qwen3_vl_4b/<method>.sh` (RL) or `examples/comparison/opd_qwen3_vl_2b/<method>.sh`
+   (on-policy distillation) that only sets `ALGO_ARGS`.
 6. **Data and evaluation.** If the paper uses new training data, register it in
    `scripts/data/prepare_train_data.py`; if it uses new benchmarks, follow
    [eval/README.md](../eval/README.md#adding-a-new-benchmark) and add a suite for the paper.
