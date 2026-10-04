@@ -55,14 +55,26 @@ DATASETS: dict[str, TrainDataset] = {
         repo_id="PAPOGalaxy/PAPO_ViRL39K_train",
         splits={"train": ["data/train-*.parquet"]},
         description="ViRL39K (38,870 multimodal reasoning problems) as preprocessed by PAPO",
-        used_by=["papo", "vppo", "dvrp", "pgpo", "cgpo", "comparison"],
+        used_by=["papo", "vppo", "dvrp", "pgpo", "cgpo", "comparison", "opd_comparison", "va_opd", "vcsd"],
     ),
     "mmk12": TrainDataset(
         name="mmk12",
         repo_id="PAPOGalaxy/PAPO_MMK12_test",
         splits={"test": ["data/train-*.parquet"]},
         description="MMK12 test (2,000 problems), the validation set used by PAPO/VPPO",
-        used_by=["papo", "vppo", "dvrp", "pgpo", "cfpo", "cgpo", "comparison"],
+        used_by=[
+            "papo",
+            "vppo",
+            "dvrp",
+            "pgpo",
+            "cfpo",
+            "cgpo",
+            "comparison",
+            "opd_comparison",
+            "va_opd",
+            "vcsd",
+            "vision_opd",
+        ],
     ),
     "geometry3k": TrainDataset(
         name="geometry3k",
@@ -73,7 +85,7 @@ DATASETS: dict[str, TrainDataset] = {
             "test": ["data/test-*.parquet"],
         },
         description="Geometry3K (2,101 train / 300 val / 601 test)",
-        used_by=["tor", "pepo", "vepo"],  # VEPO: through the vepo dataset
+        used_by=["tor", "pepo", "vepo", "va_opd"],  # VEPO: through the vepo dataset
     ),
     "cfpo": TrainDataset(
         name="cfpo",
@@ -99,6 +111,29 @@ DATASETS: dict[str, TrainDataset] = {
         used_by=["grit"],
         converter="grit",
     ),
+    "vision_opd": TrainDataset(
+        name="vision_opd",
+        repo_id="yuanqianhao/Vision-OPD-6K",
+        splits={"train": []},
+        description="Vision-OPD-6K (6,241 SA-1B images with a red box, the teacher's zoomed crops, 4-option questions)",
+        used_by=["vision_opd"],
+        converter="vision_opd",
+        required_columns=("teacher_images",),
+    ),
+    "vision_sr1": TrainDataset(
+        name="vision_sr1",
+        repo_id="tomyoon2/OPD_train",
+        splits={"train": ["data/train-*.parquet"]},
+        description="Vision-SR1-47K as split by the VGS authors for training (45,246 problems)",
+        used_by=["vgs"],
+    ),
+    "vision_sr1_val": TrainDataset(
+        name="vision_sr1_val",
+        repo_id="tomyoon2/OPD_val",
+        splits={"val": ["data/train-*.parquet"]},
+        description="Vision-SR1-47K as split by the VGS authors for validation (2,382 problems)",
+        used_by=["vgs"],
+    ),
     "deepeyes": TrainDataset(
         name="deepeyes",
         repo_id="ChenShawn/DeepEyes-Datasets-47k",
@@ -123,6 +158,11 @@ METHOD_GROUPS: dict[str, list[str]] = {
     "vepo": ["geometry3k", "vepo"],
     "grit": ["grit"],
     "deepeyes": ["deepeyes"],
+    "opd_comparison": ["virl39k", "mmk12"],
+    "va_opd": ["geometry3k", "virl39k"],
+    "vgs": ["vision_sr1", "vision_sr1_val"],
+    "vcsd": ["virl39k", "mmk12"],
+    "vision_opd": ["vision_opd", "mmk12"],
 }
 
 

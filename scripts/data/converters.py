@@ -325,3 +325,103 @@ def convert_cfpo(repo_id: str, raw_dir: Path, out_dir: Path, snapshot) -> dict[s
     tmp_output.replace(output)
     print(f"[write] {output} ({len(rows)} rows)")
     return {"train": len(rows)}
+
+
+# ---------------------------------------------------------------------------
+# Vision-OPD-6K (yuanqianhao/Vision-OPD-6K): train.jsonl plus tar archives of the student images (SA-1B images
+# with a red box, split into parts) and the teacher images (crops around the box, zoomed in). Both image sets are
+# stored in the parquet file; the prompt is kept verbatim.
+# ---------------------------------------------------------------------------
+
+
+class _ChainedReader:
+    """A file-like reader over several files in order (the parts of a split archive)."""
+
+    def __init__(self, paths: list[Path]):
+        self._files = iter(paths)
+        self._current = None
+
+    def read(self, size: int = -1) -> bytes:
+        chunks = []
+        while size != 0:
+            if self._current is None:
+                path = next(self._files, None)
+                if path is None:
+                    break
+                self._current = open(path, "rb")
+            data = self._current.read(size)
+            if not data:
+                self._current.close()
+                self._current = None
+                continue
+            chunks.append(data)
+            if size > 0:
+                size -= len(data)
+        return b"".join(chunks)
+
+
+def _extract_tar_parts(parts: list[Path], target: Path) -> dict[str, Path]:
+    """Extract a (possibly split) .tar.gz into `target`; returns {file name: path}."""
+    import tarfile
+
+    target.mkdir(parents=True, exist_ok=True)
+    marker = target / ".extracted"
+    if not marker.exists():
+        with tarfile.open(fileobj=_ChainedReader(parts), mode="r|gz") as archive:
+            archive.extractall(target, filter="data")
+        marker.touch()
+    return {path.name: path for path in target.rglob("*") if path.is_file() and path.name != ".extracted"}
+
+
+@register("vision_opd")
+def convert_vision_opd(repo_id: str, raw_dir: Path, out_dir: Path, snapshot) -> dict[str, int]:
+    import json
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    snapshot(["train.jsonl", "images/images.tar.gz*", "teacher_images/teacher_images.tar.gz"])
+    student_files = _extract_tar_parts(
+        sorted((raw_dir / "images").glob("images.tar.gz*")), raw_dir / "extracted_images"
+    )
+    teacher_files = _extract_tar_parts(
+        [raw_dir / "teacher_images" / "teacher_images.tar.gz"], raw_dir / "extracted_teacher_images"
+    )
+    with open(raw_dir / "train.jsonl", encoding="utf-8") as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+
+    image_type = pa.list_(pa.struct([("bytes", pa.binary()), ("path", pa.string())]))
+    schema = pa.schema(
+        [
+            ("problem", pa.string()),
+            ("answer", pa.string()),
+            ("images", image_type),
+            ("teacher_images", image_type),
+            ("bbox", pa.list_(pa.int64())),
+        ]
+    )
+
+    def images(paths: list[str], files: dict[str, Path]) -> list[dict]:
+        return [{"bytes": files[Path(path).name].read_bytes(), "path": path} for path in paths]
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    output = out_dir / "train.parquet"
+    tmp_output = output.with_suffix(".parquet.tmp")
+    with pq.ParquetWriter(tmp_output, schema) as writer:
+        for start in range(0, len(rows), 32):  # the student images are a few MB each
+            chunk = rows[start : start + 32]
+            writer.write_table(
+                pa.table(
+                    {
+                        "problem": [row["problem"] for row in chunk],
+                        "answer": [str(row["answer"]) for row in chunk],
+                        "images": [images(row["images"], student_files) for row in chunk],
+                        "teacher_images": [images(row["teacher_images"], teacher_files) for row in chunk],
+                        "bbox": [[int(value) for value in row["bbox"]] for row in chunk],
+                    },
+                    schema=schema,
+                )
+            )
+    tmp_output.replace(output)
+    print(f"[write] {output} ({len(rows)} rows)")
+    return {"train": len(rows)}
