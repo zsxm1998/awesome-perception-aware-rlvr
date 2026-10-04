@@ -334,6 +334,95 @@ def test_rule_match_needs_the_reference_keywords(prediction, reference, question
     assert deepeyes_reward._rule_match(prediction, reference, question) is expected
 
 
+# DeepEyes verl/utils/reward_score/vl_agent.py: get_chat_template, get_gpt4_score_ICE, get_prompt (verbatim)
+def get_chat_template():
+    chat_template = """
+Below are two answers to a question. Question is [Question], [Standard Answer] is the standard answer to the question, and [Model_answer] is the answer extracted from a model's output to this question.  Determine whether these two answers are consistent.
+Note that [Model Answer] is consistent with [Standard Answer] whenever they are essentially the same. If the meaning is expressed in the same way, it is considered consistent, for example, 'pink' and 'it is pink'.
+If they are consistent, Judement is 1; if they are different, Judement is 0. Just output Judement and don't output anything else.\n\n
+"""  # noqa: E501
+    return chat_template
+
+
+def get_gpt4_score_ICE():
+    example_1 = """
+[Question]: Is the countertop tan or blue?
+[Standard Answer]: The countertop is tan.
+[Model_answer] : tan
+Judgement: 1
+"""  # noqa
+
+    example_2 = """
+[Question]: On which side of the picture is the barrier?
+[Standard Answer]: The barrier is on the left side of the picture.
+[Model_answer] : left
+Judgement: 1
+"""  # noqa
+
+    example_3 = """
+[Question]: Is the kite brown and large?
+[Standard Answer]: Yes, the kite is brown and large.
+[Model_answer] : Yes
+Judgement: 1
+"""  # noqa
+
+    example_4 = """
+[Question]: Are the spots on a giraffe?
+[Standard Answer]: No, the spots are on a banana.
+[Model_answer] : no
+Judgement: 1
+"""  # noqa
+
+    example_5 = """
+[Question]: Who is wearing pants?
+[Standard Answer]: The boy is wearing pants.
+[Model_answer] : The person in the picture is wearing pants.
+Judgement: 1
+"""  # noqa
+
+    example_6 = """
+[Question]: Is the man phone both blue and closed?
+[Standard Answer]: Yes, the man phone is both blue and closed.
+[Model_answer] : No.
+Judgement: 0
+"""  # noqa
+
+    example_7 = """
+[Question]: What color is the towel in the center of the picture?
+[Standard Answer]: The towel in the center of the picture is blue.
+[Model_answer] : The towel in the center of the picture is pink.
+Judgement: 0
+"""  # noqa
+
+    return [example_1, example_2, example_3, example_4, example_5, example_6, example_7]
+
+
+def get_prompt(predict_str, ground_truth, question):
+    examples = get_gpt4_score_ICE()
+    chat_template = get_chat_template()
+    demo_prompt = chat_template
+    for example in examples:
+        demo_prompt += example + "\n\n"
+    test_prompt = f"""
+[Question]: {question}
+[Standard Answer]: {ground_truth}
+[Model_answer] : {predict_str}
+Judgement:"""
+    full_prompt = f"{demo_prompt}{test_prompt}"
+
+    return full_prompt
+
+
+@pytest.mark.parametrize(
+    "question,reference,prediction",
+    [("What color is the chair?", "The chair is white.", "white"), ("Is it left?", "No.", "The cup is on the right.")],
+)
+def test_judge_prompt_equals_the_official_one(question, reference, prediction):
+    assert deepeyes_reward._judge_prompt(question, reference, prediction) == get_prompt(
+        prediction, reference, question
+    )
+
+
 def test_judge_call_follows_deepeyes():
     calls = []
 
