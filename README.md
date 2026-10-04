@@ -4,15 +4,15 @@
 
 **Unified reproductions, controlled comparison and one-click evaluation for perception-aware reinforcement learning with verifiable rewards (RLVR) in vision-language models, plus a curated paper list.**
 
-PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · GRIT · DeepEyes · CGPO, in one EasyR1 codebase with 25+ benchmarks
+PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · GRIT · DeepEyes · CGPO, and on-policy distillation with VA-OPD · VGS · VCSD · Vision-OPD, in one EasyR1 codebase with 30+ benchmarks
 
 🌟 **Official repository of [CGPO](#-cgpo-acm-mm-2026-oral) (ACM MM 2026 Oral)** 🌟
 
 [English](README.md) | [简体中文](README_zh.md)
 
 [![Awesome](https://awesome.re/badge.svg)](https://github.com/sindresorhus/awesome)
-[![Papers](https://img.shields.io/badge/Papers-91-blue)](#-paper-list)
-[![Reproduced](https://img.shields.io/badge/Reproduced-11-brightgreen)](#-reproduced-methods)
+[![Papers](https://img.shields.io/badge/Papers-95-blue)](#-paper-list)
+[![Reproduced](https://img.shields.io/badge/Reproduced-15-brightgreen)](#-reproduced-methods)
 [![CGPO](https://img.shields.io/badge/CGPO-ACM%20MM%202026%20Oral-8A2BE2)](https://doi.org/10.1145/3767308.3835969)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Built on EasyR1](https://img.shields.io/badge/built%20on-EasyR1-orange)](https://github.com/hiyouga/EasyR1)
@@ -24,7 +24,10 @@ final answer: a model can be right for the wrong reasons and rely on language pr
 the image. **Perception-aware RLVR** methods put visual perception back into the objective, e.g. by
 contrasting the policy on counterfactual views of the image, by giving credit to the tokens that
 actually depend on the image, or by letting the model ground or zoom into visual evidence while it
-reasons.
+reasons. The same ideas reach **on-policy distillation (OPD)**, where a teacher scores the student's
+own rollouts token by token: weighting the tokens the image decides, distilling the teacher's visual
+gain rather than its language prior, or letting the model teach itself with a privileged view of the
+image.
 
 <p align="center">
   <img src="docs/assets/taxonomy.svg" width="100%" alt="Perception-aware RLVR methods grouped by where the visual signal enters training: grounded reasoning (GRIT, DeepEyes), counterfactual views (PAPO, DVRP, CFPO) and token-level visual credit (VPPO, ToR, PGPO, PEPO, VEPO). CGPO grounds the evidence inline, masks it into a counterfactual image and lets the evidence dependence scale token advantages.">
@@ -35,11 +38,13 @@ This repository provides
 - the **official implementation of [CGPO](#-cgpo-acm-mm-2026-oral)** (ACM MM 2026 Oral);
 - **[Paper list](#-paper-list)**: perception-aware policy optimization, grounded reasoning /
   thinking with images, and the benchmarks used in this line of work;
-- **[Reproductions](#-reproduced-methods)** of 10 methods (PAPO, VPPO, DVRP, ToR, PGPO, PEPO, CFPO,
-  VEPO, GRIT, DeepEyes) with each paper's own data, model and hyper-parameters, plus the GRPO/DAPO
-  baselines they compare against;
-- **[A controlled comparison](examples/comparison/README.md)** of all methods except DeepEyes under
-  one setting (Qwen3-VL-4B, the same data and the same hyper-parameters);
+- **[Reproductions](#-reproduced-methods)** of 14 methods with each paper's own data, model and
+  hyper-parameters, plus the baselines they compare against: 10 RLVR methods (PAPO, VPPO, DVRP, ToR,
+  PGPO, PEPO, CFPO, VEPO, GRIT, DeepEyes) and 4 on-policy distillation methods (VA-OPD, VGS, VCSD,
+  Vision-OPD);
+- **Controlled comparisons** under one setting each: [the RLVR methods](examples/comparison/README.md)
+  except DeepEyes on Qwen3-VL-4B, and [on-policy distillation](examples/comparison/opd_qwen3_vl_2b/README.md)
+  on a Qwen3-VL-2B student with a Qwen3-VL-8B teacher;
 - **[One-click evaluation](eval/README.md)** on the union of the benchmarks used by these papers,
   with per-benchmark download scripts and per-paper suites.
 
@@ -70,6 +75,12 @@ so they can be combined, compared and extended with a few configuration switches
 
 ## 🔥 News
 
+- **2026-10**: On-policy distillation: a teacher model (a frozen model or an EMA of the policy), OPD
+  from sampled tokens and on the full next-token distributions, reproductions of
+  [VA-OPD](examples/reproduction/va_opd/README.md), [VGS](examples/reproduction/vgs/README.md),
+  [VCSD](examples/reproduction/vcsd/README.md) and [Vision-OPD](examples/reproduction/vision_opd/README.md),
+  an [OPD comparison](examples/comparison/opd_qwen3_vl_2b/README.md), and ZoomBench, BLINK, MMStar, AI2D
+  and MMMU in the evaluation.
 - **2026-10**: 🎉 First release: the official implementation of [CGPO](#-cgpo-acm-mm-2026-oral) (ACM MM
   2026 Oral), 10 reproduced methods, a controlled comparison on Qwen3-VL-4B, and one-click evaluation.
   Reproduction results are being collected with this codebase and will be added to the tables below.
@@ -77,10 +88,8 @@ so they can be combined, compared and extended with a few configuration switches
 ## 🚧 Roadmap
 
 - [ ] Results of the controlled comparison and of the reproductions (runs in progress).
-- [ ] On-policy distillation (OPD) as a third base recipe next to GRPO and DAPO (a teacher model and a
-  per-token reverse-KL objective), then perception-aware OPD methods such as
-  [Vision-OPD](https://arxiv.org/abs/2605.18740) (self-distillation from a crop-conditioned teacher)
-  and [VA-OPD](https://arxiv.org/abs/2605.21924) (distillation weighted by visual advantage).
+- [x] On-policy distillation (OPD) next to GRPO and DAPO (a teacher model, OPD from sampled tokens and on
+  the full distributions), with VA-OPD, VGS, VCSD and Vision-OPD.
 - [ ] More thinking-with-images methods in the line of DeepEyes, e.g. MGPO, Chain-of-Focus and
   Pixel Reasoner.
 - [ ] More grounded-reasoning methods in the line of GRIT, e.g. TreeVGR, DeFacto and ViGoRL.
@@ -132,10 +141,18 @@ bash scripts/eval.sh checkpoints/CGPO-Reproduce/qwen3_vl_8b_cgpo --suite cgpo
 | VEPO | [Entropy Is Not Enough: Unlocking Effective Reinforcement Learning for Visual Reasoning via Vision-Anchored Token Selection](https://arxiv.org/abs/2606.03937) | arXiv | [GitHub](https://github.com/Leonnnnnn929/VEPO) | [examples/reproduction/vepo](examples/reproduction/vepo) | Qwen2.5-VL-7B, Geometry3K |
 | GRIT | [GRIT: Teaching MLLMs to Think with Images](https://arxiv.org/abs/2505.15879) | NeurIPS 2025 | [GitHub](https://github.com/UCSB-AI/GRIT) | [examples/reproduction/grit](examples/reproduction/grit) | Qwen2.5-VL-3B / InternVL3-2B, 20 GRIT samples |
 | DeepEyes | [DeepEyes: Incentivizing "Thinking with Images" via Reinforcement Learning](https://arxiv.org/abs/2505.14362) | ICLR 2026 | [GitHub](https://github.com/Visual-Agent/DeepEyes) | [examples/reproduction/deepeyes](examples/reproduction/deepeyes) | Qwen2.5-VL-7B / Qwen3-VL-8B, DeepEyes-47k, multi-turn zoom-in tool |
+| VA-OPD | [Visual-Advantage On-Policy Distillation for Vision-Language Models](https://arxiv.org/abs/2605.21924) | arXiv | - | [examples/reproduction/va_opd](examples/reproduction/va_opd) | Qwen3-VL-2B student, 4B / 8B / 32B teachers, Geometry3K / ViRL39K |
+| VGS | [Decomposed On-Policy Distillation for Vision-Language Reasoning: Steering Gradients for Visual Grounding](https://arxiv.org/abs/2606.00564) | ICML 2026 (Spotlight) | - | [examples/reproduction/vgs](examples/reproduction/vgs) | Qwen3-VL-2B / 4B students, GRPO-trained Qwen3-VL-8B teacher, Vision-SR1-47K |
+| VCSD | [Visual Contrastive Self-Distillation](https://arxiv.org/abs/2607.21556) | arXiv | [GitHub](https://github.com/joliang17/VCSD) | [examples/reproduction/vcsd](examples/reproduction/vcsd) | Qwen3-VL-2B/4B/8B, Qwen3.5-2B/4B/9B, EMA self-teacher, ViRL39K |
+| Vision-OPD | [Vision-OPD: Learning to See Fine Details for Multimodal LLMs via On-Policy Self-Distillation](https://arxiv.org/abs/2605.18740) | NeurIPS 2026 | [GitHub](https://github.com/VisionOPD/Vision-OPD) | [examples/reproduction/vision_opd](examples/reproduction/vision_opd) | Qwen3.5-4B / 9B, EMA self-teacher on region crops, Vision-OPD-6K |
 
 Every directory contains a README with the paper's setting, the scripts (method and baselines),
 the differences from the official recipe and the reported numbers. The upstream EasyR1 algorithms
-(GRPO, DAPO, GSPO, CISPO, SAPO, REINFORCE++, RLOO, ReMax) remain available.
+(GRPO, DAPO, GSPO, CISPO, SAPO, REINFORCE++, RLOO, ReMax) remain available. The OPD methods learn from a
+teacher instead of a verifiable reward; they share a teacher role (`worker.teacher`) and two base
+objectives, OPD from sampled tokens (`algorithm.adv_estimator=teacher_log_ratio`) and OPD on the full
+next-token distributions (`algorithm.distill_loss_coef`), see
+[docs/algorithm_parameters.md](docs/algorithm_parameters.md#on-policy-distillation).
 
 ## 🚀 Quick start
 
@@ -205,6 +222,7 @@ touching the other steps. `scripts/eval.sh` accepts finalized runs.
 ├── examples/
 │   ├── reproduction/<method>/   # paper settings: common.sh (shared args) + one script per run
 │   ├── comparison/qwen3_vl_4b/  # controlled comparison: one script per method, identical common.sh
+│   ├── comparison/opd_qwen3_vl_2b/  # controlled comparison of on-policy distillation
 │   ├── config.yaml              # base training config
 │   ├── reward_function/         # reward functions
 │   └── format_prompt/, system_prompt/, chat_template/
@@ -218,7 +236,8 @@ touching the other steps. `scripts/eval.sh` accepts finalized runs.
 
 The perception-aware methods are implemented as composable blocks in `verl/trainer/`:
 auxiliary (counterfactual) image views, token-level visual-sensitivity signals, token selection,
-advantage scaling, auxiliary losses and extra rewards. See
+advantage scaling, auxiliary losses and extra rewards; on-policy distillation adds a teacher and the
+distillation losses (`distillation.py`). See
 [docs/algorithm_parameters.md](docs/algorithm_parameters.md) for every switch,
 [docs/implementation_notes.md](docs/implementation_notes.md) for behaviors several methods share
 (e.g. the gradient of the k3 KL estimator, loss averaging) and
@@ -235,6 +254,15 @@ will be added here.
 | Method | GRPO | DAPO | PAPO | VPPO | ToR | DVRP | PGPO | PEPO | CFPO | VEPO | GRIT | CGPO |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Avg. (comparison suite) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+
+[`examples/comparison/opd_qwen3_vl_2b`](examples/comparison/opd_qwen3_vl_2b/README.md) compares on-policy
+distillation on a Qwen3-VL-2B student with Qwen3-VL-8B-Instruct as the teacher, on the same data, budget and
+evaluation, with one update per rollout batch and no KL or entropy term. VCSD distills from an EMA of the
+student and uses no external teacher; GRPO on the same student is the RL reference.
+
+| Method | GRPO | OPD (sampled tokens) | OPD (full distributions) | VA-OPD | VGS | VCSD |
+| --- | --- | --- | --- | --- | --- | --- |
+| Avg. (`opd` suite) | TBD | TBD | TBD | TBD | TBD | TBD |
 
 ### 📌 About the results
 
@@ -264,16 +292,16 @@ implementation or the numbers.
 
 The evaluation harness covers the union of the benchmarks used by the reproduced papers:
 math and multimodal reasoning (Geometry3K, MathVista, We-Math, MMK12, MathVerse, MathVerse-V,
-LogicVista, CLEVR counting, MMMU-Pro, DynaMath, MathVision), perception and hallucination (POPE,
-HallusionBench, MME, TextVQA, CFPO's counterfactual C-VQA-Real and MARS-Bench, SEED-Bench, ...),
-grounded reasoning (GRIT's VSR / TallyQA / GQA / OVDEval, refCOCO) and high-resolution perception
-(V*, HR-Bench, MME-RealWorld-Lite). Each benchmark has a download script, and each paper
+LogicVista, CLEVR counting, MMMU-Pro, MMMU, DynaMath, MathVision), perception and hallucination (POPE,
+HallusionBench, MME, MMStar, BLINK, AI2D, TextVQA, CFPO's counterfactual C-VQA-Real and MARS-Bench,
+SEED-Bench, ...), grounded reasoning (GRIT's VSR / TallyQA / GQA / OVDEval, refCOCO) and high-resolution
+perception (V*, HR-Bench, MME-RealWorld-Lite, ZoomBench). Each benchmark has a download script, and each paper
 has a suite (`--suite papo`, `--suite deepeyes`, ...). Adding a benchmark takes a loader, a scorer
 and a registry entry; see the tutorial in [eval/README.md](eval/README.md#adding-a-new-benchmark).
 
 > [!IMPORTANT]
 > The papers use different evaluation protocols (rule-based avg@8 at temperature 1.0 for
-> PAPO/VPPO/PGPO/DVRP/CFPO; greedy decoding with an LLM judge for ToR/VEPO/GRIT/DeepEyes). This
+> PAPO/VPPO/PGPO/DVRP/CFPO; greedy decoding with an LLM judge for ToR/VEPO/GRIT/DeepEyes/Vision-OPD). This
 > repository evaluates every model with one harness, so compare methods against baselines run in
 > this repository rather than against numbers copied across papers.
 
@@ -284,6 +312,7 @@ Environment variables understood by every training script:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `MODEL_PATH` | per script | Hugging Face id or local path of the policy |
+| `TEACHER_PATH` | per script | teacher of the on-policy distillation scripts |
 | `DATA_ROOT` | `./data` | prepared training data |
 | `LOGGER` | `["console","file"]` | add `"wandb"`, `"swanlab"`, `"tensorboard"` or `"mlflow"` |
 | `N_GPUS_PER_NODE` | per script | GPUs per node |
@@ -313,7 +342,7 @@ Verified on 2026-10-01 against arXiv, OpenReview and the official repositories; 
 
 ### ✅ Reproduced in this repository
 
-Each method below can be trained with the scripts in `examples/reproduction/<method>` (paper setting) and, except DeepEyes, `examples/comparison/` (shared setting). Except for CGPO these are unofficial re-implementations; see each README for the differences from the official code.
+Each method below can be trained with the scripts in `examples/reproduction/<method>` (paper setting) and, except DeepEyes and Vision-OPD, `examples/comparison/` (shared setting). Except for CGPO these are unofficial re-implementations; see each README for the differences from the official code.
 
 - **CGPO** (ours) · [CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](https://doi.org/10.1145/3767308.3835969) · Shengxuming Zhang et al. · ACM MM 2026 (Oral) · official code: this repository<br>
   The policy grounds its evidence inline in the chain of thought; the grounded regions are masked to form a counterfactual image, and the KL between the policy on the original and on the counterfactual image measures how much each token depends on that evidence. Responses that depend more on their evidence get larger advantages on perception-critical tokens, and a grounding-consistency reward (the policy re-detects every grounded entity) keeps the boxes from being inflated. Scripts cover the natural-image setting; the pathology setting of the paper is described in the README. Scripts and setting: [examples/reproduction/cgpo](examples/reproduction/cgpo/README.md).
@@ -337,6 +366,14 @@ Each method below can be trained with the scripts in `examples/reproduction/<met
   Trains single-turn grounded reasoning chains that interleave text with bounding boxes, without feeding crops back to the model. GRPO-GR rewards the output structure, producing boxes (with a counting bonus) and answer correctness, with no supervision on the boxes; the paper trains on only 20 image-question-answer triplets. Scripts and setting: [examples/reproduction/grit](examples/reproduction/grit/README.md).
 - **DeepEyes** · [DeepEyes: Incentivizing "Thinking with Images" via Reinforcement Learning](https://arxiv.org/abs/2505.14362) · Ziwei Zheng et al. · ICLR 2026 · [code](https://github.com/Visual-Agent/DeepEyes)<br>
   Multi-turn agentic RL with an image zoom-in tool: the model reasons, calls `image_zoom_in_tool` with a bounding box, receives the crop of the original image as a new observation and continues. GRPO optimizes the whole trajectory with an accuracy and format reward plus a tool bonus that is granted only to correct answers that used the tool. Supported here on Qwen2.5-VL (absolute pixel coordinates, as in the paper) and Qwen3-VL (0-1000 coordinates). Scripts and setting: [examples/reproduction/deepeyes](examples/reproduction/deepeyes/README.md).
+- **VA-OPD** · [Visual-Advantage On-Policy Distillation for Vision-Language Models](https://arxiv.org/abs/2605.21924) · Ruiqi Liu et al. · arXiv<br>
+  On-policy distillation weighted by the teacher's visual advantage: how much log-probability the teacher gives a sampled token with the original image beyond a pixelated copy. Responses are weighted by a softmax of their group-normalized mean advantage and, within a response, the 20% highest-advantage tokens share half of its weight. Scripts and setting: [examples/reproduction/va_opd](examples/reproduction/va_opd/README.md).
+- **VGS** · [Decomposed On-Policy Distillation for Vision-Language Reasoning: Steering Gradients for Visual Grounding](https://arxiv.org/abs/2606.00564) · Hee Suk Yoon et al. · ICML 2026 (Spotlight)<br>
+  Splits the teacher's distribution into a language prior and a visual gain. Next to the standard reverse KL, the student matches a target that combines its own text-only distribution with the teacher's image-over-text ratio, and a gated term keeps its text-only distribution close to the teacher's on the most vision-dependent tokens. Scripts and setting: [examples/reproduction/vgs](examples/reproduction/vgs/README.md).
+- **VCSD** · [Visual Contrastive Self-Distillation](https://arxiv.org/abs/2607.21556) · Yijun Liang et al. · arXiv · [code](https://github.com/joliang17/VCSD)<br>
+  Self-distillation without a teacher model, answers or rewards: an EMA of the student scores its rollouts with the original image and with a black image, and the target sharpens the original-image distribution by their contrast on the plausible tokens; the student learns it with a forward KL. Scripts and setting: [examples/reproduction/vcsd](examples/reproduction/vcsd/README.md).
+- **Vision-OPD** · [Vision-OPD: Learning to See Fine Details for Multimodal LLMs via On-Policy Self-Distillation](https://arxiv.org/abs/2605.18740) · Qianhao Yuan et al. · NeurIPS 2026 · [code](https://github.com/VisionOPD/Vision-OPD)<br>
+  Distills region-level perception into whole-image answering: the student sees the full image with a box around the region, an EMA teacher sees a zoomed crop of it with the same question, and the student matches the teacher on its top-100 tokens with a Jensen-Shannon divergence. Scripts and setting: [examples/reproduction/vision_opd](examples/reproduction/vision_opd/README.md).
 
 ### 📑 Other papers
 

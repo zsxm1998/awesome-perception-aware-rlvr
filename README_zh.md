@@ -4,15 +4,15 @@
 
 **视觉感知导向的可验证奖励强化学习（Perception-Aware RLVR）：统一复现、公平对比与一键评测，并附论文清单**
 
-PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · GRIT · DeepEyes · CGPO，统一的 EasyR1 代码库，25+ 个评测基准
+PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · GRIT · DeepEyes · CGPO，以及在线策略蒸馏 VA-OPD · VGS · VCSD · Vision-OPD，统一的 EasyR1 代码库，30+ 个评测基准
 
 🌟 **[CGPO](#-cgpo-acm-mm-2026-oral)（ACM MM 2026 Oral）官方代码仓库** 🌟
 
 [English](README.md) | [简体中文](README_zh.md)
 
 [![Awesome](https://awesome.re/badge.svg)](https://github.com/sindresorhus/awesome)
-[![Papers](https://img.shields.io/badge/Papers-91-blue)](#-论文清单)
-[![Reproduced](https://img.shields.io/badge/Reproduced-11-brightgreen)](#-已复现方法)
+[![Papers](https://img.shields.io/badge/Papers-95-blue)](#-论文清单)
+[![Reproduced](https://img.shields.io/badge/Reproduced-15-brightgreen)](#-已复现方法)
 [![CGPO](https://img.shields.io/badge/CGPO-ACM%20MM%202026%20Oral-8A2BE2)](https://doi.org/10.1145/3767308.3835969)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Built on EasyR1](https://img.shields.io/badge/built%20on-EasyR1-orange)](https://github.com/hiyouga/EasyR1)
@@ -22,7 +22,9 @@ PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · GRIT · DeepEyes 
 基于结果奖励的强化学习能提升视觉语言模型的推理能力，但奖励只检查最终答案：模型可能"答对但理由不对"，
 依赖语言先验而不是图像本身。**Perception-Aware RLVR** 一类方法把视觉感知重新放回优化目标中，例如
 在图像的反事实视图上对比策略输出、把信用分配给真正依赖图像的 token，或者让模型在推理过程中定位、
-放大视觉证据。
+放大视觉证据。同样的思路也用于**在线策略蒸馏（on-policy distillation, OPD）**：由教师对学生自己采样的
+回答逐 token 打分，可以加权那些由图像决定的 token、只蒸馏教师从图像中得到的增益而非其语言先验，或者让模型
+在看到更多图像信息的条件下给自己当教师。
 
 <p align="center">
   <img src="docs/assets/taxonomy_zh.svg" width="100%" alt="按视觉信号进入训练的位置对感知导向 RLVR 方法分类：基于定位的推理（GRIT、DeepEyes）、反事实视图（PAPO、DVRP、CFPO）、token 级视觉信用分配（VPPO、ToR、PGPO、PEPO、VEPO）；CGPO 在推理中内联定位证据，遮挡证据得到反事实图像，并用证据依赖缩放 token 优势。">
@@ -33,10 +35,11 @@ PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · GRIT · DeepEyes 
 - **[CGPO](#-cgpo-acm-mm-2026-oral) 官方实现**（ACM MM 2026 Oral）；
 - **[论文清单](#-论文清单)**：感知导向的策略优化、基于定位的推理 / 看图思考（thinking with images），
   以及这一方向常用的评测基准；
-- **[方法复现](#-已复现方法)**：10 个方法（PAPO、VPPO、DVRP、ToR、PGPO、PEPO、CFPO、VEPO、GRIT、
-  DeepEyes），各自使用原论文的数据、模型和超参数，并附带论文中对比的 GRPO/DAPO 基线；
-- **[统一设定下的公平对比](examples/comparison/README.md)**：除 DeepEyes 外的所有方法在同一设定下训练
-  （Qwen3-VL-4B、相同数据、相同超参数）；
+- **[方法复现](#-已复现方法)**：14 个方法，各自使用原论文的数据、模型和超参数，并附带论文中对比的基线：
+  10 个 RLVR 方法（PAPO、VPPO、DVRP、ToR、PGPO、PEPO、CFPO、VEPO、GRIT、DeepEyes）和 4 个在线策略蒸馏方法
+  （VA-OPD、VGS、VCSD、Vision-OPD）；
+- **统一设定下的公平对比**：[RLVR 方法](examples/comparison/README.md)（除 DeepEyes 外）在 Qwen3-VL-4B 上对比，
+  [在线策略蒸馏](examples/comparison/opd_qwen3_vl_2b/README.md)以 Qwen3-VL-2B 为学生、Qwen3-VL-8B 为教师对比；
 - **[一键评测](eval/README.md)**：覆盖这些论文所用评测基准的并集，每个基准都有下载处理脚本，
   每篇论文都有对应的评测套件。
 
@@ -66,15 +69,18 @@ PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · GRIT · DeepEyes 
 
 ## 🔥 更新
 
+- **2026-10**：在线策略蒸馏：教师模型（冻结模型或策略的 EMA）、基于采样 token 和基于完整下一 token 分布的
+  两种 OPD 目标，复现 [VA-OPD](examples/reproduction/va_opd/README.md)、[VGS](examples/reproduction/vgs/README.md)、
+  [VCSD](examples/reproduction/vcsd/README.md)、[Vision-OPD](examples/reproduction/vision_opd/README.md)，
+  新增 [OPD 统一对比](examples/comparison/opd_qwen3_vl_2b/README.md)，评测新增 ZoomBench、BLINK、MMStar、AI2D、MMMU。
 - **2026-10**：🎉 首次发布：[CGPO](#-cgpo-acm-mm-2026-oral)（ACM MM 2026 Oral）官方实现、10 个复现方法、
   Qwen3-VL-4B 上的统一对比、一键评测。复现结果正在用本代码库重新跑，完成后补充到下面的表格中。
 
 ## 🚧 计划
 
 - [ ] 统一对比和各方法复现的结果（正在跑）。
-- [ ] 在线策略蒸馏（on-policy distillation, OPD）：作为 GRPO、DAPO 之外的第三种基础训练方式（教师模型 +
-  逐 token 反向 KL 目标），再在其上实现感知相关的 OPD 方法，如 [Vision-OPD](https://arxiv.org/abs/2605.18740)
-  （以局部裁剪图为输入的同一模型作教师做自蒸馏）和 [VA-OPD](https://arxiv.org/abs/2605.21924)（按视觉优势加权蒸馏）。
+- [x] 在线策略蒸馏（OPD）：GRPO、DAPO 之外的基础训练方式（教师模型，基于采样 token 和基于完整分布的两种目标），
+  及 VA-OPD、VGS、VCSD、Vision-OPD。
 - [ ] 更多 DeepEyes 方向的"用图像思考"方法，如 MGPO、Chain-of-Focus、Pixel Reasoner。
 - [ ] 更多 GRIT 方向的定位推理方法，如 TreeVGR、DeFacto、ViGoRL。
 
@@ -119,9 +125,16 @@ bash scripts/eval.sh checkpoints/CGPO-Reproduce/qwen3_vl_8b_cgpo --suite cgpo
 | VEPO | [Entropy Is Not Enough: Unlocking Effective Reinforcement Learning for Visual Reasoning via Vision-Anchored Token Selection](https://arxiv.org/abs/2606.03937) | arXiv | [GitHub](https://github.com/Leonnnnnn929/VEPO) | [examples/reproduction/vepo](examples/reproduction/vepo) | Qwen2.5-VL-7B，Geometry3K |
 | GRIT | [GRIT: Teaching MLLMs to Think with Images](https://arxiv.org/abs/2505.15879) | NeurIPS 2025 | [GitHub](https://github.com/UCSB-AI/GRIT) | [examples/reproduction/grit](examples/reproduction/grit) | Qwen2.5-VL-3B / InternVL3-2B，GRIT 的 20 条样本 |
 | DeepEyes | [DeepEyes: Incentivizing "Thinking with Images" via Reinforcement Learning](https://arxiv.org/abs/2505.14362) | ICLR 2026 | [GitHub](https://github.com/Visual-Agent/DeepEyes) | [examples/reproduction/deepeyes](examples/reproduction/deepeyes) | Qwen2.5-VL-7B / Qwen3-VL-8B，DeepEyes-47k，多轮放大工具 |
+| VA-OPD | [Visual-Advantage On-Policy Distillation for Vision-Language Models](https://arxiv.org/abs/2605.21924) | arXiv | - | [examples/reproduction/va_opd](examples/reproduction/va_opd) | Qwen3-VL-2B 学生，4B / 8B / 32B 教师，Geometry3K / ViRL39K |
+| VGS | [Decomposed On-Policy Distillation for Vision-Language Reasoning: Steering Gradients for Visual Grounding](https://arxiv.org/abs/2606.00564) | ICML 2026 (Spotlight) | - | [examples/reproduction/vgs](examples/reproduction/vgs) | Qwen3-VL-2B / 4B 学生，经 GRPO 训练的 Qwen3-VL-8B 教师，Vision-SR1-47K |
+| VCSD | [Visual Contrastive Self-Distillation](https://arxiv.org/abs/2607.21556) | arXiv | [GitHub](https://github.com/joliang17/VCSD) | [examples/reproduction/vcsd](examples/reproduction/vcsd) | Qwen3-VL-2B/4B/8B、Qwen3.5-2B/4B/9B，EMA 自教师，ViRL39K |
+| Vision-OPD | [Vision-OPD: Learning to See Fine Details for Multimodal LLMs via On-Policy Self-Distillation](https://arxiv.org/abs/2605.18740) | NeurIPS 2026 | [GitHub](https://github.com/VisionOPD/Vision-OPD) | [examples/reproduction/vision_opd](examples/reproduction/vision_opd) | Qwen3.5-4B / 9B，以区域裁剪图为输入的 EMA 自教师，Vision-OPD-6K |
 
 每个方法目录都有 README，说明论文设定、脚本（方法与基线）、与官方实现的差异以及论文报告的结果。
-EasyR1 原有的算法（GRPO、DAPO、GSPO、CISPO、SAPO、REINFORCE++、RLOO、ReMax）仍然可用。
+EasyR1 原有的算法（GRPO、DAPO、GSPO、CISPO、SAPO、REINFORCE++、RLOO、ReMax）仍然可用。OPD 方法从教师
+学习，不使用可验证奖励；它们共用教师（`worker.teacher`）和两种基础目标：基于采样 token 的 OPD
+（`algorithm.adv_estimator=teacher_log_ratio`）和基于完整下一 token 分布的 OPD（`algorithm.distill_loss_coef`），见
+[docs/algorithm_parameters.md](docs/algorithm_parameters.md#on-policy-distillation)。
 
 ## 🚀 快速开始
 
@@ -188,6 +201,7 @@ python3 scripts/finalize_run.py checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_pa
 ├── examples/
 │   ├── reproduction/<method>/   # 各论文原设定：common.sh（公共参数）+ 每个实验一个脚本
 │   ├── comparison/qwen3_vl_4b/  # 统一设定对比：每个方法一个脚本，共用 common.sh
+│   ├── comparison/opd_qwen3_vl_2b/  # 在线策略蒸馏的统一设定对比
 │   ├── config.yaml              # 基础训练配置
 │   ├── reward_function/         # 奖励函数
 │   └── format_prompt/、system_prompt/、chat_template/
@@ -200,7 +214,7 @@ python3 scripts/finalize_run.py checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_pa
 ```
 
 各方法在 `verl/trainer/` 中被实现为可组合的模块：辅助（反事实）图像视图、token 级视觉敏感度信号、
-token 选择、优势缩放、辅助损失和额外奖励。所有开关见
+token 选择、优势缩放、辅助损失和额外奖励；在线策略蒸馏另有教师和蒸馏损失（`distillation.py`）。所有开关见
 [docs/algorithm_parameters.md](docs/algorithm_parameters.md)，多个方法共有的实现细节（如 k3 KL 估计的梯度方向、损失平均方式）见
 [docs/implementation_notes.md](docs/implementation_notes.md)，新增方法见
 [docs/add_method.md](docs/add_method.md)。
@@ -214,6 +228,14 @@ GRPO 超参数和相同的评测，只有方法相关的参数不同，各方法
 | 方法 | GRPO | DAPO | PAPO | VPPO | ToR | DVRP | PGPO | PEPO | CFPO | VEPO | GRIT | CGPO |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 平均（comparison 套件） | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+
+[`examples/comparison/opd_qwen3_vl_2b`](examples/comparison/opd_qwen3_vl_2b/README.md) 以 Qwen3-VL-2B 为学生、
+Qwen3-VL-8B-Instruct 为教师对比在线策略蒸馏，使用相同的数据、训练量和评测，每批采样只更新一次，不加 KL 和熵项。
+VCSD 从学生自身的 EMA 蒸馏，不使用外部教师；同一学生上的 GRPO 作为强化学习参照。
+
+| 方法 | GRPO | OPD（采样 token） | OPD（完整分布） | VA-OPD | VGS | VCSD |
+| --- | --- | --- | --- | --- | --- | --- |
+| 平均（`opd` 套件） | TBD | TBD | TBD | TBD | TBD | TBD |
 
 ### 📌 关于结果的说明
 
@@ -236,16 +258,16 @@ README 中标注为本仓库的列）请结合以下几点阅读：
 ## 📈 评测
 
 评测系统覆盖所复现论文使用的基准的并集：数学与多模态推理（Geometry3K、MathVista、We-Math、MMK12、
-MathVerse、MathVerse-V、LogicVista、CLEVR 计数、MMMU-Pro、DynaMath、MathVision），感知与幻觉
-（POPE、HallusionBench、MME、TextVQA、CFPO 的反事实基准 C-VQA-Real 与 MARS-Bench、SEED-Bench 等），
-基于定位的推理（GRIT 的 VSR / TallyQA / GQA / OVDEval、refCOCO），以及高分辨率感知（V*、HR-Bench、
-MME-RealWorld-Lite）。每个基准都有下载脚本，每篇论文都有评测套件（`--suite papo`、
+MathVerse、MathVerse-V、LogicVista、CLEVR 计数、MMMU-Pro、MMMU、DynaMath、MathVision），感知与幻觉
+（POPE、HallusionBench、MME、MMStar、BLINK、AI2D、TextVQA、CFPO 的反事实基准 C-VQA-Real 与 MARS-Bench、
+SEED-Bench 等），基于定位的推理（GRIT 的 VSR / TallyQA / GQA / OVDEval、refCOCO），以及高分辨率感知
+（V*、HR-Bench、MME-RealWorld-Lite、ZoomBench）。每个基准都有下载脚本，每篇论文都有评测套件（`--suite papo`、
 `--suite deepeyes` 等）。新增基准只需要 loader、scorer 和注册表条目，教程见
 [eval/README.md](eval/README.md#adding-a-new-benchmark)。
 
 > [!IMPORTANT]
 > 各论文的评测协议并不相同（PAPO/VPPO/PGPO/DVRP/CFPO 使用温度 1.0 下基于规则的 avg@8；
-> ToR/VEPO/GRIT/DeepEyes 使用贪心解码加 LLM 裁判）。本仓库用同一套评测系统评测所有模型，
+> ToR/VEPO/GRIT/DeepEyes/Vision-OPD 使用贪心解码加 LLM 裁判）。本仓库用同一套评测系统评测所有模型，
 > 因此请与本仓库中跑出的基线比较，而不要直接与跨论文摘抄的数字比较。
 
 ## 🔧 配置
@@ -255,6 +277,7 @@ MME-RealWorld-Lite）。每个基准都有下载脚本，每篇论文都有评�
 | 变量 | 默认值 | 含义 |
 | --- | --- | --- |
 | `MODEL_PATH` | 由脚本指定 | 策略模型的 Hugging Face id 或本地路径 |
+| `TEACHER_PATH` | 由脚本指定 | 在线策略蒸馏脚本的教师模型 |
 | `DATA_ROOT` | `./data` | 训练数据目录 |
 | `LOGGER` | `["console","file"]` | 可加入 `"wandb"`、`"swanlab"`、`"tensorboard"`、`"mlflow"` |
 | `N_GPUS_PER_NODE` | 由脚本指定 | 每个节点的 GPU 数 |
@@ -280,7 +303,7 @@ InternVL）不受影响。设置 `worker.actor.model.plain_think_tokens=false`�
 
 ### ✅ 本仓库已复现的论文
 
-下列方法都可以用 `examples/reproduction/<method>`（论文原设定）中的脚本训练，除 DeepEyes 外也都可以用 `examples/comparison/`（统一设定）中的脚本训练。除 CGPO 外均为非官方复现，与官方代码的差异见各方法的 README。
+下列方法都可以用 `examples/reproduction/<method>`（论文原设定）中的脚本训练，除 DeepEyes 和 Vision-OPD 外也都可以用 `examples/comparison/`（统一设定）中的脚本训练。除 CGPO 外均为非官方复现，与官方代码的差异见各方法的 README。
 
 - **CGPO**（本仓库） · [CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](https://doi.org/10.1145/3767308.3835969) · Shengxuming Zhang et al. · ACM MM 2026 (Oral) · 官方代码：本仓库<br>
   策略在思维链中以内联方式定位证据；将定位到的区域遮挡得到反事实图像，用策略在原图与反事实图像上输出分布的 KL 衡量每个 token 对证据的依赖程度。证据依赖越强的回答，其感知关键 token 的优势被放大；定位一致性奖励（由策略对每个定位实体重新检测）防止框被刻意放大。脚本覆盖自然图像设定，论文中的病理设定在 README 中以文字说明。脚本与设定：[examples/reproduction/cgpo](examples/reproduction/cgpo/README.md)。
@@ -304,6 +327,14 @@ InternVL）不受影响。设置 `worker.actor.model.plain_think_tokens=false`�
   训练单轮的定位推理链，文本与边界框交错出现，不把裁剪图回传给模型。GRPO-GR 奖励输出结构、输出框（含计数奖励）和答案正确性，不监督框本身；论文只用 20 条图像-问题-答案三元组训练。脚本与设定：[examples/reproduction/grit](examples/reproduction/grit/README.md)。
 - **DeepEyes** · [DeepEyes: Incentivizing "Thinking with Images" via Reinforcement Learning](https://arxiv.org/abs/2505.14362) · Ziwei Zheng et al. · ICLR 2026 · [代码](https://github.com/Visual-Agent/DeepEyes)<br>
   带图像放大工具的多轮智能体强化学习：模型推理后用边界框调用 `image_zoom_in_tool`，把原图裁剪结果作为新观测继续推理。GRPO 优化整条轨迹，奖励由准确率、格式以及只发给使用了工具且答对的回答的工具奖励组成。本仓库支持 Qwen2.5-VL（与论文一致的绝对像素坐标）和 Qwen3-VL（0-1000 坐标）。脚本与设定：[examples/reproduction/deepeyes](examples/reproduction/deepeyes/README.md)。
+- **VA-OPD** · [Visual-Advantage On-Policy Distillation for Vision-Language Models](https://arxiv.org/abs/2605.21924) · Ruiqi Liu et al. · arXiv<br>
+  按教师的视觉优势加权在线策略蒸馏：视觉优势是教师在原图条件下给采样 token 的对数概率比在像素化图像下高出的部分。同一题的各条回答按组内标准化后平均优势的 softmax 加权；在一条回答内，优势最高的 20% token 分得该回答一半的权重。脚本与设定：[examples/reproduction/va_opd](examples/reproduction/va_opd/README.md)。
+- **VGS** · [Decomposed On-Policy Distillation for Vision-Language Reasoning: Steering Gradients for Visual Grounding](https://arxiv.org/abs/2606.00564) · Hee Suk Yoon et al. · ICML 2026 (Spotlight)<br>
+  把教师分布分解为语言先验和视觉增益。在标准反向 KL 之外，学生还要拟合一个目标分布：它由学生自己的纯文本分布乘以教师"有图/无图"的概率比得到；另有一个门控项，在最依赖图像的 token 上让学生的纯文本分布贴近教师的纯文本分布。脚本与设定：[examples/reproduction/vgs](examples/reproduction/vgs/README.md)。
+- **VCSD** · [Visual Contrastive Self-Distillation](https://arxiv.org/abs/2607.21556) · Yijun Liang et al. · arXiv · [code](https://github.com/joliang17/VCSD)<br>
+  不需要教师模型、答案或奖励的自蒸馏：学生的 EMA 分别以原图和全黑图为条件对其回答打分，目标分布在可信 token 上按两者的对比锐化原图分布，学生用前向 KL 学习它。脚本与设定：[examples/reproduction/vcsd](examples/reproduction/vcsd/README.md)。
+- **Vision-OPD** · [Vision-OPD: Learning to See Fine Details for Multimodal LLMs via On-Policy Self-Distillation](https://arxiv.org/abs/2605.18740) · Qianhao Yuan et al. · NeurIPS 2026 · [code](https://github.com/VisionOPD/Vision-OPD)<br>
+  把区域级感知蒸馏进整图作答：学生看带框标出区域的整图，EMA 教师看该区域的放大裁剪图和同一问题，学生在自己的 top-100 token 上用 Jensen-Shannon 散度拟合教师。脚本与设定：[examples/reproduction/vision_opd](examples/reproduction/vision_opd/README.md)。
 
 ### 📑 其他论文
 

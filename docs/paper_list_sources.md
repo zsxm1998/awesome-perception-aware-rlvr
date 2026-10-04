@@ -1,6 +1,6 @@
 # Paper list: verification notes
 
-The paper list in the README was verified on 2026-10-01. This page records how each entry was checked and where each venue comes from.
+The paper list in the README was verified on 2026-10-01; the four on-policy distillation papers (VA-OPD, VGS, VCSD, Vision-OPD) were added on 2026-10-04. This page records how each entry was checked and where each venue comes from.
 
 ## Notes on verification
 
@@ -15,6 +15,9 @@ The paper list in the README was verified on 2026-10-01. This page records how e
   - **MoCA** (2605.14054): the arXiv comment says "ICML 2026 Oral", but OpenReview says "ICML 2026 spotlight". The table lists only "ICML 2026".
   - **Evidence-RL** (2608.08021): NeurIPS 2026 is stated only in the official repo README. There is no arXiv comment and no OpenReview record yet.
   - **VEPO** (2606.03937): a co-author homepage reports EMNLP 2026 Findings. No allowed source confirms it, so the table keeps `arXiv`.
+  - **VGS** (2606.00564): the abstract announces `github.com/hee-suk-yoon/Decomposed_OPD`, but the repository holds only a README, so Code is `-`. The arXiv comment says "ICML 2026 Spotlight", and the paper is on the ICML 2026 list of spotlight posters.
+  - **VA-OPD** (2605.21924): no code, and no venue in the arXiv comments or on OpenReview, so the entry says `arXiv`.
+  - **Vision-OPD** (2605.18740): NeurIPS 2026 is stated in the official repo README; the paper itself uses the NeurIPS preprint style and states no venue.
   - **PRPO** (2606.08708): third-party aggregators list it as a NeurIPS 2026 poster. OpenReview shows only a CoRR record, so the table keeps `arXiv`.
   - **Visual-ARFT** shares the Visual-RFT repository (`Visual-ARFT/` subfolder). **MMMU-Pro** lives in the MMMU repository (`mmmu-pro/` subfolder).
   - The two different **Perception-R1** papers are disambiguated by first author.
@@ -23,6 +26,8 @@ The paper list in the README was verified on 2026-10-01. This page records how e
 
 - TPAE (`2609.39168`): ACM MM 2026, from arXiv comments
 - Evidence-RL (CED) (`2608.08021`): NeurIPS 2026, from official repo README
+- VGS (`2606.00564`): ICML 2026 (Spotlight), from arXiv comments; ICML 2026 spotlight posters
+- Vision-OPD (`2605.18740`): NeurIPS 2026, from official repo README
 - ReGround (`2608.04385`): ACM MM 2026, from arXiv comments
 - CFPO (`2606.23206`): ICML 2026, from arXiv comments; OpenReview
 - EASE (`2605.30912`): EMNLP 2026, from arXiv comments
