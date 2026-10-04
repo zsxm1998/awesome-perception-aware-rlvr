@@ -613,12 +613,16 @@ def test_judge_failures_are_reported(monkeypatch):
 
 
 def test_judge_client_waits_a_bounded_time(monkeypatch):
-    for proxy in ("all_proxy", "ALL_PROXY", "http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY"):
-        monkeypatch.delenv(proxy, raising=False)  # a SOCKS proxy would need the optional socksio package
-    monkeypatch.setenv("DEEPEYES_JUDGE_BASE_URL", "http://127.0.0.1:9/v1")
+    """The OpenAI client gets our timeout and no retries of its own (a stand-in module: openai is optional)."""
+    import sys
+    import types
+
+    created = {}
+    monkeypatch.setitem(sys.modules, "openai", types.SimpleNamespace(OpenAI=lambda **kwargs: created.update(kwargs)))
+    monkeypatch.setenv("DEEPEYES_JUDGE_BASE_URL", "http://judge.example/v1")
     monkeypatch.setenv("DEEPEYES_JUDGE_TIMEOUT", "30")
-    client = deepeyes_reward._judge_client()
-    assert client.max_retries == 0 and client.timeout == 30.0
+    deepeyes_reward._judge_client()
+    assert created == {"base_url": "http://judge.example/v1", "api_key": "EMPTY", "timeout": 30.0, "max_retries": 0}
 
 
 def test_math_verify_runs_outside_the_main_thread():
