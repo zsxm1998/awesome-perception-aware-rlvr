@@ -48,8 +48,37 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Changes to documentation only skip the tests. The job itself still runs and succeeds, so it can
+      # be a required check (a paths filter on the workflow would leave a required check waiting).
+      - name: Detect code changes
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          DOCS: '\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^(CITATION\.cff|LICENSE|NOTICE)$'
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            range="HEAD^1 HEAD"  # the merge commit GitHub tests: the base branch against the pull request
+          elif [ "$EVENT" = push ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            range="$BEFORE HEAD"
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"  # manual runs, new branches, force pushes: run the tests
+            exit 0
+          fi
+          git diff --name-only $range > "$RUNNER_TEMP/changed.txt"
+          cat "$RUNNER_TEMP/changed.txt"
+          if grep -v -E "$DOCS" "$RUNNER_TEMP/changed.txt" > /dev/null; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "Only documentation changed: the unit tests are skipped."
+          fi
 
       - uses: actions/setup-python@v5
+        if: steps.changes.outputs.code == 'true'
         with:
           python-version: "3.11"
           cache: pip
@@ -60,10 +89,12 @@ jobs:
       # GitHub-hosted runners have no GPU: install CPU PyTorch and skip vLLM / flash-attn. Tests that
       # need vLLM are skipped by tests/conftest.py; GPU training and evaluation are not run in CI.
       - name: Install CPU dependencies
+        if: steps.changes.outputs.code == 'true'
         run: |
           pip install torch==2.10.0 torchvision --index-url https://download.pytorch.org/whl/cpu
           grep -v -E '^(vllm|flash-attn)' requirements.txt > "$RUNNER_TEMP/requirements-cpu.txt"
           pip install -r "$RUNNER_TEMP/requirements-cpu.txt" pytest -c scripts/constraints.txt
 
       - name: Unit tests
+        if: steps.changes.outputs.code == 'true'
         run: python -m pytest -q tests/
