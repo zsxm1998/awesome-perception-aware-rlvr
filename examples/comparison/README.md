@@ -3,9 +3,10 @@
 The perception-aware RLVR papers reproduced in [examples/reproduction/](../reproduction/) use different
 backbones, training sets, baseline definitions and evaluation protocols, and several of them reuse
 baseline numbers from other papers. Their reported gains are therefore hard to compare with each
-other. This directory trains every method under **one** recipe: same model, same data, same GRPO
-hyper-parameters and the same evaluation. Each script only sets `ALGO_ARGS`, the switches that
-define the method; everything else comes from [qwen3_vl_4b/common.sh](qwen3_vl_4b/common.sh).
+other. This directory trains every method except DeepEyes ([why](#why-deepeyes-is-not-included))
+under **one** recipe: same model, same data, same GRPO hyper-parameters and the same evaluation.
+Each script only sets `ALGO_ARGS`, the switches that define the method; everything else comes from
+[qwen3_vl_4b/common.sh](qwen3_vl_4b/common.sh).
 
 ## Shared setting
 
@@ -58,6 +59,32 @@ those views are scored once before the update (as in PAPO's official default), s
 without changing training; the PAPO authors confirmed this and found that recomputing the masked
 view with gradient does not help ([PAPO issue #20](https://github.com/MikeWangWZHL/PAPO/issues/20)).
 The per-paper settings are in [examples/reproduction/](../reproduction/).
+
+### Why DeepEyes is not included
+
+DeepEyes changes the rollout rather than the loss: the model calls a zoom-in tool and reads crops of
+the original image over several turns. It does not fit this setting:
+
+- **Its recipe has no tool for this kind of data.** DeepEyes enables the tool only on its
+  V*-derived high-resolution images and ArxivQA charts; its reasoning problems (the 11,031
+  ThinkLite-VL rows) are answered in a single turn without the tool. ViRL39K, a multimodal
+  reasoning set like ThinkLite-VL, would get the same treatment, so DeepEyes' recipe would train
+  like the GRPO baseline here, with a different reward.
+- **There is little to zoom into.** In a sample of 360 ViRL39K images the median size is about
+  73,000 pixels; 72% are below the 200,704-pixel minimum, so the model already sees them enlarged,
+  and only 3% exceed the 1,003,520-pixel maximum. A crop of the original image adds hardly any
+  detail that the model does not already see.
+- **The evaluation would not show it.** The comparison suite measures reasoning and hallucination,
+  while the tool targets fine detail in high-resolution images, as measured by V* and HR-Bench
+  (not in the suite); evaluating DeepEyes also needs the multi-turn agent loop.
+- **Cost.** The agentic rollout (several turns and up to six tool calls per trajectory) is much
+  slower than the single-turn rollout of the other methods.
+
+Enabling the tool on every ViRL39K problem would be our own adaptation rather than DeepEyes. GRIT,
+which also grounds its reasoning in the image, stays single-turn and only replaces the prompt and
+the reward, so it runs in the shared setting. The [DeepEyes reproduction](../reproduction/deepeyes/README.md)
+compares DeepEyes with a text-only GRPO baseline on DeepEyes' data and reward (`qwen*_grpo.sh`
+against `qwen*_grpo_deepeyes.sh`).
 
 ## Running
 
