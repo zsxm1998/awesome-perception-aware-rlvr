@@ -1,0 +1,59 @@
+name: Reproduction results / 复现结果
+description: Share the results of a script of this repository / 分享用本仓库脚本得到的结果
+title: "[Results] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Results that differ from the paper or from our tables are welcome too. / 与论文或本仓库结果表不一致的结果同样欢迎提交。
+  - type: input
+    id: script
+    attributes:
+      label: Script / 脚本
+      placeholder: examples/reproduction/<method>/<script>.sh
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit / 提交哈希
+      description: The output of `git rev-parse --short HEAD`. / `git rev-parse --short HEAD` 的输出。
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command / 完整命令
+      description: The command with every override, for training and for evaluation. / 训练和评测的完整命令，包括所有覆盖参数。
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware / 硬件
+      placeholder: 8 x H100 80GB
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions / 版本
+      description: torch / vllm / transformers
+  - type: textarea
+    id: results
+    attributes:
+      label: Evaluation summary / 评测汇总
+      description: The table of `eval/results/<run>/<step>/summary.csv`, and the numbers you compare with and their source. / `eval/results/<run>/<step>/summary.csv` 的内容，以及你对比的数字和出处。
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Training logs / 训练日志
+      description: Drop `experiment_log.jsonl` here, or link to it. / 把 `experiment_log.jsonl` 拖到这里，或给出链接。
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes / 备注
+      description: Changes to the script, problems during the run. / 对脚本的改动、运行中遇到的问题。

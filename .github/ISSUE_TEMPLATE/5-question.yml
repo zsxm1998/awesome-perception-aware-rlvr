@@ -1,0 +1,23 @@
+name: Question / 提问
+description: A question about the code, a method or the results / 关于代码、方法或结果的问题
+title: "[Question] "
+labels: ["question"]
+body:
+  - type: checkboxes
+    id: searched
+    attributes:
+      label: Before asking / 提问前
+      options:
+        - label: I searched the existing issues and the documentation (the READMEs and docs/). / 我已搜索过已有 issue 和文档（各 README 与 docs/）。
+          required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Question / 问题
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context / 背景
+      description: The script, command, file or result the question is about. / 问题涉及的脚本、命令、文件或结果。

@@ -1,0 +1,52 @@
+name: Paper or method / 论文或方法
+description: Suggest a paper for the list or a method to reproduce / 推荐论文加入清单，或建议复现某个方法
+title: "[Paper] "
+labels: ["enhancement"]
+body:
+  - type: input
+    id: paper
+    attributes:
+      label: Paper title / 论文标题
+    validations:
+      required: true
+  - type: input
+    id: link
+    attributes:
+      label: Paper link / 论文链接
+      description: The arXiv page if there is one. / 有 arXiv 版本时请填 arXiv 页面。
+      placeholder: https://arxiv.org/abs/2606.03937
+    validations:
+      required: true
+  - type: input
+    id: venue
+    attributes:
+      label: Venue / 会议或期刊
+      description: Only if confirmed by the arXiv comments, OpenReview or the official repository. / 仅当 arXiv 备注、OpenReview 或官方仓库能确认时填写。
+  - type: input
+    id: code
+    attributes:
+      label: Official code / 官方代码
+      placeholder: https://github.com/
+  - type: dropdown
+    id: request
+    attributes:
+      label: Request / 请求
+      options:
+        - Add it to the paper list / 加入论文清单
+        - Reproduce it in this repository / 在本仓库复现
+        - Both / 两者都要
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it belongs here / 为什么适合本仓库
+      description: How the method uses visual perception in RL, in one or two sentences. / 用一两句话说明该方法如何在强化学习中利用视觉感知。
+    validations:
+      required: true
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution / 贡献
+      options:
+        - label: I would like to open the pull request myself (see the contributing guide). / 我愿意自己提交 PR（见贡献指南）。

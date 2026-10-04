@@ -1,5 +1,7 @@
 # Contributing
 
+English | [中文](CONTRIBUTING_zh.md)
+
 Everyone is welcome to contribute: new papers for the list, new methods, new benchmarks,
 reproduction results, bug reports and documentation fixes.
 
@@ -12,8 +14,8 @@ reproduction results, bug reports and documentation fixes.
   fields with validation, unit tests, a `examples/reproduction/<method>/` directory with baseline and method
   scripts, and a README that states the differences from the official recipe.
 - **Add a benchmark.** Follow the tutorial in [eval/README.md](../eval/README.md#adding-a-new-benchmark).
-- **Report results.** Open an issue with the exact command, the commit, the training logs
-  (`experiment_log.jsonl`) and the evaluation summary.
+- **Report results.** Open an issue with the "Reproduction results" form: the exact command, the
+  commit, the training logs (`experiment_log.jsonl`) and the evaluation summary.
 
 ## Checks with pre-commit
 

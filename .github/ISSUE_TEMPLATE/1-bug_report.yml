@@ -1,0 +1,50 @@
+name: Bug report / 问题报告
+description: Something does not work as documented / 代码的行为与文档不符
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. You can write in English or Chinese. / 感谢反馈，中文或英文均可。
+  - type: checkboxes
+    id: searched
+    attributes:
+      label: Before submitting / 提交前
+      options:
+        - label: I searched the existing issues and the README of the method. / 我已搜索过已有 issue 和对应方法的 README。
+          required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug / 问题描述
+      description: What happened, and what you expected instead. / 发生了什么，你期望的结果是什么。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: To reproduce / 复现方法
+      description: The commit and the exact command (script and overrides). / 提交哈希和完整命令（脚本及覆盖参数）。
+      render: shell
+      placeholder: |
+        git rev-parse --short HEAD
+        bash examples/reproduction/<method>/<script>.sh trainer.n_gpus_per_node=8
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / 日志
+      description: The relevant console output or lines of `experiment_log.jsonl`. / 相关的终端输出或 `experiment_log.jsonl` 片段。
+      render: shell
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment / 环境
+      value: |
+        - OS / GPU / CUDA driver:
+        - Installed with `scripts/install_env.sh`, Docker or manually:
+        - torch / vllm / transformers (`python -c "import torch, vllm, transformers; print(torch.__version__, vllm.__version__, transformers.__version__)"`):
+    validations:
+      required: true

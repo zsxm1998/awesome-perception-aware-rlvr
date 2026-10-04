@@ -410,9 +410,11 @@ InternVL）不受影响。设置 `worker.actor.model.plain_think_tokens=false`�
 - **新增方法**：参考 [docs/add_method.md](docs/add_method.md)，新增 `examples/reproduction/<method>/` 目录，
   包含 README 和基线脚本。
 - **新增评测基准**：参考 [eval/README.md](eval/README.md#adding-a-new-benchmark)。
-- **提交复现结果**：通过 issue 或 PR 提供运行命令、日志和评测汇总。
+- **提交复现结果**：用 "Reproduction results" 模板开 issue，提供运行命令、日志和评测汇总。
 
-提交代码前请运行 `make quality` 和 `make test`。
+开 PR 之前，先用 `pip install pre-commit && pre-commit install` 配好检查（只需一次），再运行
+`pre-commit run --all-files` 和 `make test`。[贡献指南](.github/CONTRIBUTING_zh.md)
+（[English](.github/CONTRIBUTING.md)）介绍了每项检查、提交信息格式和提交 PR 的步骤。
 
 ## 📝 引用
 

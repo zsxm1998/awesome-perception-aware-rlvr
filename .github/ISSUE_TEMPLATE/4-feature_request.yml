@@ -1,0 +1,25 @@
+name: Feature request / 功能建议
+description: A new option, benchmark or tool / 新的选项、评测基准或工具
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation / 动机
+      description: The problem, or what you want to do and cannot do now. / 你遇到的问题，或者现在做不到但想做的事。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal / 方案
+      description: What you would like to see, with references if any (paper, code, benchmark). / 你希望的做法，有参考的话请附上（论文、代码、基准）。
+    validations:
+      required: true
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution / 贡献
+      options:
+        - label: I would like to open the pull request myself (see the contributing guide). / 我愿意自己提交 PR（见贡献指南）。

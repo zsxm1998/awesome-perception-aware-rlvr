@@ -1,1 +1,5 @@
 blank_issues_enabled: false
+contact_links:
+  - name: Contributing guide / 贡献指南
+    url: https://github.com/zsxm1998/awesome-perception-aware-rlvr/blob/main/.github/CONTRIBUTING.md
+    about: How to add a paper, a method or a benchmark, and how to open a pull request. / 如何补充论文、方法或基准，以及如何提交 PR。

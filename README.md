@@ -442,10 +442,12 @@ Contributions are welcome:
 - **Add a method**: follow [docs/add_method.md](docs/add_method.md) and add a
   `examples/reproduction/<method>/` directory with a README and baseline scripts.
 - **Add a benchmark**: follow [eval/README.md](eval/README.md#adding-a-new-benchmark).
-- **Report reproduction results**: open an issue or a pull request with the command, the logs
-  and the evaluation summary.
+- **Report reproduction results**: open an issue with the "Reproduction results" form (the command,
+  the logs and the evaluation summary).
 
-Please run `make quality` and `make test` before submitting code.
+Before opening a pull request, set up the checks once with `pip install pre-commit && pre-commit install`,
+then run `pre-commit run --all-files` and `make test`. The [contributing guide](.github/CONTRIBUTING.md)
+([中文](.github/CONTRIBUTING_zh.md)) explains each check, the commit message format and the pull request steps.
 
 ## 📝 Citation
 
