@@ -38,8 +38,8 @@ This repository provides
 - **[Reproductions](#-reproduced-methods)** of 10 methods (PAPO, VPPO, DVRP, ToR, PGPO, PEPO, CFPO,
   VEPO, GRIT, DeepEyes) with each paper's own data, model and hyper-parameters, plus the GRPO/DAPO
   baselines they compare against;
-- **[A controlled comparison](examples/comparison/README.md)** of all methods under one setting
-  (Qwen3-VL-4B, the same data and the same hyper-parameters);
+- **[A controlled comparison](examples/comparison/README.md)** of all methods except DeepEyes under
+  one setting (Qwen3-VL-4B, the same data and the same hyper-parameters);
 - **[One-click evaluation](eval/README.md)** on the union of the benchmarks used by these papers,
   with per-benchmark download scripts and per-paper suites.
 
@@ -225,7 +225,8 @@ advantage scaling, auxiliary losses and extra rewards. See
 
 ## 📊 Controlled comparison
 
-[`examples/comparison/qwen3_vl_4b`](examples/comparison/README.md) trains every method on Qwen3-VL-4B-Instruct with
+[`examples/comparison/qwen3_vl_4b`](examples/comparison/README.md) trains every method except DeepEyes
+([why](examples/comparison/README.md#why-deepeyes-is-not-included)) on Qwen3-VL-4B-Instruct with
 the same data (ViRL39K / MMK12), the same GRPO hyper-parameters and the same evaluation; only the
 method-specific arguments differ, and each method keeps the image perturbation of its paper. Results
 will be added here.
@@ -311,7 +312,7 @@ Verified on 2026-10-01 against arXiv, OpenReview and the official repositories; 
 
 ### ✅ Reproduced in this repository
 
-Each method below can be trained with the scripts in `examples/reproduction/<method>` (paper setting) and `examples/comparison/` (shared setting). Except for CGPO these are unofficial re-implementations; see each README for the differences from the official code.
+Each method below can be trained with the scripts in `examples/reproduction/<method>` (paper setting) and, except DeepEyes, `examples/comparison/` (shared setting). Except for CGPO these are unofficial re-implementations; see each README for the differences from the official code.
 
 - **CGPO** (ours) · [CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](https://doi.org/10.1145/3767308.3835969) · Shengxuming Zhang et al. · ACM MM 2026 (Oral) · official code: this repository<br>
   The policy grounds its evidence inline in the chain of thought; the grounded regions are masked to form a counterfactual image, and the KL between the policy on the original and on the counterfactual image measures how much each token depends on that evidence. Responses that depend more on their evidence get larger advantages on perception-critical tokens, and a grounding-consistency reward (the policy re-detects every grounded entity) keeps the boxes from being inflated. Scripts cover the natural-image setting; the pathology setting of the paper is described in the README. Scripts and setting: [examples/reproduction/cgpo](examples/reproduction/cgpo/README.md).

@@ -35,8 +35,8 @@ PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · GRIT · DeepEyes 
   以及这一方向常用的评测基准；
 - **[方法复现](#-已复现方法)**：10 个方法（PAPO、VPPO、DVRP、ToR、PGPO、PEPO、CFPO、VEPO、GRIT、
   DeepEyes），各自使用原论文的数据、模型和超参数，并附带论文中对比的 GRPO/DAPO 基线；
-- **[统一设定下的公平对比](examples/comparison/README.md)**：所有方法在同一设定下训练（Qwen3-VL-4B、
-  相同数据、相同超参数）；
+- **[统一设定下的公平对比](examples/comparison/README.md)**：除 DeepEyes 外的所有方法在同一设定下训练
+  （Qwen3-VL-4B、相同数据、相同超参数）；
 - **[一键评测](eval/README.md)**：覆盖这些论文所用评测基准的并集，每个基准都有下载处理脚本，
   每篇论文都有对应的评测套件。
 
@@ -206,9 +206,9 @@ token 选择、优势缩放、辅助损失和额外奖励。所有开关见
 
 ## 📊 统一设定对比
 
-[`examples/comparison/qwen3_vl_4b`](examples/comparison/README.md) 在 Qwen3-VL-4B-Instruct 上训练所有方法，使用相同的
-数据（ViRL39K / MMK12）、相同的 GRPO 超参数和相同的评测，只有方法相关的参数不同，各方法沿用其论文中的
-图像扰动方式。结果将补充到这里。
+[`examples/comparison/qwen3_vl_4b`](examples/comparison/README.md) 在 Qwen3-VL-4B-Instruct 上训练除 DeepEyes 外的所有方法
+（[原因](examples/comparison/README.md#why-deepeyes-is-not-included)），使用相同的数据（ViRL39K / MMK12）、相同的
+GRPO 超参数和相同的评测，只有方法相关的参数不同，各方法沿用其论文中的图像扰动方式。结果将补充到这里。
 
 | 方法 | GRPO | DAPO | PAPO | VPPO | ToR | DVRP | PGPO | PEPO | CFPO | VEPO | GRIT | CGPO |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -279,7 +279,7 @@ InternVL）不受影响。设置 `worker.actor.model.plain_think_tokens=false`�
 
 ### ✅ 本仓库已复现的论文
 
-下列方法都可以用 `examples/reproduction/<method>`（论文原设定）和 `examples/comparison/`（统一设定）中的脚本训练。除 CGPO 外均为非官方复现，与官方代码的差异见各方法的 README。
+下列方法都可以用 `examples/reproduction/<method>`（论文原设定）中的脚本训练，除 DeepEyes 外也都可以用 `examples/comparison/`（统一设定）中的脚本训练。除 CGPO 外均为非官方复现，与官方代码的差异见各方法的 README。
 
 - **CGPO**（本仓库） · [CGPO: Counterfactual Grounding Policy Optimization for Evidence-Sensitive Pathology Vision-Language Reasoning](https://doi.org/10.1145/3767308.3835969) · Shengxuming Zhang et al. · ACM MM 2026 (Oral) · 官方代码：本仓库<br>
   策略在思维链中以内联方式定位证据；将定位到的区域遮挡得到反事实图像，用策略在原图与反事实图像上输出分布的 KL 衡量每个 token 对证据的依赖程度。证据依赖越强的回答，其感知关键 token 的优势被放大；定位一致性奖励（由策略对每个定位实体重新检测）防止框被刻意放大。脚本覆盖自然图像设定，论文中的病理设定在 README 中以文字说明。脚本与设定：[examples/reproduction/cgpo](examples/reproduction/cgpo/README.md)。
