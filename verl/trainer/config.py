@@ -133,6 +133,17 @@ class AlgorithmConfig:
     or `loss_scale_only` (only the T^2 factor; the distributions stay at T = 1)"""
     distill_target: str = "teacher"
     """the target distribution: `teacher` (the teacher's next-token distribution)"""
+    distill_weighting: str = "none"
+    """per-token weights of the distillation loss: `none`, or `va_opd` (VA-OPD: the teacher scores the original and
+    the `corrupt_image` views, `visual_sensitivity_reference=teacher`; responses are weighted by a softmax of the
+    group-normalized mean score, and within a response the top `va_opd_high_fraction` tokens by score share
+    `va_opd_high_weight` of its weight, the rest the remainder; the weights of a prompt sum to 1)"""
+    va_opd_softmax_temperature: float = 1.0
+    """VA-OPD: temperature tau of the softmax over the z-scored mean visual advantages of a prompt's responses"""
+    va_opd_high_fraction: float = 0.2
+    """VA-OPD: fraction p_v of each response's tokens in the high-advantage group (at least one token)"""
+    va_opd_high_weight: float = 0.5
+    """VA-OPD: share lambda of a response's weight that goes to the high-advantage group"""
     teacher_view: str = "original"
     """what the distillation teacher sees: `original` (the student's input) or `data_image` (the same prompt with the
     images of `data.teacher_image_key`, Vision-OPD); the responses are the student's either way"""
@@ -189,9 +200,9 @@ class AlgorithmConfig:
     visual_sensitivity_loss_coef: float = 0.0
     """coefficient for KL-based decremental-view sensitivity regularization (KL_prcp in PAPO). Used by PAPO/DVRP, not needed by VPPO/ToR/CGPO default scripts."""
     visual_sensitivity_reference: str = "current"
-    """which branch is compared against decremental log-probs when computing visual sensitivity / KL_prcp. CGPO and VPPO/ToR use `old`; PAPO and DVRP use `current`."""
+    """which branch is compared against decremental log-probs when computing visual sensitivity / KL_prcp. CGPO and VPPO/ToR use `old`; PAPO and DVRP use `current`; `teacher` scores both views with the distillation teacher (VA-OPD, for `distill_weighting`)."""
     visual_sensitivity_metric: str = "sampled_low_var_kl"
-    """token-level visual sensitivity signal. `sampled_low_var_kl` preserves existing PAPO/VPPO/ToR/CGPO behavior; `sampled_boxcox` is the bounded Box-Cox power gap (p^α - q^α)/α (PowerOPD-style); `sampled_abs_log_ratio` is |log p - log q| (ToR); `full_vocab_*` are generic distribution measures between the original and corrupted views; `vepo` is VEPO's fused recipe (JSD ⊕ abs entropy gap via soft-or)."""
+    """token-level visual sensitivity signal. `sampled_low_var_kl` preserves existing PAPO/VPPO/ToR/CGPO behavior; `sampled_boxcox` is the bounded Box-Cox power gap (p^α - q^α)/α (PowerOPD-style); `sampled_abs_log_ratio` is |log p - log q| (ToR); `sampled_positive_log_ratio` is max(log p - log q, 0) (VA-OPD's visual advantage); `full_vocab_*` are generic distribution measures between the original and corrupted views; `vepo` is VEPO's fused recipe (JSD ⊕ abs entropy gap via soft-or)."""
     visual_sensitivity_boxcox_alpha: float = 1.0
     """Box-Cox α for `visual_sensitivity_metric='sampled_boxcox'`. Scores are bounded to [-1/α, 1/α]; α→0 approaches the sampled log-ratio. The 1/α denominator is kept so scores stay comparable across α sweeps."""
     visual_sensitivity_log_metrics: Any = None
@@ -305,10 +316,17 @@ class AlgorithmConfig:
         )
         _validate_choice("corrupt_image_position", self.corrupt_image_position, {"prompt", "response"})
         _validate_choice("entropy_loss_type", self.entropy_loss_type, {"sampled", "full"})
-        _validate_choice("visual_sensitivity_reference", self.visual_sensitivity_reference, {"current", "old"})
+        _validate_choice(
+            "visual_sensitivity_reference", self.visual_sensitivity_reference, {"current", "old", "teacher"}
+        )
         # Kept as literals so config parsing stays torch-free; a test asserts they match
         # the constants in visual_sensitivity.py.
-        sampled_sensitivity_metrics = {"sampled_low_var_kl", "sampled_boxcox", "sampled_abs_log_ratio"}
+        sampled_sensitivity_metrics = {
+            "sampled_low_var_kl",
+            "sampled_boxcox",
+            "sampled_abs_log_ratio",
+            "sampled_positive_log_ratio",
+        }
         full_vocab_sensitivity_metrics = {
             "full_vocab_jsd",
             "full_vocab_kl",
@@ -573,6 +591,25 @@ class AlgorithmConfig:
             _validate_choice("distill_temperature_scope", self.distill_temperature_scope, {"all", "loss_scale_only"})
             _validate_choice("distill_target", self.distill_target, {"teacher"})
             _validate_choice("teacher_view", self.teacher_view, {"original", "data_image"})
+            _validate_choice("distill_weighting", self.distill_weighting, {"none", "va_opd"})
+            if self.distill_weighting == "va_opd":
+                if self.corrupt_image is None or self.corrupt_image in MODEL_LEVEL_VISUAL_CORRUPTIONS:
+                    raise ValueError(
+                        "distill_weighting=va_opd needs an image corruption in `corrupt_image` (pixelation)."
+                    )
+                if self.visual_sensitivity_reference != "teacher":
+                    raise ValueError(
+                        "distill_weighting=va_opd scores the views with the teacher: "
+                        "set visual_sensitivity_reference=teacher."
+                    )
+                if self.visual_sensitivity_metric not in sampled_sensitivity_metrics:
+                    raise ValueError(
+                        "distill_weighting=va_opd needs a sampled visual_sensitivity_metric (sampled_positive_log_ratio)."
+                    )
+                if self.va_opd_softmax_temperature <= 0.0:
+                    raise ValueError("va_opd_softmax_temperature must be positive.")
+                if not 0.0 < self.va_opd_high_fraction < 1.0 or not 0.0 < self.va_opd_high_weight < 1.0:
+                    raise ValueError("va_opd_high_fraction and va_opd_high_weight must be in (0, 1).")
             if self.distill_chunk_size < 1:
                 raise ValueError(f"distill_chunk_size must be positive, but got {self.distill_chunk_size}.")
             if self.distill_is_clip is not None and self.distill_is_clip <= 0.0:
@@ -594,6 +631,8 @@ class AlgorithmConfig:
                     "distill_loss_coef > 0 does not combine with the perception-aware policy losses; disable: "
                     + ", ".join(enabled)
                 )
+        if self.visual_sensitivity_reference == "teacher" and self.distill_weighting == "none":
+            raise ValueError("visual_sensitivity_reference=teacher is only used by distill_weighting (va_opd).")
 
 
 @dataclass
@@ -792,8 +831,22 @@ class PPOConfig:
                 if self.worker.actor.ulysses_size > 1:
                     # the view has its own sequence lengths, so its Ulysses slices hold other response rows
                     raise ValueError("algorithm.teacher_view=data_image requires worker.actor.ulysses_size=1.")
-        elif self.algorithm.teacher_view != "original":
-            raise ValueError("algorithm.teacher_view only applies to the distillation loss (distill_loss_coef > 0).")
+        elif self.algorithm.teacher_view != "original" or self.algorithm.distill_weighting != "none":
+            raise ValueError(
+                "algorithm.teacher_view and distill_weighting only apply to the distillation loss (distill_loss_coef > 0)."
+            )
+        if self.algorithm.distill_weighting == "va_opd":
+            actor = self.worker.actor
+            if (
+                actor.loss_avg_mode != "token"
+                or actor.ppo_epochs != 1
+                or self.data.rollout_batch_size != actor.global_batch_size
+            ):
+                # the weights are normalized per prompt over the whole step, before the update
+                raise ValueError(
+                    "distill_weighting=va_opd makes one update per rollout batch with loss_avg_mode=token: set "
+                    "worker.actor.global_batch_size=data.rollout_batch_size, ppo_epochs=1, loss_avg_mode=token."
+                )
         if self.data.teacher_image_key and self.algorithm.teacher_view != "data_image":
             raise ValueError("data.teacher_image_key is only read with algorithm.teacher_view=data_image.")
         if consumers and not teacher.enabled:

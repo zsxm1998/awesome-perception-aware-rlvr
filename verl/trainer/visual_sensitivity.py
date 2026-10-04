@@ -33,6 +33,8 @@ Metric families
       sampled log-ratio ``log p - log q``.
     * ``sampled_abs_log_ratio``: ``|log p - log q|`` (ToR's perception score, Eq. 8 of the
       paper). Symmetric in the sign of the log-ratio and not clamped.
+    * ``sampled_positive_log_ratio``: ``max(log p - log q, 0)`` (VA-OPD's visual advantage,
+      Eq. 2 of the paper): only tokens the normal view makes more likely count.
 - Full-vocab metrics (``FULL_VOCAB_SENSITIVITY_METRICS``) compare the whole output
   distributions of the two views (JSD/KL/Hellinger/entropy gap); they require response
   logits from both views. ``vepo`` is VEPO's method-specific recipe: JSD and the absolute
@@ -89,7 +91,12 @@ import torch
 import torch.nn.functional as F
 
 
-SAMPLED_SENSITIVITY_METRICS = ("sampled_low_var_kl", "sampled_boxcox", "sampled_abs_log_ratio")
+SAMPLED_SENSITIVITY_METRICS = (
+    "sampled_low_var_kl",
+    "sampled_boxcox",
+    "sampled_abs_log_ratio",
+    "sampled_positive_log_ratio",
+)
 FULL_VOCAB_SENSITIVITY_METRICS = (
     "full_vocab_jsd",
     "full_vocab_kl",
@@ -172,6 +179,15 @@ def compute_sampled_abs_log_ratio(
     return (reference_log_probs.float() - corrupted_log_probs.float()).abs().contiguous()
 
 
+def compute_sampled_positive_log_ratio(
+    corrupted_log_probs: torch.Tensor,
+    reference_log_probs: torch.Tensor,
+) -> torch.Tensor:
+    """``max(log p - log q, 0)`` at the sampled tokens (VA-OPD's visual advantage, Eq. 2): the log-probability the
+    token loses when the image is corrupted; tokens the corruption makes more likely score 0."""
+    return (reference_log_probs.float() - corrupted_log_probs.float()).clamp(min=0.0).contiguous()
+
+
 def compute_sampled_sensitivity_scores(
     metric: str,
     corrupted_log_probs: torch.Tensor,
@@ -194,6 +210,11 @@ def compute_sampled_sensitivity_scores(
         )
     if metric == "sampled_abs_log_ratio":
         return compute_sampled_abs_log_ratio(
+            corrupted_log_probs=corrupted_log_probs,
+            reference_log_probs=reference_log_probs,
+        )
+    if metric == "sampled_positive_log_ratio":
+        return compute_sampled_positive_log_ratio(
             corrupted_log_probs=corrupted_log_probs,
             reference_log_probs=reference_log_probs,
         )

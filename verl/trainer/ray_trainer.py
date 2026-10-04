@@ -61,6 +61,8 @@ from .core_algos import (
 )
 from .distillation import (
     build_distillation_config,
+    compute_grouped_token_weights,
+    token_weights_for_token_mean,
     view_keys,
 )
 from .grounding_consistency import (
@@ -95,6 +97,7 @@ from .perception_reasoning_loss import (
     build_sensitivity_advantage_shaping_context,
     has_perception_reasoning,
 )
+from .visual_sensitivity import compute_sampled_sensitivity_scores
 
 
 class Role(IntEnum):
@@ -314,7 +317,9 @@ class RayPPOTrainer:
             self.visual_token_ids = sorted(visual_token_ids)
         self.perception_reasoning_corruption_builder: PerceptionReasoningCorruptionBuilder | None = None
         self.grounding_consistency_scorer: GroundingConsistencyRewardScorer | None = None
-        distillation_views = config.algorithm.distill_loss_coef > 0.0 and (config.algorithm.teacher_view != "original")
+        distillation_views = config.algorithm.distill_loss_coef > 0.0 and (
+            config.algorithm.teacher_view != "original" or config.algorithm.distill_weighting != "none"
+        )
         if needs_media_corruption_builder(config.algorithm) or distillation_views:
             if processor is None:
                 raise ValueError("Perception/reasoning auxiliary views require a multimodal processor.")
@@ -519,6 +524,42 @@ class RayPPOTrainer:
             or self.config.algorithm.decremental_entropy_coef != 0.0
             # Sampled diagnostic estimators piggyback on the same corrupted-view forward.
             or bool(self.config.algorithm.visual_sensitivity_log_metrics)
+        )
+
+    def _attach_distillation_token_weights(self, batch: DataProto, metrics: dict[str, Any]) -> None:
+        """VA-OPD: the teacher scores the `corrupt_image` view of the responses; its sampled-token sensitivity
+        against the original view (the visual advantage) sets the per-token weights of the distillation loss."""
+        algorithm = self.config.algorithm
+        corrupted = self.perception_reasoning_corruption_builder.build_batch(
+            batch=batch, config=algorithm, global_step=self.global_step
+        ).batch
+        corrupted.meta_info["teacher_log_probs_output_key"] = "decremental_teacher_log_probs"
+        corrupted_log_probs = self.actor_rollout_ref_wg.compute_teacher_log_probs(corrupted)
+        response_mask = batch.batch["response_mask"]
+        scores = compute_sampled_sensitivity_scores(
+            metric=algorithm.visual_sensitivity_metric,
+            corrupted_log_probs=corrupted_log_probs.batch["decremental_teacher_log_probs"],
+            reference_log_probs=batch.batch["teacher_log_probs"],
+            reference_mode="teacher",
+            boxcox_alpha=algorithm.visual_sensitivity_boxcox_alpha,
+        )
+        metrics[f"algo/sensitivity/{algorithm.visual_sensitivity_metric}"] = VF.masked_mean(
+            scores, response_mask
+        ).item()
+        # ties of the within-response ranking are broken by a generator of their own, as the batch-level masks
+        generator = torch.Generator().manual_seed(int(self.config.data.seed) * 1_000_003 + int(self.global_step))
+        weights, weight_metrics = compute_grouped_token_weights(
+            scores,
+            response_mask,
+            batch.non_tensor_batch["uid"],
+            softmax_temperature=algorithm.va_opd_softmax_temperature,
+            high_fraction=algorithm.va_opd_high_fraction,
+            high_weight=algorithm.va_opd_high_weight,
+            generator=generator,
+        )
+        metrics.update(weight_metrics)
+        batch.batch["distill_token_weights"] = token_weights_for_token_mean(
+            weights, response_mask, batch.non_tensor_batch["uid"]
         )
 
     def _attach_distillation_views(self, batch: DataProto, views: list[str]) -> None:
@@ -1407,11 +1448,14 @@ class RayPPOTrainer:
                 if self.use_teacher:
                     self._check_response_ids_within_tokenizer(batch)
 
-                # the teacher's log-probs of the sampled tokens (on-policy distillation from sampled tokens)
-                if self.config.algorithm.adv_estimator == AdvantageEstimator.TEACHER_LOG_RATIO:
+                # the teacher's log-probs of the sampled tokens: the advantage of on-policy distillation from sampled
+                # tokens, or the reference of the teacher-scored visual sensitivity of distill_weighting
+                uses_teacher_log_ratio = self.config.algorithm.adv_estimator == AdvantageEstimator.TEACHER_LOG_RATIO
+                if uses_teacher_log_ratio or self.config.algorithm.distill_weighting != "none":
                     with timer("teacher", timing_raw):
                         teacher_log_probs = self.actor_rollout_ref_wg.compute_teacher_log_probs(batch)
                         batch = batch.union(teacher_log_probs)
+                if uses_teacher_log_ratio:
                     metrics.update(
                         compute_teacher_log_ratio_metrics(
                             batch.batch["teacher_log_probs"],
@@ -1420,6 +1464,10 @@ class RayPPOTrainer:
                             self.config.algorithm.teacher_log_ratio_clip,
                         )
                     )
+                if self.config.algorithm.distill_weighting != "none":
+                    with timer("teacher_aux", timing_raw):
+                        self._attach_distillation_token_weights(batch, metrics)
+
                 # compute values
                 if self.use_critic:
                     with timer("values", timing_raw):

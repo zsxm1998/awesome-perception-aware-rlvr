@@ -13,6 +13,7 @@
 # limitations under the License.
 """On-policy distillation: the teacher role, the sampled-token objective and their configuration."""
 
+import math
 from types import SimpleNamespace
 
 import numpy as np
@@ -23,6 +24,7 @@ from verl.protocol import DataProto
 from verl.trainer.config import PPOConfig
 from verl.trainer.core_algos import (
     AdvantageEstimator,
+    average_loss,
     compute_advantage_return,
     compute_teacher_log_ratio_metrics,
 )
@@ -778,3 +780,131 @@ def test_teacher_view_config_needs_no_sequence_parallelism():
     config.worker.actor.ulysses_size = 1
     config.deep_post_init()
     assert build_distillation_config(config.algorithm, VOCAB)["views"] == ["data_image"]
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# VA-OPD: per-token weights from the teacher's visual advantage
+
+
+from verl.trainer.distillation import compute_grouped_token_weights, token_weights_for_token_mean  # noqa: E402
+from verl.trainer.visual_sensitivity import compute_sampled_sensitivity_scores  # noqa: E402
+
+
+def _va_weights(scores, mask, index, seed=0, **kwargs):
+    options = dict(softmax_temperature=1.0, high_fraction=0.2, high_weight=0.5)
+    options.update(kwargs)
+    return compute_grouped_token_weights(scores, mask, index, generator=torch.Generator().manual_seed(seed), **options)
+
+
+def test_visual_advantage_is_the_positive_part_of_the_teacher_log_ratio():
+    original = torch.tensor([[-0.5, -2.0, -1.0]])
+    corrupted = torch.tensor([[-1.5, -1.0, -1.0]])
+    scores = compute_sampled_sensitivity_scores("sampled_positive_log_ratio", corrupted, original, "teacher")
+    assert scores.tolist() == [[1.0, 0.0, 0.0]]
+
+
+def test_response_weights_reproduce_the_paper_example():
+    """Fig. 3 of VA-OPD: mean advantages (0.045, 0.03, 0.02, 0.01) give weights (0.656, 0.206, 0.095, 0.044)."""
+    means = torch.tensor([0.045, 0.03, 0.02, 0.01])
+    scores = means[:, None].expand(4, 10).clone()
+    mask = torch.ones(4, 10)
+    weights, metrics = _va_weights(scores, mask, ["p"] * 4)
+    per_response = weights.sum(-1)
+    torch.testing.assert_close(per_response, torch.tensor([0.6558, 0.2056, 0.0949, 0.0438]), atol=1e-4, rtol=0)
+    assert metrics["distill/response_weight_max"] == pytest.approx(0.6558, abs=1e-4)
+
+
+def test_each_prompt_sums_to_one_and_groups_split_by_rank():
+    generator = torch.Generator().manual_seed(1)
+    scores = torch.rand(6, 12, generator=generator)
+    lengths = torch.tensor([12, 5, 1, 9, 12, 3])
+    mask = (torch.arange(12)[None, :] < lengths[:, None]).float()
+    index = ["a", "a", "a", "b", "b", "b"]
+    weights, _ = _va_weights(scores, mask, index)
+    assert weights[:3].sum().item() == pytest.approx(1.0) and weights[3:].sum().item() == pytest.approx(1.0)
+    assert (weights[mask == 0] == 0).all()
+    for row in range(6):
+        length = int(lengths[row])
+        n_high = max(1, math.ceil(0.2 * length))
+        row_weights = weights[row, :length]
+        row_total = row_weights.sum()
+        top = scores[row, :length].topk(n_high).indices
+        if length == 1:
+            torch.testing.assert_close(row_weights[top].sum(), row_total)
+        else:
+            # the top 20% tokens by advantage share lambda = 0.5 of the response's weight
+            torch.testing.assert_close(row_weights[top].sum(), 0.5 * row_total)
+            assert torch.allclose(row_weights[top], row_weights[top][0])
+
+
+def test_ties_are_broken_by_the_seeded_generator():
+    scores = torch.zeros(1, 20)
+    scores[0, 3] = 1.0
+    mask = torch.ones(1, 20)
+    first, metrics = _va_weights(scores, mask, ["a"], seed=5)
+    again, _ = _va_weights(scores, mask, ["a"], seed=5)
+    other, _ = _va_weights(scores, mask, ["a"], seed=6)
+    assert torch.equal(first, again) and not torch.equal(first, other)
+    high = first[0] > first[0].min()
+    assert high.sum() == 4 and high[3]  # ceil(0.2 * 20) tokens, including the only positive one
+    assert metrics["distill/high_group_score_share"] == 1.0
+    assert metrics["distill/high_group_zero_score_frac"] == 0.75
+
+
+def test_uniform_weights_reduce_to_the_seq_mean_standard_opd():
+    """With equal advantages (w = 1/K) and lambda = |V| / T, the VA-OPD loss is the seq-mean-token-mean loss."""
+    lengths = torch.tensor([5, 10, 10, 5])
+    mask = (torch.arange(10)[None, :] < lengths[:, None]).float()
+    scores = torch.zeros(4, 10)
+    kl = torch.rand(4, 10, generator=torch.Generator().manual_seed(2))
+    index = ["a", "a", "b", "b"]
+    weights, _ = _va_weights(scores, mask, index, high_fraction=0.2, high_weight=0.2)  # |V| / T = 0.2 here
+    token_weights = token_weights_for_token_mean(weights, mask, index)
+    va_opd_loss = average_loss(token_weights * kl, mask, mode="token")
+    seq_loss = average_loss(kl, mask, mode="seq")
+    torch.testing.assert_close(va_opd_loss, seq_loss)
+
+
+def _va_opd_config(**algorithm) -> PPOConfig:
+    options = dict(
+        distill_weighting="va_opd",
+        corrupt_image="pixelation",
+        visual_sensitivity_reference="teacher",
+        visual_sensitivity_metric="sampled_positive_log_ratio",
+    )
+    options.update(algorithm)
+    config = _distill_config(**options)
+    config.data.rollout_batch_size = 16
+    config.worker.actor.global_batch_size = 16
+    config.worker.actor.micro_batch_size_per_device_for_update = 1
+    return config
+
+
+def test_va_opd_config():
+    _va_opd_config().deep_post_init()
+
+
+@pytest.mark.parametrize(
+    "algorithm, message",
+    [
+        (dict(corrupt_image=None), "image corruption"),
+        (dict(visual_sensitivity_reference="old"), "visual_sensitivity_reference=teacher"),
+        (dict(visual_sensitivity_metric="full_vocab_kl"), "sampled visual_sensitivity_metric"),
+        (dict(va_opd_high_fraction=1.0), "va_opd_high_fraction"),
+        (dict(distill_weighting="none"), "only used by distill_weighting"),
+    ],
+)
+def test_invalid_va_opd_configs_fail(algorithm, message):
+    with pytest.raises(ValueError, match=message):
+        _va_opd_config(**algorithm).deep_post_init()
+
+
+def test_va_opd_needs_one_token_mean_update_per_step():
+    config = _va_opd_config()
+    config.worker.actor.global_batch_size = 8
+    with pytest.raises(ValueError, match="one update per rollout batch"):
+        config.deep_post_init()
+    config = _va_opd_config()
+    config.worker.actor.loss_avg_mode = "seq"
+    with pytest.raises(ValueError, match="one update per rollout batch"):
+        config.deep_post_init()

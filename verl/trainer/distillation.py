@@ -28,9 +28,11 @@ non-zero; they are sliced away, never masked with -inf):
   jsd          beta * KL(q || M) + (1 - beta) * KL(p || M), M = (1 - beta) p + beta q (GKD's generalized JSD)
 """
 
+import math
 from dataclasses import dataclass
 from typing import Any, Optional
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
@@ -257,6 +259,83 @@ def build_distillation_config(algorithm: Any, vocab_size: int) -> Optional[dict[
     }
     validate_distillation_spec(DistillationSpec.from_config(config))
     return config
+
+
+def compute_grouped_token_weights(
+    scores: torch.Tensor,
+    response_mask: torch.Tensor,
+    index: Any,
+    softmax_temperature: float,
+    high_fraction: float,
+    high_weight: float,
+    generator: torch.Generator,
+    eps: float = 1e-6,
+) -> tuple[torch.Tensor, dict[str, float]]:
+    """Per-token weights c_t of VA-OPD (Eq. 3-6), from per-token scores a_t (the teacher's visual advantage).
+
+    Within the K responses of a prompt (same `index`), the mean score of each response is z-normalized with the
+    population std (ddof=0, which reproduces the paper's Fig. 3 example) and weighted by softmax(z / tau). Within a
+    response of T tokens, the top max(1, ceil(p_v T)) tokens by score (ties broken by independent random numbers
+    from `generator`) share `high_weight` of its weight and the rest the remainder; a response of one token gives
+    it all. The weights of a prompt sum to 1, so sum_t c_t KL_t is the paper's per-prompt loss.
+
+    Returns (weights (bs, R), metrics).
+    """
+    mask = response_mask.bool()
+    scores = scores.float().masked_fill(~mask, 0.0)
+    lengths = mask.sum(-1)
+    means = scores.sum(-1) / lengths.clamp(min=1)
+
+    response_weights = torch.zeros(scores.size(0), dtype=torch.float64)
+    groups: dict[Any, list[int]] = {}
+    for row, key in enumerate(index):
+        groups.setdefault(key, []).append(row)
+    for rows in groups.values():
+        group_means = means[rows].double()
+        z = (group_means - group_means.mean()) / (group_means.std(correction=0) + eps)
+        response_weights[rows] = torch.softmax(z / softmax_temperature, dim=0)
+
+    weights = torch.zeros_like(scores, dtype=torch.float64)
+    high_score_mass, total_score_mass, high_zero, high_count = 0.0, 0.0, 0, 0
+    for row in range(scores.size(0)):
+        length = int(lengths[row])
+        if length == 0:
+            continue
+        positions = mask[row].nonzero(as_tuple=True)[0]
+        row_scores = scores[row, positions]
+        tie_break = torch.rand(length, generator=generator)
+        # sort by score descending, then by the random key: lexsort with the primary key last
+        order = np.lexsort((tie_break.numpy(), -row_scores.double().numpy()))
+        n_high = max(1, math.ceil(high_fraction * length))
+        high = positions[torch.as_tensor(order[:n_high])]
+        low = positions[torch.as_tensor(order[n_high:])]
+        if low.numel() == 0:
+            weights[row, high] = response_weights[row] / n_high
+        else:
+            weights[row, high] = response_weights[row] * high_weight / n_high
+            weights[row, low] = response_weights[row] * (1.0 - high_weight) / low.numel()
+        high_score_mass += float(scores[row, high].sum())
+        total_score_mass += float(row_scores.sum())
+        high_zero += int((scores[row, high] == 0).sum())
+        high_count += n_high
+
+    valid_rows = lengths > 0
+    metrics = {}
+    if valid_rows.any():
+        metrics = {
+            "distill/high_group_score_share": high_score_mass / total_score_mass if total_score_mass > 0 else 0.0,
+            "distill/high_group_zero_score_frac": high_zero / max(high_count, 1),
+            "distill/response_weight_max": float(response_weights[valid_rows].max()),
+            "distill/response_weight_min": float(response_weights[valid_rows].min()),
+        }
+    return weights.float(), metrics
+
+
+def token_weights_for_token_mean(weights: torch.Tensor, response_mask: torch.Tensor, index: Any) -> torch.Tensor:
+    """Rescale per-prompt weights c_t (summing to 1 per prompt) for the actor's token-mean loss over the whole batch:
+    mean_t(w_t KL_t) over all N response tokens equals sum_t c_t KL_t / B for B prompts when w_t = c_t N / B."""
+    num_prompts = len(set(index))
+    return weights * response_mask.sum().float() / num_prompts
 
 
 def view_keys(name: str) -> dict[str, str]:
