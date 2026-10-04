@@ -1,7 +1,7 @@
 name: Paper or method / 论文或方法
 description: Suggest a paper for the list or a method to reproduce / 推荐论文加入清单，或建议复现某个方法
 title: "[Paper] "
-labels: ["enhancement"]
+labels: ["paper"]
 body:
   - type: input
     id: paper
