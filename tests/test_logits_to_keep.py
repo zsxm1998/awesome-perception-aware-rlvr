@@ -54,7 +54,7 @@ def test_logits_to_keep_matches_full_logits(forward):
     assert torch.equal(default, full)
 
     last = forward(model, input_ids=input_ids, logits_to_keep=3).logits
-    assert torch.equal(last, full[:, -3:])
+    torch.testing.assert_close(last, full[:, -3:], rtol=0, atol=1e-6)  # another matmul shape: rounding differs
 
     keep_idx = torch.tensor([0, 4, 5, 11])
     picked = forward(model, input_ids=input_ids, logits_to_keep=keep_idx).logits
