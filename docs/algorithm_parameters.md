@@ -96,6 +96,22 @@ Used by DVRP-style incremental-view training.
 - `algorithm.noise_gamma`
 - `algorithm.noise_t_max` (at most 1000): the noised view uses step t of NoisyRollout's 1,000-step forward-diffusion schedule
 
+## Rollouts from Transformed Images
+
+Used by NoisyRollout. Off by default (`null`); the generation step is then unchanged.
+
+- `algorithm.rollout_image_transform`: `vp_diffusion` samples the second half of each prompt's
+  `worker.rollout.n` rollouts from a noised copy of its images (one copy per prompt and step, seeded by
+  `data.seed`, the step and the prompt's position). All rollouts of a prompt share its advantage group,
+  and every log-probability (old, reference, current) is computed on the clean images. Requires an even
+  `worker.rollout.n` and `worker.rollout.interaction_mode=one_shot`; `adv_estimator=remax` is rejected. With online
+  filtering (DAPO), a prompt is kept or dropped on the accuracy of all its rollouts, the noised ones included,
+  as its advantage group; the reproduction and comparison scripts run GRPO without filtering.
+- `algorithm.rollout_image_transform_kwargs`: `noise_t_init` (α₀), `noise_gamma` (λ) and `noise_t_mid`
+  (γ / t_max, in (0, 1)) of the annealed diffusion step ⌊α₀ · (1 − σ(λ (t − γ) / t_max))⌋, where t_max is
+  the number of training steps; `noise_t_max` (default 1000) caps the step; `pixel_rounding` (`floor`,
+  the default, truncates to 8 bits as the released NoisyRollout code; `round`).
+
 ## Grounding Consistency
 
 Used by CGPO.

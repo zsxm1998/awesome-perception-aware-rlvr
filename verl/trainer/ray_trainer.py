@@ -99,6 +99,12 @@ from .perception_reasoning_loss import (
     build_sensitivity_advantage_shaping_context,
     has_perception_reasoning,
 )
+from .rollout_image_transform import (
+    ROLLOUT_IMAGE_TRANSFORMED_KEY,
+    build_rollout_image_views,
+    compute_rollout_image_transform_metrics,
+    restore_clean_images,
+)
 from .visual_sensitivity import compute_sampled_sensitivity_scores
 
 
@@ -1253,8 +1259,26 @@ class RayPPOTrainer:
                 meta_info_keys=["min_pixels", "max_pixels", "video_fps"],
             )
 
+            rollout_image_transform = self.config.algorithm.rollout_image_transform
+            if rollout_image_transform is not None:
+                # NoisyRollout: half of each prompt's responses come from transformed images
+                clean_multi_modal_data = gen_batch.non_tensor_batch.get("multi_modal_data")
+                gen_batch, transform_metrics = build_rollout_image_views(
+                    gen_batch,
+                    transform=rollout_image_transform,
+                    transform_kwargs=self.config.algorithm.rollout_image_transform_kwargs,
+                    rollout_n=self.config.worker.rollout.n,
+                    global_step=self.global_step,
+                    total_training_steps=self.training_steps,
+                    generation_round=num_try_make_batch,
+                    data_seed=self.config.data.seed,
+                )
+                metrics.update(transform_metrics)
+
             # generate a batch
             gen_batch_output = self.actor_rollout_ref_wg.generate_sequences(gen_batch)
+            if rollout_image_transform is not None:
+                restore_clean_images(gen_batch_output, clean_multi_modal_data, self.config.worker.rollout.n)
 
             if self.config.algorithm.adv_estimator == "remax":
                 gen_baseline_batch = deepcopy(gen_batch)
@@ -1550,6 +1574,10 @@ class RayPPOTrainer:
                         lam=self.config.algorithm.lam,
                         teacher_log_ratio_clip=self.config.algorithm.teacher_log_ratio_clip,
                     )
+
+                if ROLLOUT_IMAGE_TRANSFORMED_KEY in batch.non_tensor_batch:
+                    metrics.update(compute_rollout_image_transform_metrics(batch))
+                    batch.non_tensor_batch.pop(ROLLOUT_IMAGE_TRANSFORMED_KEY)
 
                 self._maybe_log_train_generations(batch, reward_metrics=train_reward_metrics)
 

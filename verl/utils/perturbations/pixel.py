@@ -56,12 +56,22 @@ def compute_noise_schedule(
     noise_t_init: float,
     noise_gamma: float,
     noise_t_max: float,
+    noise_t_mid: float | None = None,
 ) -> VPDiffusionParams:
+    """Anneal the step as noise_t_init * sigmoid(noise_gamma * (mid - progress)), progress = step / total steps.
+
+    Without ``noise_t_mid`` the midpoint is 0.5 (DVRP). With it, the step is NoisyRollout's Eq. 3,
+    alpha_0 * (1 - sigmoid(lambda * (t - gamma) / t_max)) with gamma = noise_t_mid * t_max, written in the
+    released code's operation order (verl/utils/image_aug.py) so that int() of it matches step for step.
+    """
     if total_training_steps <= 0:
         progress = 0.0
     else:
         progress = min(max(float(global_step), 0.0), float(total_training_steps)) / float(max(total_training_steps, 1))
-    noise_t = noise_t_init * (1.0 / (1.0 + math.exp(-noise_gamma * (0.5 - progress))))
+    if noise_t_mid is None:
+        noise_t = noise_t_init * (1.0 / (1.0 + math.exp(-noise_gamma * (0.5 - progress))))
+    else:
+        noise_t = noise_t_init * (1.0 - 1.0 / (1.0 + math.exp(-noise_gamma * (progress - noise_t_mid))))
     return vp_diffusion_params_from_fixed_t(noise_t, noise_t_max)
 
 
@@ -116,14 +126,23 @@ def vp_diffusion_noise(
     pil_img: Image.Image,
     beta: float,
     seed: int | None = None,
+    rounding: str = "round",
 ) -> Image.Image:
-    """sqrt(1 - beta) x + sqrt(beta) eps on [0, 1] pixels, clipped; beta is 1 - alpha_bar_t (see above)."""
+    """sqrt(1 - beta) x + sqrt(beta) eps on [0, 1] pixels, clipped; beta is 1 - alpha_bar_t (see above).
+
+    ``rounding`` maps back to uint8: ``round`` to the nearest value, or ``floor``, which truncates as
+    NoisyRollout's ToPILImage does.
+    """
+    if rounding not in ("round", "floor"):
+        raise ValueError(f"rounding must be 'round' or 'floor', but got {rounding!r}.")
     rng = np.random.default_rng(seed)
     arr = np.asarray(pil_img.convert("RGB"), dtype=np.float32) / 255.0
     noise = rng.standard_normal(size=arr.shape, dtype=np.float32)
     noisy = math.sqrt(max(1.0 - beta, 0.0)) * arr + math.sqrt(beta) * noise
-    noisy = np.clip(noisy, 0.0, 1.0)
-    return Image.fromarray(np.asarray(np.round(noisy * 255.0), dtype=np.uint8))
+    noisy = np.clip(noisy, 0.0, 1.0) * 255.0
+    if rounding == "round":
+        noisy = np.round(noisy)
+    return Image.fromarray(np.asarray(noisy, dtype=np.uint8))
 
 
 def vp_diffusion_noise_fixed_t(
