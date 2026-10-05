@@ -48,6 +48,12 @@ from .schemas import (
 
 DEFAULT_DEEPSEEK_JUDGE_MODEL = "deepseek-v4-flash"
 SCORER_VERSION = 22
+# revisions of single scorers, in the score fingerprint of their benchmarks only, so that a change of one scorer
+# rescores its benchmarks and keeps the other scores (and all predictions)
+SCORER_REVISIONS = {
+    "hallusionbench": 2,  # aAcc / fAcc / qAcc and aqf_mean in the details
+    "zoombench": 2,  # minus signs of counts are kept
+}
 TOOL_CROP_IOGT_THRESHOLD = 0.5
 MM_VET_JUDGE_VERSION = "official_full_prediction_v1"
 DEFAULT_JUDGE_MAX_TOKENS_DISABLED_THINKING = 32
@@ -156,6 +162,22 @@ Can you explain this meme? | This meme is poking fun at the fact that the names 
 """
 
 
+def set_answer_protocol(rows: PredictionRows, protocol: str | None) -> PredictionRows:
+    """The rows as scored under ``protocol`` (--answer-protocol): the reading of the answers follows the protocol
+    of the scoring run, not the one recorded with the predictions when they were generated."""
+    if protocol is None:
+        return rows
+    for row in rows:
+        metadata = row.get("eval_metadata")
+        metadata = dict(metadata) if isinstance(metadata, dict) else {}
+        if protocol == "default":
+            metadata.pop("answer_protocol", None)
+        else:
+            metadata["answer_protocol"] = protocol
+        row["eval_metadata"] = metadata
+    return rows
+
+
 def score_predictions(
     spec: BenchmarkSpec,
     prediction_path: Path,
@@ -163,8 +185,9 @@ def score_predictions(
     *,
     judge_config: JudgeConfig | None = None,
     metric_metadata: dict[str, Any] | None = None,
+    answer_protocol: str | None = None,
 ) -> MetricResult:
-    rows = read_jsonl(prediction_path)
+    rows = set_answer_protocol(read_jsonl(prediction_path), answer_protocol)
     try:
         scorer = SCORERS[spec.scorer]
     except KeyError as exc:
@@ -175,6 +198,12 @@ def score_predictions(
         result.metadata.update(metric_metadata)
     result.metadata.update(_metadata_from_existing_metric(output_json))
     result.metadata.update(_metadata_from_predictions(rows))
+    # the reading of this scoring, which the run comparison reads back: the rows' protocol (the given one, or the
+    # one recorded with the predictions), never the protocol of an older metric file of the same directory
+    result.metadata.pop("answer_protocol", None)
+    effective_protocol = _rows_answer_protocol(rows)
+    if effective_protocol != "default":
+        result.metadata["answer_protocol"] = effective_protocol
     _write_perturbation_sample_diagnostics(spec, rows, result, output_json.parent)
     write_json(output_json, {"result": result.__dict__})
     return result
@@ -206,6 +235,14 @@ def _metadata_from_existing_metric(path: Path) -> dict[str, Any]:
         return {}
     metadata = result.get("metadata")
     return dict(metadata) if isinstance(metadata, dict) else {}
+
+
+def _rows_answer_protocol(rows: PredictionRows) -> str:
+    """The answer protocol of the rows as scored (the first row with metadata, as ``_metadata_from_predictions``)."""
+    for row in rows:
+        if isinstance(row.get("eval_metadata"), dict):
+            return _row_answer_protocol(row)
+    return "default"
 
 
 def _metadata_from_predictions(rows: PredictionRows) -> dict[str, Any]:
@@ -382,15 +419,21 @@ def boxed_exact_match(response: str, ground_truth: Any) -> float:
 
 def boxed_row_answers(row: dict[str, Any], benchmark: str | None = None) -> list[tuple[str, float, str]]:
     """(answer, score, source) per response of a boxed_exact_match row, the one reading that the scorer, the run
-    comparison and the perturbation diagnostics share. ``source`` is boxed, answer_tag, none, or pepo_letter for
-    LogicVista items read with --answer-protocol pepo. ``benchmark`` defaults to the row's own."""
+    comparison and the perturbation diagnostics share. ``source`` is boxed, answer_tag, none, pepo_letter for
+    LogicVista items read with --answer-protocol pepo, or after_reason (with --answer-protocol vgs, the reading of
+    the VGS training reward, verl/utils/vgs_answer.py). ``benchmark`` defaults to the row's own."""
     target = str(row.get("target")).strip()
     benchmark = benchmark if benchmark is not None else str(row.get("benchmark") or "")
-    pepo_letter = (
-        benchmark == "logicvista" and _row_answer_protocol(row) == "pepo" and re.fullmatch(r"[A-Za-z]", target)
-    )
+    protocol = _row_answer_protocol(row)
+    pepo_letter = benchmark == "logicvista" and protocol == "pepo" and re.fullmatch(r"[A-Za-z]", target)
     answers = []
     for response in row.get("responses") or []:
+        if protocol == "vgs":
+            from verl.utils.vgs_answer import answer_matches, extract_answer
+
+            answer, source = extract_answer(str(response))
+            answers.append((answer, 1.0 if answer_matches(answer, target) else 0.0, source))
+            continue
         if pepo_letter:
             letter = pepo_logicvista_letter(str(response))
             answers.append((letter or "", 1.0 if letter == target.upper() else 0.0, "pepo_letter"))
@@ -450,6 +493,8 @@ def score_boxed_exact_match(
         for source in sources:
             if source in source_counts:
                 source_counts[source] += 1
+            elif source == "after_reason":  # --answer-protocol vgs only
+                source_counts[source] = source_counts.get(source, 0) + 1
         k_values.add(len(scores))
         per_sample.append(
             {
@@ -473,7 +518,9 @@ def score_boxed_exact_match(
         raw,
         count,
         details={
-            "scoring": "papo_eval_boxed_exact_match",
+            "scoring": "vgs_training_reward"
+            if rows and all(_row_answer_protocol(row) == "vgs" for row in rows)
+            else "papo_eval_boxed_exact_match",
             "k": max(k_values) if k_values else 0,
             "mean_acc_at_k": mean_acc,
             "pass_at_k": pass_at_k,
@@ -951,7 +998,9 @@ _ZOOMBENCH_TENS = {
     "ninety": 90,
 }
 _ZOOMBENCH_NUMBER_RE = re.compile(
-    r"(?<![\w.])(?P<digits>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?!\d)"
+    # a minus sign, also before a space ("-4", "- 4"); _zoombench_numbers drops the dash of a range ("3-4", "3 - 4")
+    # and of a list item ("- 4 cups" at the start of a line)
+    r"(?<![\w.])(?P<sign>[-\u2212]\s*(?=\d))?(?P<digits>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?!\d)"
     rf"|\b(?P<tens>{'|'.join(_ZOOMBENCH_TENS)})(?:[\s-](?P<tens_unit>{'|'.join(_ZOOMBENCH_UNITS[1:10])}))?\b"
     rf"|\b(?P<unit>{'|'.join(_ZOOMBENCH_UNITS)})\b",
     flags=re.IGNORECASE,
@@ -1101,11 +1150,27 @@ def zoombench_choice(response: str, options: list[str] | None) -> str | None:
     return _zoombench_leading_letter(text, options, letters) or _zoombench_option_letter(text, options, letters)
 
 
-def _zoombench_numbers(text: str) -> list[float]:
+def _zoombench_negative(text: str, match: re.Match, list_items: bool) -> bool:
+    """Whether the dash before a number is a minus sign: not after a number or a closing bracket (a range or a
+    difference, "3 - 4"), and, with ``list_items``, not an ASCII dash and a space opening a line (a list item)."""
+    sign = match.group("sign")
+    if not sign:
+        return False
+    before = text[: match.start()]
+    previous = before.rstrip()
+    if previous and (previous[-1].isdigit() or previous[-1] in ")]"):
+        return False
+    line_start = not before[before.rfind("\n") + 1 :].strip()
+    return not (list_items and line_start and sign.startswith("-") and len(sign) > 1)
+
+
+def _zoombench_numbers(text: str, list_items: bool = True) -> list[float]:
+    """Numbers of a text; ``list_items=False`` for an extracted answer, where a leading "- 4" is negative."""
     values = []
     for match in _ZOOMBENCH_NUMBER_RE.finditer(text):
         if match.group("digits"):
-            values.append(float(match.group("digits").replace(",", "")))
+            value = float(match.group("digits").replace(",", ""))
+            values.append(-value if _zoombench_negative(text, match, list_items) else value)
         elif match.group("tens"):
             value = _ZOOMBENCH_TENS[match.group("tens").lower()]
             if match.group("tens_unit"):
@@ -1130,7 +1195,7 @@ def zoombench_count(response: str) -> float | None:
     """
     text = zoombench_text(response)
     for span in _zoombench_answer_spans(text, (_ZOOMBENCH_ANSWER_MARKER_RE,)):
-        numbers = _zoombench_numbers(span)
+        numbers = _zoombench_numbers(span, list_items=False)
         if numbers:
             return numbers[0]
     lines = [line.strip() for line in text.splitlines() if line.strip()]

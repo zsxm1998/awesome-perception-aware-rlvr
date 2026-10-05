@@ -17,8 +17,9 @@ The trainer writes the full configuration to ``<run>/experiment_config.json`` (t
 ``trainer.save_checkpoint_path``) and saves the processor with each checkpoint, so a checkpoint
 ``<run>/global_step_N/actor`` (or its ``huggingface/`` folder) carries its chat template and tokenizer,
 and the run root records the rest of the prompt: the format prompt, the system prompt, the image size,
-the ``<think>`` tokenization and the interaction mode. The evaluation uses these settings unless a flag
-overrides them, so that a checkpoint is evaluated with the prompt it was trained with.
+the ``<think>`` tokenization and the interaction mode, and the reward function, whose answer reading the
+evaluation applies when it has it as an answer protocol (VGS). The evaluation uses these settings unless a
+flag overrides them, so that a checkpoint is evaluated as it was trained.
 """
 
 from __future__ import annotations
@@ -33,6 +34,8 @@ from .paths import PROJECT_ROOT
 
 
 RECORD_FILENAME = "experiment_config.json"
+# reward functions -> the --answer-protocol that reads answers as they do
+REWARD_ANSWER_PROTOCOLS = {"vgs.py": "vgs"}
 _NONE = {"", "none", "null"}
 
 
@@ -81,7 +84,9 @@ def _resolve_prompt_file(value: Any, key: str, record: Path) -> str:
     )
 
 
-def load_training_record(model: str) -> TrainingRecord | None:
+def load_training_record(model: str, given: frozenset[str] | set[str] = frozenset()) -> TrainingRecord | None:
+    """The training record of ``model``; prompt files of the options in ``given`` (set on the command line) are not
+    resolved, so that a flag can replace a file that no longer exists."""
     record = find_training_record(model)
     if record is None:
         return None
@@ -92,16 +97,20 @@ def load_training_record(model: str) -> TrainingRecord | None:
     model_config = ((config.get("worker") or {}).get("actor") or {}).get("model") or {}
     rollout = (config.get("worker") or {}).get("rollout") or {}
     values: dict[str, Any] = {
-        "format_prompt": _resolve_prompt_file(data.get("format_prompt"), "data.format_prompt", record),
-        "system_prompt": _resolve_prompt_file(data.get("system_prompt"), "data.system_prompt", record),
-        "plain_think_tokens": normalize_plain_think_tokens(model_config.get("plain_think_tokens", "auto")),
+        key: data.get(key) if key in given else _resolve_prompt_file(data.get(key), f"data.{key}", record)
+        for key in ("format_prompt", "system_prompt")
     }
+    values["plain_think_tokens"] = normalize_plain_think_tokens(model_config.get("plain_think_tokens", "auto"))
     for key in ("min_pixels", "max_pixels"):
         if data.get(key) is not None:
             values[key] = int(data[key])
     for key in ("interaction_mode", "agent_prompt_style"):
         if rollout.get(key) is not None:
             values[key] = str(rollout[key])
+    # a training reward whose answer reading the evaluation has as an answer protocol
+    reward_function = str(((config.get("worker") or {}).get("reward") or {}).get("reward_function") or "")
+    if Path(reward_function.split(":", 1)[0]).name in REWARD_ANSWER_PROTOCOLS:
+        values["answer_protocol"] = REWARD_ANSWER_PROTOCOLS[Path(reward_function.split(":", 1)[0]).name]
     notes = []
     if data.get("system_prompt_key") and values.get("agent_prompt_style") != "official":
         # (DeepEyes' official prompts come from the data in training and are rebuilt by the agentic evaluation)

@@ -155,22 +155,26 @@ suites:
   vgs:
     description: VGS Table 1 benchmarks available here (4 of 7)
     benchmarks: [mathvision, mathverse_v, logicvista, mmmu_pro]
-    defaults:  # the training prompt and image size of examples/reproduction/vgs (VGS' system prompt)
+    defaults:  # the training prompt, image size and answer reading of examples/reproduction/vgs
       format_prompt: none
       system_prompt: examples/system_prompt/vgs.txt
+      answer_protocol: vgs
       min_pixels: 262144
       max_pixels: 4194304
     notes: >-
       VGS reports Acc@1 (greedy) and Acc@16 (mean accuracy of 16 samples at T=1.0) with 2048 new
-      tokens on MathVision, MathVerse Vision Dominant and Vision Only, LogicVista, VisualPuzzles,
-      VlmsAreBlind and MMMU-Pro (4 options); the paper does not describe its answer scoring. Our
-      sets differ from the evaluation files of the VGS authors (MathVision 3,040 items, MathVerse
-      VD / VO multiple-choice 432 / 436, LogicVista 448, MMMU-Pro 4-option 1,592): `mathvision`
-      is VPPO-Eval's 2,907-item verifiable subset, `mathverse_v` is PAPO-Eval's 1,308-item
-      vision-dependent split (one score), `logicvista` has 447 items and `mmmu_pro` is PAPO-Eval's
-      1,730-item vision setting. VisualPuzzles and VlmsAreBlind are not available. The defaults
-      are the PAPO-Eval protocol (avg@8, T=1.0); add `--temperature 0 --num-samples 1` for Acc@1
-      or `--num-samples 16` for Acc@16.
+      tokens on MathVision, MathVerse Vision Dominant and Vision Only, LogicVista,
+      VisualPuzzles, VlmsAreBlind and MMMU-Pro (4 options); the paper does not describe its
+      answer scoring. We read the answers as the training reward of examples/reproduction/vgs
+      does (`--answer-protocol vgs`: the last \boxed{}, else the text after </reason>; option
+      letters for multiple-choice answers, mathruler otherwise). Our sets differ from the
+      evaluation files of the VGS authors (MathVision 3,040 items, MathVerse VD / VO
+      multiple-choice 432 / 436, LogicVista 448, MMMU-Pro 4-option 1,592): `mathvision` is
+      VPPO-Eval's 2,907-item verifiable subset, `mathverse_v` is PAPO-Eval's 1,308-item
+      vision-dependent split (one score), `logicvista` has 447 items and `mmmu_pro` is
+      PAPO-Eval's 1,730-item vision setting. VisualPuzzles and VlmsAreBlind are not available.
+      The decoding defaults are PAPO-Eval's (avg@8, T=1.0); add `--temperature 0 --num-samples
+      1` for Acc@1 or `--num-samples 16` for Acc@16.
 
   vcsd:
     description: VCSD Table 1 (7 benchmarks; Acc. is their unweighted mean)

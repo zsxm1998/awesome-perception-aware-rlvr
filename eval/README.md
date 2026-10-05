@@ -104,7 +104,7 @@ repository is prompted as it was trained, and explicit flags always win (see [Pr
 | `grit` | grit_vsr, grit_tallyqa, grit_gqa, ovdeval_position | GRIT Table 1 (GRIT judges answers with GPT-4o, we use relaxed exact match); defaults follow GRIT's evaluation, for models trained with GRIT's prompt: its prompt (`grit.jinja`, no system prompt), the bare question (`--grounding-instruction none`; elsewhere a box instruction is appended to these sets) and 3,136–200,704 pixels. Evaluate other models on these sets with `--benchmarks grit_vsr,grit_tallyqa,grit_gqa,ovdeval_position` and their own prompt flags |
 | `deepeyes` | vstar, hrbench_4k, hrbench_8k, mme_realworld_lite, pope | DeepEyes Tables 1-3; default: agentic DeepEyes inference (see [Agentic evaluation](#agentic-evaluation-deepeyes)) |
 | `va_opd` | wemath, mathvista, mathverse, hallusionbench, ai2d, mmmu_val, mmstar | VA-OPD Table 1 without OCRBench (not available); the paper reports avg@8 at T=1.0 with official scoring and a GPT-4o judge where applicable, for the best checkpoint; our math sets are avg@8, the other four greedy by default (`--temperature 1.0 --num-samples 8` for avg@8; HallusionBench scores the first sample only); our MathVerse holds the 2,180 multiple-choice testmini questions with an image; defaults: the training prompt (`math.jinja`) and image size |
-| `vgs` | mathvision, mathverse_v, logicvista, mmmu_pro | VGS Table 1, the 4 of 7 benchmarks available (no VisualPuzzles, VlmsAreBlind); the paper reports Acc@1 (greedy) and Acc@16 (T=1); our MathVerse-V and MMMU-Pro come from PAPO-Eval and differ from the subsets the VGS authors use (MathVerse VD / VO multiple choice, 4-option MMMU-Pro); defaults: the training prompt (VGS' system prompt) and image size |
+| `vgs` | mathvision, mathverse_v, logicvista, mmmu_pro | VGS Table 1, the 4 of 7 benchmarks available (no VisualPuzzles, VlmsAreBlind); the paper reports Acc@1 (greedy) and Acc@16 (T=1); our MathVerse-V and MMMU-Pro come from PAPO-Eval and differ from the subsets the VGS authors use (MathVerse VD / VO multiple choice, 4-option MMMU-Pro); defaults: the training prompt (VGS' system prompt), image size and answer reading (`--answer-protocol vgs`) |
 | `vcsd` | blink, mmstar, vstar, mathvista, hrbench_4k, hrbench_8k, hallusionbench | VCSD Table 1; the paper's HallusionBench score is (aAcc+fAcc+qAcc)/3 (`aqf_mean` in the details) and its Acc. the mean of the seven scores; decoding and scoring are not given in the paper (we use greedy rule-based scoring, MathVista avg@8); defaults: the training prompt (the bare problem), chat template, tokenizer and image size |
 | `vision_opd` | vstar, zoombench, hrbench_4k, hrbench_8k, mme_realworld_lite, mmstar, pope | Vision-OPD Table 1 + holdout set of Table 2; the paper uses the full MME-RealWorld EN/CN (we have the lite version) and a gpt-oss-120b judge; MMVP and CV-Bench are not available; defaults: the training prompt (the dataset prompt, no system prompt), the non-thinking chat template and the image size (65,536-16,777,216 pixels) |
 | `cgpo` | = `papo` | CGPO natural-image reproduction (trained on ViRL39K); default prompt `xml_grounded_reasoning.jinja` |
@@ -260,8 +260,9 @@ VlmsAreBlind (VGS), MMVP, CV-Bench and the full MME-RealWorld EN/CN sets (Vision
     ("A or C") is wrong.
   - counting: the first number of the `<answer>` span, the `\boxed{}` or the answer line, else a
     first line that is only a number, else the only number of the last line, else the last
-    number of the response; digits ("4.", "4.0", "1,200") and English number words are read and
-    compared with the integer reference.
+    number of the response; digits ("4.", "4.0", "1,200"; a minus sign is kept, "-4", "- 4", but
+    not the dash of a range, "3-4", "3 - 4", nor a list item "- 4" opening a line) and English
+    number words are read and compared with the integer reference.
 
   The primary metric is the accuracy over all 845 questions; the details hold `mcq_accuracy`,
   `counting_accuracy` and `answer_source_counts` (how many answers `mathruler` accepted, the
@@ -350,9 +351,11 @@ Each of these options, the image size (`--min-pixels`, `--max-pixels`), `--inter
    merged or not): the run's `experiment_config.json`, which the trainer writes, gives the format and
    system prompt, the image size, `plain_think_tokens`, the interaction mode and the agent prompt
    style, and the checkpoint carries the chat template and tokenizer it was trained with (saved with
-   its processor). A flag that differs from the training setting is used, with a warning. A prompt
-   file that is no longer at its recorded path is looked up under this repository's `examples/`;
-   if it is not there either, the run stops and asks for the flag;
+   its processor); a run trained with the VGS reward also gets `--answer-protocol vgs`, the answer
+   reading of its reward. A flag that differs from the training setting is used, with a warning. A
+   prompt file that is no longer at its recorded path is looked up under this repository's
+   `examples/`; if it is not there either, the run stops and asks for the flag (a flag for that
+   option is enough);
 3. the defaults of the selected suites, for models without a training record (the released models
    of a paper's tables, or a model directory copied without its run);
 4. the built-in defaults.
@@ -433,7 +436,7 @@ Common runner options:
 | `--max-dynamic-patch N` | InternVL only: at most N tiles per image (default: the model config's), as `worker.actor.model.max_dynamic_patch` in training |
 | `--box-format auto\|norm1000\|pixel` | how predicted boxes are read (see [Scoring protocols](#scoring-protocols)) |
 | `--grounding-instruction append\|none` | whether the box instruction is appended to the questions of the grounding sets (default `append`; the `grit` suite asks the bare question, as GRIT) |
-| `--answer-protocol default\|pepo` | `pepo`: MathVista, LogicVista and MathVerse are asked and LogicVista is read as in PEPO's evaluation scripts (suite `pepo_geometry`) |
+| `--answer-protocol default\|pepo\|vgs` | `pepo`: MathVista, LogicVista and MathVerse are asked and LogicVista is read as in PEPO's evaluation scripts (suite `pepo_geometry`); `vgs`: the `\boxed{}`-scored benchmarks read the answer as the VGS training reward does, with the same code (`verl/utils/vgs_answer.py`: the last `\boxed{}`, else the text after `</reason>`; option letters for multiple-choice answers, mathruler otherwise). It only changes the scoring: a checkpoint gets it from its training record when trained with that reward (the `vgs` suite's default applies to models without a record), and `--score-only --answer-protocol ...` rescores existing predictions with the given reading; without a protocol from a flag, the training record or a suite, predictions are read as recorded when they were generated |
 | `--agent-prompt-style native\|official`, `--agent-observation-min-pixels N` | agentic runs: DeepEyes' own prompts instead of the rewritten one; the lower pixel bound of tool crops (default `--min-pixels`; the image processor's own lower bound still applies) |
 | `--batch-size`, `--max-batch-images` | request batching per engine |
 | `--data-root`, `--skip-missing-data` | data location / tolerate unprepared benchmarks |
@@ -493,6 +496,11 @@ eval/results/<run_name>/<step>/
 └── state/                                       # resume fingerprints
 eval/results/summary.csv                         # one row per run, one column per benchmark
 ```
+
+A resumed run reuses predictions and scores whose fingerprint is unchanged. The score fingerprint holds
+the scorer version (`SCORER_VERSION`, all benchmarks) and, for a scorer that changed alone, its
+revision (`SCORER_REVISIONS`, its benchmarks only), so a change of the scoring rescores the
+predictions without generating them again.
 
 `normalized_score_0_100` is the primary metric on a 0-100 scale (MME total / 2800 * 100);
 group and overall averages use it. Benchmarks that were skipped (no judge), or whose primary

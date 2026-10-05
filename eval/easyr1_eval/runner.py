@@ -56,7 +56,7 @@ from .schemas import (
     GenerationConfig,
     GenerationOutput,
 )
-from .scorers import JUDGE_PROVIDERS, SCORER_VERSION, resolve_judge_max_tokens
+from .scorers import JUDGE_PROVIDERS, SCORER_REVISIONS, SCORER_VERSION, resolve_judge_max_tokens
 from .state import fingerprint, is_complete, mark_complete, mark_failed
 from .suites import SUITE_DEFAULT_KEYS, load_suites, merged_suite_defaults, suite_benchmarks
 from .summary import update_global_summary_csv, write_summary_csv
@@ -316,10 +316,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--answer-protocol",
-        choices=["default", "pepo"],
+        choices=["default", "pepo", "vgs"],
         default=None,
         help="pepo (the pepo_geometry suite's default): as PEPO's evaluation scripts, MathVerse asks for the "
-        "option letter and LogicVista reads the last standalone letter of the answer.",
+        "option letter and LogicVista reads the last standalone letter of the answer. vgs (the vgs suite's "
+        "default, and the default for checkpoints trained with examples/reward_function/vgs.py): the "
+        "\\boxed{}-scored benchmarks read the answer as the VGS training reward does (the last \\boxed{}, else "
+        "the text after </reason>; option letters for multiple-choice answers).",
     )
     parser.add_argument(
         "--prompt-mode",
@@ -463,6 +466,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 # options a training record sets that the suites do not
 RECORD_ONLY_KEYS = ("agent_prompt_style",)
+# answer protocols that only change how the answers are read (not the prompts), and that read the output contract
+# of a training reward: a checkpoint gets one from its training record only, never from a suite
+SCORING_ONLY_ANSWER_PROTOCOLS = {"vgs"}
 
 
 def apply_prompt_defaults(args: argparse.Namespace) -> None:
@@ -481,7 +487,7 @@ def apply_prompt_defaults(args: argparse.Namespace) -> None:
     """
     explicit = {key for key in (*SUITE_DEFAULT_KEYS, *RECORD_ONLY_KEYS) if getattr(args, key, None) is not None}
     sources = dict.fromkeys(explicit, "flag")
-    record = load_training_record(str(args.model))
+    record = load_training_record(str(args.model), given=explicit)
     record_applied: dict[str, Any] = {}
     if record is not None:
         for key, value in record.values.items():
@@ -519,6 +525,13 @@ def apply_prompt_defaults(args: argparse.Namespace) -> None:
         # a checkpoint's own template comes with it; its training record replaces the suite's prompt
         ignore = set(explicit) | set(record_applied) | ({"chat_template"} if record is not None else set())
         suite_defaults = merged_suite_defaults(suites, suite_names, ignore=ignore)
+        if record is not None and suite_defaults.get("answer_protocol") in SCORING_ONLY_ANSWER_PROTOCOLS:
+            # e.g. the vgs suite on a checkpoint trained with another reward: its answers follow its own prompt
+            print(
+                f"[note] the suite's --answer-protocol {suite_defaults.pop('answer_protocol')} reads the answers "
+                f"of another training reward than this checkpoint's ({record.path}); using the default reading",
+                flush=True,
+            )
     applied = {}
     for key, value in suite_defaults.items():
         if getattr(args, key, None) is None:
@@ -529,6 +542,9 @@ def apply_prompt_defaults(args: argparse.Namespace) -> None:
             sources[key] = "suite"
     args.suite_defaults_applied = applied
     args.prompt_sources = sources
+    # given by a flag, the training record or a suite: the scoring applies it to the predictions; otherwise the
+    # predictions are read with the protocol recorded when they were generated
+    args.answer_protocol_given = "answer_protocol" in sources
     if getattr(args, "plain_think_tokens", None) is None:
         args.plain_think_tokens = "auto"
     if getattr(args, "agent_prompt_style", None) is None:
@@ -761,6 +777,7 @@ def score_benchmark(spec: BenchmarkSpec, args: argparse.Namespace, judge_config)
             metric_path,
             judge_config=judge_config,
             metric_metadata=metric_metadata_for(spec, args),
+            answer_protocol=args.answer_protocol if getattr(args, "answer_protocol_given", False) else None,
         )
     except Exception as exc:
         mark_failed(args.output_dir, f"score:{spec.key}", fp, f"{type(exc).__name__}: {exc}")
@@ -1406,6 +1423,18 @@ def merge_prediction_shards(out_dir: Path, spec: BenchmarkSpec, num_shards: int)
                 shutil.copyfileobj(f, out)
 
 
+def _answer_protocol_fingerprint_fields(args: argparse.Namespace, phase: str) -> dict[str, Any]:
+    """The answer protocol as it affects a phase, only when one was given, so that runs without one keep their
+    fingerprints: pepo changes the prompts and the reading ("pepo-v2", its suffixes replace the format prompt);
+    vgs and an explicit default only change how the answers are read, so they are in the score fingerprint only."""
+    if not getattr(args, "answer_protocol_given", False):
+        return {}
+    protocol = args.answer_protocol
+    if protocol == "pepo":
+        return {"answer_protocol": "pepo-v2"}
+    return {"answer_protocol": protocol} if phase == "score" else {}
+
+
 def task_fingerprint(
     args: argparse.Namespace,
     spec: BenchmarkSpec,
@@ -1415,66 +1444,73 @@ def task_fingerprint(
     num_shards: int | None = None,
 ) -> str:
     return fingerprint(
-        {
-            "phase": phase,
-            "model": args.model,
-            "backend": args.backend,
-            **_agent_fingerprint_fields(args),
-            "spec": spec.__dict__,
-            # top_k only when set, so runs without it keep their fingerprints
-            "generation": {
-                key: value
-                for key, value in generation_config_for(spec, args).__dict__.items()
-                if key != "top_k" or value is not None
-            },
-            "limit": args.limit,
-            "min_pixels": args.min_pixels,
-            "max_pixels": args.max_pixels,
-            "max_model_len": args.max_model_len,
-            "format_prompt": _file_fingerprint(getattr(args, "format_prompt", None)),
-            "system_prompt": _file_fingerprint(getattr(args, "system_prompt", None)),
-            # only present when set, so runs without a template override keep their fingerprints
-            **(
-                {"chat_template": _file_fingerprint(args.chat_template)}
-                if getattr(args, "chat_template", None)
-                else {}
-            ),
-            **(
-                {"plain_think_tokens": args.plain_think_tokens}
-                if getattr(args, "plain_think_tokens", "auto") != "auto"
-                else {}
-            ),
-            "prompt_mode": args.prompt_mode,
-            # only when set, so runs with the default keep their fingerprints
-            **(
-                {"grounding_instruction": args.grounding_instruction}
-                if getattr(args, "grounding_instruction", "append") != "append"
-                else {}
-            ),
-            # "pepo-v2": PEPO's evaluation suffixes replace the format prompt on MathVista/LogicVista/MathVerse
-            **(
-                {"answer_protocol": "pepo-v2" if args.answer_protocol == "pepo" else args.answer_protocol}
-                if getattr(args, "answer_protocol", "default") != "default"
-                else {}
-            ),
-            **(
-                {"max_dynamic_patch": args.max_dynamic_patch}
-                if getattr(args, "max_dynamic_patch", None) is not None
-                else {}
-            ),
-            "box_format": getattr(args, "box_format", "norm1000"),
-            "shard_index": shard_index,
-            "num_shards": num_shards,
-            # The judge only affects scoring; changing it must not invalidate inference.
-            **(_judge_fingerprint_fields(args) if phase == "score" else {}),
-            "scorer_version": SCORER_VERSION if phase == "score" else None,
-            "perturbation": args.perturbation.__dict__,
-            "perturbation_seed": args.perturbation_seed,
-            "perturbation_vllm_force_feature_wrapper": bool(
-                getattr(args, "perturbation_vllm_force_feature_wrapper", False)
-            ),
-        }
+        task_fingerprint_fields(args, spec, phase=phase, shard_index=shard_index, num_shards=num_shards)
     )
+
+
+def task_fingerprint_fields(
+    args: argparse.Namespace,
+    spec: BenchmarkSpec,
+    *,
+    phase: str,
+    shard_index: int | None = None,
+    num_shards: int | None = None,
+) -> dict[str, Any]:
+    return {
+        "phase": phase,
+        "model": args.model,
+        "backend": args.backend,
+        **_agent_fingerprint_fields(args),
+        "spec": spec.__dict__,
+        # top_k only when set, so runs without it keep their fingerprints
+        "generation": {
+            key: value
+            for key, value in generation_config_for(spec, args).__dict__.items()
+            if key != "top_k" or value is not None
+        },
+        "limit": args.limit,
+        "min_pixels": args.min_pixels,
+        "max_pixels": args.max_pixels,
+        "max_model_len": args.max_model_len,
+        "format_prompt": _file_fingerprint(getattr(args, "format_prompt", None)),
+        "system_prompt": _file_fingerprint(getattr(args, "system_prompt", None)),
+        # only present when set, so runs without a template override keep their fingerprints
+        **({"chat_template": _file_fingerprint(args.chat_template)} if getattr(args, "chat_template", None) else {}),
+        **(
+            {"plain_think_tokens": args.plain_think_tokens}
+            if getattr(args, "plain_think_tokens", "auto") != "auto"
+            else {}
+        ),
+        "prompt_mode": args.prompt_mode,
+        # only when set, so runs with the default keep their fingerprints
+        **(
+            {"grounding_instruction": args.grounding_instruction}
+            if getattr(args, "grounding_instruction", "append") != "append"
+            else {}
+        ),
+        **_answer_protocol_fingerprint_fields(args, phase),
+        **(
+            {"max_dynamic_patch": args.max_dynamic_patch}
+            if getattr(args, "max_dynamic_patch", None) is not None
+            else {}
+        ),
+        "box_format": getattr(args, "box_format", "norm1000"),
+        "shard_index": shard_index,
+        "num_shards": num_shards,
+        # The judge only affects scoring; changing it must not invalidate inference.
+        **(_judge_fingerprint_fields(args) if phase == "score" else {}),
+        "scorer_version": SCORER_VERSION if phase == "score" else None,
+        **(
+            {"scorer_revision": SCORER_REVISIONS[spec.scorer]}
+            if phase == "score" and spec.scorer in SCORER_REVISIONS
+            else {}
+        ),
+        "perturbation": args.perturbation.__dict__,
+        "perturbation_seed": args.perturbation_seed,
+        "perturbation_vllm_force_feature_wrapper": bool(
+            getattr(args, "perturbation_vllm_force_feature_wrapper", False)
+        ),
+    }
 
 
 def predictions_dir(out_dir: Path) -> Path:

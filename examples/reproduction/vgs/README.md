@@ -91,7 +91,9 @@ The repository named in the paper holds no code; everything below that the paper
 - **Evaluation** (suite `vgs`): our MathVerse vision-only and MMMU-Pro sets come from PAPO-Eval and differ from
   the authors' multiple-choice subsets; VisualPuzzles and VlmsAreBlind are not available. The paper reports Acc@1
   (greedy) and Acc@16 (mean accuracy of 16 samples at T=1.0); the suite defaults to avg@8 at T=1.0, with the
-  training prompt (the VGS system prompt) and image size.
+  training prompt (the VGS system prompt) and image size. The paper does not describe its answer scoring; the
+  evaluation reads the answers with the code of the training reward (`--answer-protocol vgs`, set by the suite and
+  for the checkpoints of these scripts), so that the validation reward and the benchmarks score a response alike.
 
 ## Results
 

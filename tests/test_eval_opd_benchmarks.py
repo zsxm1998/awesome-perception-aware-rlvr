@@ -35,6 +35,7 @@ from easyr1_eval.registry import load_benchmark_specs  # noqa: E402
 from easyr1_eval.scorers import (  # noqa: E402
     ZOOMBENCH_CONFLICT,
     _sample_score_and_correct,
+    boxed_row_answers,
     mmmu_eval_open,
     mmmu_open_answer,
     score_hallusionbench,
@@ -501,6 +502,16 @@ def test_zoombench_choice_maps_option_texts(options, response, expected):
         ("I count 4 windows: 2 on the left and 2 on the right.", 2),  # several numbers: the last one
         ("There are 2.5 cups.", 2.5),
         ("I cannot count them.", None),
+        ("-4", -4),  # a negative number keeps its sign
+        ("Answer: -4", -4),
+        ("<answer>\u22124</answer>", -4),
+        ("Answer: - 4", -4),
+        ("Answer: $- 4$", -4),
+        ("\\boxed{- 4}", -4),
+        ("\u2212 4", -4),
+        ("Between 3-4 cups.", 4),  # a dash after a number is not a sign
+        ("There are 3 - 4 cups.", 4),
+        ("Count:\n- 4", 4),  # a list item
     ],
 )
 def test_zoombench_count_reads_numbers_and_number_words(response, expected):
@@ -515,6 +526,8 @@ def test_zoombench_response_applies_mathruler_first_and_rejects_truncation():
     assert zoombench_response(choice, 0, "Answer: A or B") == (False, ZOOMBENCH_CONFLICT, "conflict")
     assert zoombench_response(counting, 0, "3 seconds") == (True, 3.0, "mathruler")  # units are dropped
     assert zoombench_response(counting, 0, "three") == (True, 3.0, "rule")
+    for negative in ("-3", "Answer: -3", "<answer>-3</answer>"):
+        assert zoombench_response(counting, 0, negative) == (False, -3.0, "rule")
     truncated = {**counting, "response_metadata": [{"finish_reason": "length", "truncated": True}]}
     assert zoombench_response(truncated, 0, "Let me count: 1, 2, 3") == (False, None, "truncated")
 
@@ -624,6 +637,7 @@ def test_opd_suites_list_the_paper_benchmarks_and_can_be_prepared():
         "vgs": {
             "format_prompt": "none",
             "system_prompt": "examples/system_prompt/vgs.txt",
+            "answer_protocol": "vgs",
             "min_pixels": 262144,
             "max_pixels": 4194304,
         },
@@ -653,3 +667,174 @@ def test_opd_suites_list_the_paper_benchmarks_and_can_be_prepared():
     assert not suites["opd"].defaults
     assert suites["opd"].benchmarks == suites["comparison"].benchmarks
     assert {"mmstar", "blink", "ai2d", "mmmu_val", "zoombench"} <= set(suites["all"].benchmarks)
+
+
+# ---------------------------------------------------------------------------
+# Answer protocols and score fingerprints
+# ---------------------------------------------------------------------------
+
+
+def _score_args(monkeypatch, tmp_path, *argv, model="m"):
+    from easyr1_eval import runner
+
+    monkeypatch.setattr(sys, "argv", ["run_all_benchmarks.py", "--model", model, "--output-dir", str(tmp_path), *argv])
+    args = runner.expand_eval_runs(runner.parse_args())[0]
+    args.output_dir = Path(args.output_dir)
+    return runner, args
+
+
+def _write_predictions(runner, args, spec, rows):
+    path = runner.merged_prediction_path(args.output_dir, spec)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+
+
+def test_scoring_uses_the_answer_protocol_of_the_scoring_run(monkeypatch, tmp_path):
+    from easyr1_eval.compare import _scored_rows
+
+    spec = _registry("mathvision")
+    response = "<reason>Work</reason>C"
+    for recorded, flag, expected in (
+        ({}, "vgs", 100.0),  # predictions generated without the protocol, rescored with it
+        ({"answer_protocol": "vgs"}, "default", 0.0),  # and the other way around
+        ({"answer_protocol": "vgs"}, "vgs", 100.0),
+    ):
+        runner, args = _score_args(monkeypatch, tmp_path / flag / str(len(recorded)), "--answer-protocol", flag)
+        rows = [{"sample_id": "a", "target": "C", "responses": [response], "eval_metadata": recorded}]
+        _write_predictions(runner, args, spec, rows)
+
+        result = runner.score_benchmark(spec, args, None)
+
+        assert result.normalized_score_0_100 == expected
+        assert result.metadata.get("answer_protocol", "default") == flag
+        assert result.details["scoring"] == ("vgs_training_reward" if flag == "vgs" else "papo_eval_boxed_exact_match")
+        # the run comparison reads the predictions with the protocol of the stored score
+        scored = _scored_rows(args.output_dir, spec.key)
+        assert boxed_row_answers(scored[0], spec.key)[0][1] == expected / 100.0
+
+
+def test_a_scorer_revision_only_rescores_its_benchmarks(monkeypatch, tmp_path):
+    runner, args = _score_args(monkeypatch, tmp_path)
+    zoom, geo = _registry("zoombench"), _registry("geo3k")
+    before = {
+        (spec.key, phase): runner.task_fingerprint(args, spec, phase=phase)
+        for spec in (zoom, geo)
+        for phase in ("infer", "score")
+    }
+    monkeypatch.setitem(runner.SCORER_REVISIONS, "zoombench", runner.SCORER_REVISIONS["zoombench"] + 1)
+    after = {
+        key: runner.task_fingerprint(args, spec, phase=key[1])
+        for key in before
+        for spec in (zoom, geo)
+        if spec.key == key[0]
+    }
+    assert after[("zoombench", "score")] != before[("zoombench", "score")]
+    assert after[("zoombench", "infer")] == before[("zoombench", "infer")]
+    assert after[("geo3k", "score")] == before[("geo3k", "score")]
+
+
+def test_the_vgs_reading_is_not_in_the_inference_fingerprint(monkeypatch, tmp_path):
+    spec = _registry("mathvision")
+    runner, default = _score_args(monkeypatch, tmp_path)
+    _, vgs = _score_args(monkeypatch, tmp_path, "--answer-protocol", "vgs")
+    assert runner.task_fingerprint(default, spec, phase="infer") == runner.task_fingerprint(vgs, spec, phase="infer")
+    assert runner.task_fingerprint(default, spec, phase="score") != runner.task_fingerprint(vgs, spec, phase="score")
+
+
+def test_answer_protocol_enters_the_fingerprints_only_when_given(monkeypatch, tmp_path):
+    spec = _registry("mathvision")
+
+    def protocol_fields(*argv):
+        runner, args = _score_args(monkeypatch, tmp_path, *argv)
+        return {
+            phase: runner.task_fingerprint_fields(args, spec, phase=phase).get("answer_protocol")
+            for phase in ("infer", "score")
+        }
+
+    # as the released runner wrote them: no field without a protocol, "pepo-v2" in both phases with pepo
+    assert protocol_fields() == {"infer": None, "score": None}
+    assert protocol_fields("--suite", "pepo_geometry") == {"infer": "pepo-v2", "score": "pepo-v2"}
+    # readings only change the scoring
+    assert protocol_fields("--answer-protocol", "vgs") == {"infer": None, "score": "vgs"}
+    assert protocol_fields("--answer-protocol", "default") == {"infer": None, "score": "default"}
+
+
+def test_predictions_keep_their_recorded_reading_without_a_protocol(monkeypatch, tmp_path):
+    spec = _registry("mathvision")
+    rows = [
+        {
+            "sample_id": "a",
+            "target": "C",
+            "responses": ["<reason>Work</reason>C"],
+            "eval_metadata": {"answer_protocol": "vgs"},
+        }
+    ]
+    runner, args = _score_args(monkeypatch, tmp_path / "kept")
+    _write_predictions(runner, args, spec, rows)
+    result = runner.score_benchmark(spec, args, None)
+    assert result.normalized_score_0_100 == 100.0 and result.metadata["answer_protocol"] == "vgs"
+
+    runner, args = _score_args(monkeypatch, tmp_path / "forced", "--answer-protocol", "default")
+    _write_predictions(runner, args, spec, rows)
+    result = runner.score_benchmark(spec, args, None)
+    assert result.normalized_score_0_100 == 0.0 and "answer_protocol" not in result.metadata
+
+
+def test_scores_of_the_released_runner_are_recomputed_only_when_the_reading_changed(monkeypatch, tmp_path):
+    from easyr1_eval import scorers
+    from easyr1_eval.schemas import MetricResult
+    from easyr1_eval.state import fingerprint, mark_complete
+
+    spec = _registry("mathvision")
+    rows = [{"sample_id": "a", "target": "C", "responses": ["<reason>Work</reason>C"], "eval_metadata": {}}]
+
+    def released_state(runner, args, stale_score):
+        # the released runner scored without an answer protocol (no such field in its fingerprint)
+        _write_predictions(runner, args, spec, rows)
+        metric_path = runner.metrics_dir(args.output_dir) / f"{spec.key}.json"
+        metric_path.parent.mkdir(parents=True, exist_ok=True)
+        result = MetricResult(spec.key, spec.group, spec.primary_metric, stale_score, stale_score, 1)
+        metric_path.write_text(json.dumps({"result": result.__dict__}), encoding="utf-8")
+        fields = runner.task_fingerprint_fields(args, spec, phase="score")
+        fields.pop("answer_protocol", None)
+        mark_complete(args.output_dir, f"score:{spec.key}", fingerprint(fields), [metric_path])
+
+    # a VGS checkpoint, scored with the default reading before the vgs one existed: its record now gives the vgs
+    # reading, and the stale score is recomputed from the kept predictions
+    run = tmp_path / "run"
+    actor = run / "global_step_3" / "actor"
+    (actor / "huggingface").mkdir(parents=True)
+    config = {
+        "data": {"format_prompt": None, "system_prompt": None},
+        "worker": {"actor": {"model": {}}, "rollout": {}, "reward": {"reward_function": "x/vgs.py:compute_score"}},
+    }
+    (run / "experiment_config.json").write_text(json.dumps(config), encoding="utf-8")
+    runner, args = _score_args(monkeypatch, tmp_path / "a", model=str(actor))
+    assert args.answer_protocol == "vgs" and args.answer_protocol_given
+    released_state(runner, args, 0.0)
+    assert runner.score_benchmark(spec, args, None).normalized_score_0_100 == 100.0
+
+    # a run without a protocol keeps its score
+    runner, args = _score_args(monkeypatch, tmp_path / "b")
+    released_state(runner, args, 42.0)
+    monkeypatch.setattr(scorers, "score_predictions", lambda *a, **k: pytest.fail("rescored"))
+    assert runner.score_benchmark(spec, args, None).normalized_score_0_100 == 42.0
+
+
+def test_rescoring_the_same_directory_replaces_the_protocol_of_the_previous_scoring(monkeypatch, tmp_path):
+    from easyr1_eval.compare import _scored_rows
+
+    spec = _registry("mathvision")
+    rows = [{"sample_id": "a", "target": "C", "responses": ["<reason>Work</reason>C"], "eval_metadata": {}}]
+    # the same results directory scored three times: metric, its recorded protocol and the run comparison agree
+    for argv, expected, recorded in (
+        (("--answer-protocol", "vgs"), 100.0, "vgs"),
+        ((), 0.0, None),  # no protocol given: the predictions' own (default) reading, not the previous scoring's
+        (("--answer-protocol", "default"), 0.0, None),
+    ):
+        runner, args = _score_args(monkeypatch, tmp_path, *argv)
+        _write_predictions(runner, args, spec, rows)
+        result = runner.score_benchmark(spec, args, None)
+        assert result.normalized_score_0_100 == expected
+        assert result.metadata.get("answer_protocol") == recorded
+        assert boxed_row_answers(_scored_rows(args.output_dir, spec.key)[0], spec.key)[0][1] == expected / 100.0

@@ -489,6 +489,20 @@ def _predictions_path(results_dir: Path, key: str) -> Path:
     return results_dir / "predictions" / key / "predictions.jsonl"
 
 
+def _scored_rows(results_dir: Path, key: str) -> list[dict[str, Any]]:
+    """The predictions of a benchmark, read with the answer protocol its stored score used (--answer-protocol of
+    the scoring run, which can differ from the one recorded with the predictions)."""
+    rows = read_jsonl(_predictions_path(results_dir, key))
+    path = results_dir / "metrics" / f"{key}.json"
+    if not path.exists():
+        return rows
+    try:
+        metadata = json.loads(path.read_text(encoding="utf-8"))["result"].get("metadata") or {}
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return rows
+    return S.set_answer_protocol(rows, str(metadata.get("answer_protocol") or "default"))
+
+
 def usable_specs(
     specs: list[BenchmarkSpec],
     dir_a: Path,
@@ -526,8 +540,8 @@ def compare_benchmark(
     alpha: float = 0.05,
 ) -> BenchmarkComparison:
     extractor = SCORER_EXTRACTORS[spec.scorer]
-    samples_a = extractor(spec, read_jsonl(_predictions_path(dir_a, spec.key)), dir_a)
-    samples_b = extractor(spec, read_jsonl(_predictions_path(dir_b, spec.key)), dir_b)
+    samples_a = extractor(spec, _scored_rows(dir_a, spec.key), dir_a)
+    samples_b = extractor(spec, _scored_rows(dir_b, spec.key), dir_b)
     warnings: list[str] = []
 
     for side, results_dir, samples in (("A", dir_a, samples_a), ("B", dir_b, samples_b)):
