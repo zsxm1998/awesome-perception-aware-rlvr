@@ -289,6 +289,15 @@ class AlgorithmConfig:
     """sigmoid annealing sharpness for DVRP VP-diffusion scheduling."""
     noise_t_max: float = 1000.0
     """largest VP-diffusion timestep for DVRP, at most 1000 (the length of NoisyRollout's schedule)."""
+    rollout_image_transform: Optional[str] = None
+    """NoisyRollout: `vp_diffusion` samples the second half of each prompt's `worker.rollout.n` responses from noised
+    images (one noised copy per prompt and step), in the prompt's advantage group; the policy is still updated on
+    the clean images. Requires an even `worker.rollout.n`."""
+    rollout_image_transform_kwargs: Any = None
+    """JSON/mapping kwargs of `rollout_image_transform`. vp_diffusion: `noise_t_init` (alpha_0), `noise_gamma`
+    (lambda) and `noise_t_mid` (gamma / t_max, in (0, 1)) of the annealed step
+    alpha_0 * (1 - sigmoid(lambda * (t - gamma) / t_max)) on the 1000-step schedule, `noise_t_max` (default 1000)
+    and `pixel_rounding` (`floor`, the default, truncates to uint8 as the released code; or `round`)."""
     tor_use_token_weighting: bool = False
     """enable ToR-style token weighting instead of binary masking when entropy/perception masks are available."""
     tor_rsn_weight: float = 1.0
@@ -315,6 +324,17 @@ class AlgorithmConfig:
         self.incremental_image_kwargs = _parse_optional_json_dict(
             self.incremental_image_kwargs, "incremental_image_kwargs"
         )
+        self.rollout_image_transform_kwargs = _parse_optional_json_dict(
+            self.rollout_image_transform_kwargs, "rollout_image_transform_kwargs"
+        )
+        if self.rollout_image_transform is not None:
+            from .rollout_image_transform import normalize_rollout_image_transform_kwargs
+
+            self.rollout_image_transform_kwargs = normalize_rollout_image_transform_kwargs(
+                self.rollout_image_transform, self.rollout_image_transform_kwargs
+            )
+        elif self.rollout_image_transform_kwargs is not None:
+            raise ValueError("algorithm.rollout_image_transform_kwargs requires algorithm.rollout_image_transform.")
 
         _validate_choice(
             "corrupt_image",
@@ -804,6 +824,18 @@ class PPOConfig:
                 "algorithm.online_filtering_fallback=first_round trains on the first round unfiltered, which needs a "
                 "whole rollout batch: data.mini_rollout_batch_size must be unset or at least data.rollout_batch_size."
             )
+        if self.algorithm.rollout_image_transform is not None:
+            if rollout.n < 2 or rollout.n % 2 != 0:
+                raise ValueError(
+                    "algorithm.rollout_image_transform samples half of worker.rollout.n from the transformed images "
+                    f"and needs an even worker.rollout.n, got {rollout.n}."
+                )
+            if rollout.interaction_mode != "one_shot":
+                raise ValueError(
+                    "algorithm.rollout_image_transform supports worker.rollout.interaction_mode=one_shot only."
+                )
+            if self.algorithm.adv_estimator == "remax":
+                raise ValueError("algorithm.rollout_image_transform does not support adv_estimator=remax.")
         if self.worker.rollout.interaction_mode == "agentic":
             unsupported_interventions = []
             intervention_fields = {

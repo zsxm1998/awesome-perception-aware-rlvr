@@ -85,7 +85,14 @@ DATASETS: dict[str, TrainDataset] = {
             "test": ["data/test-*.parquet"],
         },
         description="Geometry3K (2,101 train / 300 val / 601 test)",
-        used_by=["tor", "pepo", "vepo", "va_opd"],  # VEPO: through the vepo dataset
+        used_by=["tor", "pepo", "vepo", "va_opd", "noisyrollout"],  # VEPO: through the vepo dataset
+    ),
+    "k12": TrainDataset(
+        name="k12",
+        repo_id="xyliu6/k12-freeform",
+        splits={"train": ["data/train-*.parquet"], "test": ["data/test-*.parquet"]},
+        description="NoisyRollout's K12, an early MMK12 subset in free-form (6,457 train / 808 test)",
+        used_by=["noisyrollout"],
     ),
     "cfpo": TrainDataset(
         name="cfpo",
@@ -156,6 +163,7 @@ METHOD_GROUPS: dict[str, list[str]] = {
     "tor": ["geometry3k"],
     "pepo": ["geometry3k"],
     "vepo": ["geometry3k", "vepo"],
+    "noisyrollout": ["geometry3k", "k12"],
     "grit": ["grit"],
     "deepeyes": ["deepeyes"],
     "opd_comparison": ["virl39k", "mmk12"],
