@@ -52,17 +52,12 @@ from ...trainer.visual_sensitivity import (
     compute_full_vocab_visual_sensitivity_scores,
 )
 from ...utils import torch_functional as VF
+from ...utils.padding import index_first_axis, pad_input, unpad_input
 from ...utils.py_functional import append_to_dict
 from ...utils.seqlen_balancing import prepare_dynamic_batch, restore_dynamic_batch
 from ...utils.ulysses import gather_outputs_and_unpad, slice_input_tensor, ulysses_pad_and_slice_inputs
 from .base import BasePPOActor
 from .config import ActorConfig
-
-
-try:
-    from flash_attn.bert_padding import index_first_axis, pad_input, rearrange, unpad_input
-except ImportError:
-    pass
 
 
 __all__ = ["DataParallelPPOActor"]
