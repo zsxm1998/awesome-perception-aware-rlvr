@@ -149,11 +149,14 @@ Inputs of the teacher and of the target:
   `data.teacher_image_key`; Vision-OPD)
 - `algorithm.distill_target`: `teacher`, `contrast_sharpened` (VCSD) or `visual_gain` (VGS)
 - `algorithm.distill_contrast_view`: `black` (VCSD: a black image of the same size) or `no_image` (VGS: the prompt
-  without its images, read by the teacher and the student)
+  without its images, read by the teacher and the student); with `teacher_view=data_image` or a contrast view, the
+  views are forwarded packed together, which needs `worker.actor.ulysses_size=1`
 - VCSD: `algorithm.vcsd_alpha`, `algorithm.vcsd_support_beta`, `algorithm.vcsd_anchor_coef`,
   `algorithm.vcsd_keep_token_ids` (`auto`: the generation config's end-of-sequence ids)
 - VGS: `algorithm.vgs_steering_coef` (γ), `algorithm.vgs_text_prior_coef` (λ), `algorithm.vgs_vds_quantile`,
-  `algorithm.vgs_vds_scope` (`micro_batch` or `global`), `algorithm.vgs_loss_scale` (η)
+  `algorithm.vgs_vds_scope` (`micro_batch`, the default, takes the quantile within each update micro-batch and so
+  depends on how a step is split; `global` takes it over the step with an extra teacher pass and does not),
+  `algorithm.vgs_loss_scale` (η)
 
 Per-token weights (VA-OPD):
 
@@ -162,3 +165,9 @@ Per-token weights (VA-OPD):
   needs one token-mean update per rollout batch
 - `algorithm.va_opd_softmax_temperature` (τ), `algorithm.va_opd_high_fraction` (p_v),
   `algorithm.va_opd_high_weight` (λ)
+
+Logged once per update, independently of how it is split into micro-batches and ranks: `distill/loss` (the averaged
+distillation term before its coefficient, as `worker.actor.loss_avg_mode` averages it) and `distill/<statistic>`
+(means over the response tokens of the update: tokens beyond the tokenizer, the VCSD target's change of the teacher,
+the VGS terms and gate; `distill/is_weight_mean` with an importance weight); `teacher/log_ratio_*` for
+`teacher_log_ratio` and `teacher/ema_update_applied` for an EMA teacher.

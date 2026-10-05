@@ -14,6 +14,7 @@
 """scripts/data/prepare_train_data.py prepares again what an older converter wrote."""
 
 import importlib.util
+import re
 from pathlib import Path
 
 import pyarrow as pa
@@ -63,3 +64,20 @@ def test_deepeyes_requires_the_official_prompt_columns():
     assert {"env_name", "official_prompt", "official_system_prompt", "row_system_prompt"} <= set(
         deepeyes.required_columns
     )
+
+
+def test_every_method_group_prepares_the_data_of_its_scripts():
+    """`bash scripts/prepare_data.sh <method>` covers every $DATA_ROOT/<dataset>/ its launch scripts read."""
+    root = SCRIPT.resolve().parents[2]
+    folders = {
+        "comparison": "examples/comparison/qwen3_vl_4b",
+        "opd_comparison": "examples/comparison/opd_qwen3_vl_2b",
+    }
+    pattern = re.compile(r"\$\{?DATA_ROOT\}?/([A-Za-z0-9_]+)/")
+    for group, datasets in prepare_train_data.METHOD_GROUPS.items():
+        folder = root / folders.get(group, f"examples/reproduction/{group}")
+        scripts = sorted(folder.glob("*.sh"))
+        assert scripts, f"no launch scripts for the data group {group} in {folder}"
+        used = {name for script in scripts for name in pattern.findall(script.read_text(encoding="utf-8"))}
+        assert used <= set(datasets), f"{group}: scripts read {sorted(used - set(datasets))}, not prepared"
+        assert set(datasets) <= set(prepare_train_data.DATASETS)

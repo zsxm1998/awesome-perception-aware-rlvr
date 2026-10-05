@@ -159,7 +159,7 @@ METHOD_GROUPS: dict[str, list[str]] = {
     "grit": ["grit"],
     "deepeyes": ["deepeyes"],
     "opd_comparison": ["virl39k", "mmk12"],
-    "va_opd": ["geometry3k", "virl39k"],
+    "va_opd": ["geometry3k", "virl39k", "mmk12"],
     "vgs": ["vision_sr1", "vision_sr1_val"],
     "vcsd": ["virl39k", "mmk12"],
     "vision_opd": ["vision_opd", "mmk12"],

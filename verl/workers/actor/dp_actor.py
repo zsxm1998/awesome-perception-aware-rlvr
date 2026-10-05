@@ -32,10 +32,10 @@ from ...models.transformers.flash_attention_utils import use_model_level_visual_
 from ...protocol import DataProto, collate_multi_modal_inputs
 from ...trainer.core_algos import average_loss, compute_kl, compute_policy_loss
 from ...trainer.distillation import (
+    DistillationMetricSums,
     DistillationSpec,
     chunked_distillation,
     importance_weights,
-    masked_stat_means,
     stat_names,
     view_keys,
 )
@@ -1254,6 +1254,11 @@ class DataParallelPPOActor(BasePPOActor):
                 else:
                     total_response_tokens = torch.sum(mini_batch.batch["response_mask"])
                     dist.all_reduce(total_response_tokens, op=dist.ReduceOp.SUM)
+                distill_sums = None
+                if distill_config is not None:
+                    distill_sums = DistillationMetricSums(
+                        stat_names(DistillationSpec.from_config(distill_config)), distill_config["is_clip"] is not None
+                    )
 
                 force_single_sample_sp = self._requires_single_sample_sp_microbatch()
                 if force_single_sample_sp:
@@ -1372,18 +1377,14 @@ class DataParallelPPOActor(BasePPOActor):
                         if is_weights is not None:
                             weighted = weighted * is_weights
                         distill_loss = average_loss(weighted, response_mask, mode=self.config.loss_avg_mode)
-                        batch_metrics["distill/loss"] = distill_loss.detach().item()
-                        batch_metrics.update(
-                            {
-                                f"distill/{name}": value
-                                for name, value in masked_stat_means(distill_stats, response_mask, names).items()
-                                if name != "entropy"
-                            }
+                        # logged once per update (below), as the update's objective and token means
+                        distill_sums.add(
+                            distill_loss,
+                            response_mask.size(0) if self.config.loss_avg_mode == "seq" else torch.sum(response_mask),
+                            distill_stats,
+                            is_weights,
+                            response_mask,
                         )
-                        if is_weights is not None:
-                            batch_metrics["distill/is_weight_mean"] = (
-                                VF.masked_mean(is_weights, response_mask).detach().item()
-                            )
                         distill_term = distill_loss * distill_config["loss_coef"]
                         if pg_loss is None:
                             pg_loss = distill_term
@@ -1415,6 +1416,9 @@ class DataParallelPPOActor(BasePPOActor):
 
                     append_to_dict(metrics, batch_metrics)
 
+                if distill_sums is not None:
+                    total = total_responses if self.config.loss_avg_mode == "seq" else total_response_tokens
+                    append_to_dict(metrics, distill_sums.reduce(total))
                 grad_norm = self._optimizer_step()
                 append_to_dict(metrics, {"actor/grad_norm": grad_norm.detach().item()})
 

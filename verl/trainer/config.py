@@ -882,15 +882,13 @@ class PPOConfig:
                 raise ValueError("algorithm.distill_loss_coef > 0 requires worker.actor.padding_free=true.")
             if self.algorithm.teacher_view == "data_image" and not self.data.teacher_image_key:
                 raise ValueError("algorithm.teacher_view=data_image requires data.teacher_image_key.")
-            rebuilt_views = self.algorithm.teacher_view != "original" or self.algorithm.distill_contrast_view not in (
-                "none",
-                "black",
-            )
-            if rebuilt_views and self.worker.actor.ulysses_size > 1:
-                # a rebuilt view has its own sequence lengths, so its Ulysses slices hold other response rows
+            if self.worker.actor.ulysses_size > 1 and (
+                self.algorithm.teacher_view != "original" or self.algorithm.distill_contrast_view != "none"
+            ):
+                # a rebuilt view has its own sequence lengths, so its Ulysses slices hold other response rows, and a
+                # contrast view is forwarded packed with the main view, which the actor does under Ulysses neither
                 raise ValueError(
-                    "algorithm.teacher_view=data_image and distill_contrast_view=no_image require "
-                    "worker.actor.ulysses_size=1."
+                    "algorithm.teacher_view=data_image and a distill_contrast_view require worker.actor.ulysses_size=1."
                 )
         elif self.algorithm.teacher_view != "original" or self.algorithm.distill_weighting != "none":
             raise ValueError(

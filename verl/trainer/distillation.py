@@ -504,6 +504,51 @@ def masked_stat_means(stats: torch.Tensor, response_mask: torch.Tensor, names: t
     return {name: value.item() for name, value in zip(names, values)}
 
 
+class DistillationMetricSums:
+    """The distillation metrics of one update, summed over its micro-batches and reduced over the ranks as the loss
+    is, so that they do not depend on how the update is split: ``distill/loss`` is the averaged distillation term
+    (before its coefficient, with the actor's loss_avg_mode), the other values are means over the response tokens
+    of the update."""
+
+    def __init__(self, names: tuple[str, ...], with_is_weights: bool):
+        self.columns = [index for index, name in enumerate(names) if name != "entropy"]
+        self.names = [f"distill/{names[index]}" for index in self.columns]
+        self.with_is_weights = with_is_weights
+        self.sums: Optional[torch.Tensor] = None  # loss, statistics..., importance weights, tokens
+
+    def add(
+        self,
+        loss: torch.Tensor,
+        loss_weight: torch.Tensor,
+        stats: torch.Tensor,
+        is_weights: Optional[torch.Tensor],
+        response_mask: torch.Tensor,
+    ) -> None:
+        """``loss`` averaged over a micro-batch and its weight in the update (rows in seq mode, tokens in token
+        mode); per-token ``stats`` (bs, R, n) and importance weights (bs, R)."""
+        mask = response_mask.bool()
+        values = [
+            (loss.detach().float() * loss_weight).reshape(1),
+            stats.detach()[mask][:, self.columns].float().sum(dim=0),
+            (is_weights.detach()[mask].float().sum() if is_weights is not None else loss.new_zeros(())).reshape(1),
+            mask.sum().float().reshape(1),
+        ]
+        sums = torch.cat([value.to(loss.device) for value in values])
+        self.sums = sums if self.sums is None else self.sums + sums
+
+    def reduce(self, loss_denominator: torch.Tensor) -> dict[str, float]:
+        """Sum over the ranks (one all-reduce, on every rank) and divide: the loss by the update's total (responses
+        in seq mode, tokens in token mode, as the loss is scaled), the rest by its response tokens."""
+        sums = self.sums.clone()
+        torch.distributed.all_reduce(sums, op=torch.distributed.ReduceOp.SUM)
+        tokens = sums[-1].clamp(min=1.0)
+        metrics = {"distill/loss": (sums[0] / loss_denominator.float().clamp(min=1.0)).item()}
+        metrics.update({name: (value / tokens).item() for name, value in zip(self.names, sums[1:-2])})
+        if self.with_is_weights:
+            metrics["distill/is_weight_mean"] = (sums[-2] / tokens).item()
+        return metrics
+
+
 def importance_weights(
     log_probs: torch.Tensor, old_log_probs: torch.Tensor, clip: Optional[float]
 ) -> Optional[torch.Tensor]:

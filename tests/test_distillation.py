@@ -571,6 +571,71 @@ def test_distillation_loss_does_not_depend_on_the_split(monkeypatch, mode, world
     torch.testing.assert_close(sum(grads) / len(world), _expected_distill_grad(mode))
 
 
+def _metric_update(monkeypatch, mode, rows, world_size, micro, dynamic, injected=None):
+    """One update with a fixed per-token loss (row + 1 on every token of a row) and per-token statistics; returns
+    the logged metrics and the local sums the update all-reduces. ``injected`` (totals, metric sums) stands for
+    the all-reduces over the ranks."""
+    config = ActorConfig(
+        global_batch_size=len(rows),
+        micro_batch_size_per_device_for_update=micro,
+        micro_batch_size_per_device_for_experience=micro,
+        loss_avg_mode=mode,
+        padding_free=True,
+        dynamic_batching=dynamic,
+        use_torch_compile=False,
+    )
+    config.global_batch_size_per_device = len(rows)
+    actor = DataParallelPPOActor(config=config, actor_module=nn.Linear(1, 1))
+    actor.world_size = world_size
+    weight = nn.Parameter(torch.ones(()))
+    local = []
+
+    def all_reduce(tensor, op=None):
+        local.append(tensor.clone())
+        if injected is not None:
+            tensor.copy_(injected[len(local) - 1])
+
+    def forward(model_inputs, distill_config):
+        row = model_inputs["input_ids"][:, 0].float()[:, None].expand(-1, RESPONSE_LENGTH)
+        loss = (row + 1) * weight
+        stats = torch.stack([(row + 1) * (index + 1) for index in range(3)], dim=-1)
+        return torch.zeros_like(row), loss, stats
+
+    data = _update_data(rows, LENGTHS)
+    data.batch.pop("distill_token_weights")
+    monkeypatch.setattr(actor, "_forward_micro_batch_distill", forward)
+    monkeypatch.setattr(actor, "_optimizer_step", lambda: torch.tensor(0.0))
+    monkeypatch.setattr(torch.distributed, "all_reduce", all_reduce)
+    metrics = actor.update_policy(data)
+    return metrics, local
+
+
+@pytest.mark.parametrize("mode", ["seq", "token"])
+@pytest.mark.parametrize(
+    "world, micro, dynamic",
+    [
+        ([list(range(8))], 8, False),
+        ([list(range(8))], 1, False),
+        ([list(range(8))], 2, True),
+        ([[0, 2, 3, 5], [1, 4, 6, 7]], 2, False),
+    ],
+)
+def test_distillation_metrics_do_not_depend_on_the_split(monkeypatch, mode, world, micro, dynamic):
+    passes = [_metric_update(monkeypatch, mode, rows, len(world), micro, dynamic)[1] for rows in world]
+    injected = [sum(values) for values in zip(*passes)]  # the sums over the ranks
+    logged = [_metric_update(monkeypatch, mode, rows, len(world), micro, dynamic, injected)[0] for rows in world]
+
+    lengths = torch.tensor(LENGTHS, dtype=torch.float64)
+    values = torch.arange(1, len(LENGTHS) + 1, dtype=torch.float64)
+    token_mean = (values * lengths).sum() / lengths.sum()  # 176 / 36
+    expected_loss = values.mean() if mode == "seq" else token_mean
+    for metrics in logged:  # every rank logs the same values, once per update
+        assert metrics["distill/loss"] == [pytest.approx(expected_loss.item())]
+        assert metrics["distill/student_oov_mass"] == [pytest.approx(2 * token_mean.item())]
+        assert metrics["distill/teacher_oov_mass"] == [pytest.approx(3 * token_mean.item())]
+        assert "distill/entropy" not in metrics
+
+
 # ---------------------------------------------------------------------------------------------------------------
 # the EMA teacher
 
@@ -1153,7 +1218,10 @@ def test_contrast_configs_build_their_views():
         config.deep_post_init()
 
     config = _distill_config(distill_target="contrast_sharpened", distill_contrast_view="black")
-    config.worker.actor.ulysses_size = 2  # the black view keeps the token ids, so Ulysses slices still line up
+    config.worker.actor.ulysses_size = 2  # the contrast view is forwarded packed with the main view
+    with pytest.raises(ValueError, match="ulysses_size=1"):
+        config.deep_post_init()
+    config.worker.actor.ulysses_size = 1
     config.deep_post_init()
     built = build_distillation_config(config.algorithm, VOCAB, end_token_ids=(5, 9), black_pixel_values=[-1.0] * 3)
     assert built["views"] == [] and built["contrast_keep_ids"] == [5, 9]
