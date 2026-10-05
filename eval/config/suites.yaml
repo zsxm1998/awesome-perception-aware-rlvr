@@ -108,6 +108,22 @@ suites:
       remote-sensing GeoMath benchmark of the paper has no public data and is left out, so
       Avg-Math here averages 5 benchmarks instead of 6. The official evaluation code is not released.
 
+  vapo:
+    description: VAPO Tables 1-2 (6 math + 4 general benchmarks)
+    benchmarks: [mathverse_v, mathvista, mathvision, logicvista, wemath, geo3k, mmmu_val, mmstar, hallusionbench, mm_vet]
+    defaults:  # the training prompt and pixels of examples/reproduction/vapo
+      format_prompt: examples/format_prompt/math_perception.jinja
+      min_pixels: 262144
+      max_pixels: 4194304
+    notes: >-
+      VAPO evaluates with VLMEvalKit, greedy decoding and a GPT model extracting the answers; here the math
+      benchmarks use the rule-based PAPO-Eval protocol (avg@8, T=1.0; add `--temperature 0 --num-samples 1` for
+      greedy decoding) and the other four are greedy. MathVerse is the paper's testmini Vision Only split
+      (about 700 items); the closest set here is mathverse_v (1,308 vision-dependent multiple-choice items,
+      Vision Only included). The paper uses the full 3,040-item MathVision test (here VPPO-Eval's 2,907
+      verifiable items), We-Math's strict score (here per-question accuracy) and Geometry3K val + test (here
+      the PAPO-Eval test split). MM-Vet needs a judge model.
+
   tor:
     description: ToR Table 4 (4 reasoning benchmarks + HallusionBench)
     benchmarks: [mathverse, mathvision, mathvista, wemath, hallusionbench]

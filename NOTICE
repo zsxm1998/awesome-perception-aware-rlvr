@@ -18,8 +18,9 @@ examples/chat_template/qwen_no_thinking.jinja is the chat template of the Vision
 (https://github.com/VisionOPD/Vision-OPD) and VCSD (https://github.com/joliang17/VCSD) code, licensed
 under the Apache License 2.0.
 
-The methods reproduced here (PAPO, VPPO, DVRP, ToR, PGPO, PEPO, CFPO, VEPO, NoisyRollout, VGPO, GRIT,
-DeepEyes, VA-OPD, VGS, VCSD, Vision-OPD) are independent re-implementations based on the respective papers
-and, where available, their public code; see each examples/reproduction/<method>/README.md for references.
+The methods reproduced here (PAPO, VPPO, DVRP, ToR, PGPO, PEPO, CFPO, VEPO, NoisyRollout, VGPO, VAPO,
+GRIT, DeepEyes, VA-OPD, VGS, VCSD, Vision-OPD) are independent re-implementations based on the respective
+papers and, where available, their public code; see each examples/reproduction/<method>/README.md for
+references.
 Datasets and model weights downloaded by the scripts are distributed by their owners under their own
 licenses.

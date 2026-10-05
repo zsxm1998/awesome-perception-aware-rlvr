@@ -4,7 +4,7 @@
 
 **Unified reproductions, controlled comparison and one-click evaluation for perception-aware reinforcement learning with verifiable rewards (RLVR) in vision-language models, plus a curated paper list.**
 
-PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · NoisyRollout · VGPO · GRIT · DeepEyes · CGPO, and on-policy distillation with VA-OPD · VGS · VCSD · Vision-OPD, in one EasyR1 codebase with 30+ benchmarks
+PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · NoisyRollout · VGPO · VAPO · GRIT · DeepEyes · CGPO, and on-policy distillation with VA-OPD · VGS · VCSD · Vision-OPD, in one EasyR1 codebase with 30+ benchmarks
 
 🌟 **Official repository of [CGPO](#-cgpo-acm-mm-2026-oral) (ACM MM 2026 Oral)** 🌟
 
@@ -12,7 +12,7 @@ PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · NoisyRollout · V
 
 [![Awesome](https://awesome.re/badge.svg)](https://github.com/sindresorhus/awesome)
 [![Papers](https://img.shields.io/badge/Papers-95-blue)](#-paper-list)
-[![Reproduced](https://img.shields.io/badge/Reproduced-17-brightgreen)](#-reproduced-methods)
+[![Reproduced](https://img.shields.io/badge/Reproduced-18-brightgreen)](#-reproduced-methods)
 [![CGPO](https://img.shields.io/badge/CGPO-ACM%20MM%202026%20Oral-8A2BE2)](https://doi.org/10.1145/3767308.3835969)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Built on EasyR1](https://img.shields.io/badge/built%20on-EasyR1-orange)](https://github.com/hiyouga/EasyR1)
@@ -38,9 +38,9 @@ This repository provides
 - the **official implementation of [CGPO](#-cgpo-acm-mm-2026-oral)** (ACM MM 2026 Oral);
 - **[Paper list](#-paper-list)**: perception-aware policy optimization, grounded reasoning /
   thinking with images, and the benchmarks used in this line of work;
-- **[Reproductions](#-reproduced-methods)** of 16 methods with each paper's own data, model and
-  hyper-parameters, plus the baselines they compare against: 12 RLVR methods (PAPO, VPPO, DVRP, ToR,
-  PGPO, PEPO, CFPO, VEPO, NoisyRollout, VGPO, GRIT, DeepEyes) and 4 on-policy distillation methods (VA-OPD, VGS, VCSD,
+- **[Reproductions](#-reproduced-methods)** of 17 methods with each paper's own data, model and
+  hyper-parameters, plus the baselines they compare against: 13 RLVR methods (PAPO, VPPO, DVRP, ToR,
+  PGPO, PEPO, CFPO, VEPO, NoisyRollout, VGPO, VAPO, GRIT, DeepEyes) and 4 on-policy distillation methods (VA-OPD, VGS, VCSD,
   Vision-OPD);
 - **Controlled comparisons** under one setting each: [the RLVR methods](examples/comparison/README.md)
   except DeepEyes on Qwen3-VL-4B, and [on-policy distillation](examples/comparison/opd_qwen3_vl_2b/README.md)
@@ -75,6 +75,10 @@ so they can be combined, compared and extended with a few configuration switches
 
 ## 🔥 News
 
+- **2026-10**: [VAPO](examples/reproduction/vapo/README.md): a perception reward from visual-claim probes, which
+  ask the policy at random points of its reasoning whether a claim about the image is correct
+  (`algorithm.claim_probe_count`), with the paper's 7B and 3B settings, a Qwen3-VL-8B pair and a run in the
+  controlled comparison.
 - **2026-10**: [VGPO](examples/reproduction/vgpo/README.md): advantages reweighted by last-layer visual focus,
   per token and per prompt group (`algorithm.advantage_scaling_method=vgpo`), with the paper's 3B, 7B and 32B
   settings and a run in the controlled comparison.
@@ -96,7 +100,7 @@ so they can be combined, compared and extended with a few configuration switches
 - [ ] Results of the controlled comparison and of the reproductions (runs in progress).
 - [x] On-policy distillation (OPD) next to GRPO and DAPO (a teacher model, OPD from sampled tokens and on
   the full distributions), with VA-OPD, VGS, VCSD and Vision-OPD.
-- [ ] More single-turn methods in the controlled comparison: NoisyRollout and VGPO (added), then VAPO (next).
+- [x] More single-turn methods in the controlled comparison: NoisyRollout, VGPO and VAPO.
 - [ ] A grounded-reasoning comparison on data with evidence boxes: TreeVGR, DeFacto and iVGR next to
   GRIT and CGPO.
 - [ ] More thinking-with-images methods in the line of DeepEyes: MGPO, Mini-o3 and Pixel Reasoner, and
@@ -149,6 +153,7 @@ bash scripts/eval.sh checkpoints/CGPO-Reproduce/qwen3_vl_8b_cgpo --suite cgpo
 | VEPO | [Entropy Is Not Enough: Unlocking Effective Reinforcement Learning for Visual Reasoning via Vision-Anchored Token Selection](https://arxiv.org/abs/2606.03937) | arXiv | [GitHub](https://github.com/Leonnnnnn929/VEPO) | [examples/reproduction/vepo](examples/reproduction/vepo) | Qwen2.5-VL-7B, Geometry3K |
 | NoisyRollout | [NoisyRollout: Reinforcing Visual Reasoning with Data Augmentation](https://arxiv.org/abs/2504.13055) | NeurIPS 2025 | [GitHub](https://github.com/real-absolute-AI/NoisyRollout) | [examples/reproduction/noisyrollout](examples/reproduction/noisyrollout) | Qwen2.5-VL-7B/32B, Geometry3K / K12 |
 | VGPO | [Visually-Guided Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2604.09349) | ACL 2026 | [GitHub](https://github.com/wzb-bupt/VGPO) | [examples/reproduction/vgpo](examples/reproduction/vgpo) | Qwen2.5-VL-3B/7B/32B, ViRL39K |
+| VAPO | [More Thought, Less Accuracy? On the Dual Nature of Reasoning in Vision-Language Models](https://arxiv.org/abs/2509.25848) | ICLR 2026 | [GitHub](https://github.com/xytian1008/VAPO) | [examples/reproduction/vapo](examples/reproduction/vapo) | Qwen2.5-VL-3B/7B / Qwen3-VL-8B, ViRL39K (single-image) with visual claims |
 | GRIT | [GRIT: Teaching MLLMs to Think with Images](https://arxiv.org/abs/2505.15879) | NeurIPS 2025 | [GitHub](https://github.com/UCSB-AI/GRIT) | [examples/reproduction/grit](examples/reproduction/grit) | Qwen2.5-VL-3B / InternVL3-2B, 20 GRIT samples |
 | DeepEyes | [DeepEyes: Incentivizing "Thinking with Images" via Reinforcement Learning](https://arxiv.org/abs/2505.14362) | ICLR 2026 | [GitHub](https://github.com/Visual-Agent/DeepEyes) | [examples/reproduction/deepeyes](examples/reproduction/deepeyes) | Qwen2.5-VL-7B / Qwen3-VL-8B, DeepEyes-47k, multi-turn zoom-in tool |
 | VA-OPD | [Visual-Advantage On-Policy Distillation for Vision-Language Models](https://arxiv.org/abs/2605.21924) | arXiv | - | [examples/reproduction/va_opd](examples/reproduction/va_opd) | Qwen3-VL-2B student, 4B / 8B / 32B teachers, Geometry3K / ViRL39K |
@@ -261,9 +266,9 @@ the same data (ViRL39K / MMK12), the same GRPO hyper-parameters and the same eva
 method-specific arguments differ, and each method keeps the image perturbation of its paper. Results
 will be added here.
 
-| Method | GRPO | DAPO | PAPO | VPPO | ToR | DVRP | PGPO | PEPO | CFPO | VEPO | NoisyRollout | VGPO | GRIT | CGPO |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Avg. (comparison suite) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Method | GRPO | DAPO | PAPO | VPPO | ToR | DVRP | PGPO | PEPO | CFPO | VEPO | NoisyRollout | VGPO | VAPO | GRIT | CGPO |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Avg. (comparison suite) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 
 [`examples/comparison/opd_qwen3_vl_2b`](examples/comparison/opd_qwen3_vl_2b/README.md) compares on-policy
 distillation on a Qwen3-VL-2B student with Qwen3-VL-8B-Instruct as the teacher, on the same data, budget and
@@ -313,7 +318,7 @@ registry entry; see the tutorial in [eval/README.md](eval/README.md#adding-a-new
 
 > [!IMPORTANT]
 > The papers use different evaluation protocols (rule-based avg@8 at temperature 1.0 for
-> PAPO/VPPO/PGPO/DVRP/CFPO; greedy decoding with an LLM judge for ToR/VEPO/NoisyRollout/GRIT/DeepEyes/Vision-OPD). This
+> PAPO/VPPO/PGPO/DVRP/CFPO; greedy decoding with an LLM judge for ToR/VEPO/NoisyRollout/VAPO/GRIT/DeepEyes/Vision-OPD). This
 > repository evaluates every model with one harness, so compare methods against baselines run in
 > this repository rather than against numbers copied across papers.
 
@@ -378,6 +383,8 @@ Each method below can be trained with the scripts in `examples/reproduction/<met
   Augments the rollouts instead of the objective: half of each prompt's GRPO rollouts are sampled from a diffusion-noised copy of the image, whose noise strength anneals to almost zero during training, and all rollouts are trained on the clean image in one group. Scripts and setting: [examples/reproduction/noisyrollout](examples/reproduction/noisyrollout/README.md).
 - **VGPO** · [Visually-Guided Policy Optimization for Multimodal Reasoning](https://arxiv.org/abs/2604.09349) · Zengbin Wang et al. · ACL 2026 · [code](https://github.com/wzb-bupt/VGPO)<br>
   Reweights advantages by visual focus without an extra forward pass: a token's score is the cosine between its last-layer hidden state and the mean image-token state, the most visual tokens late in a response are boosted to counter fading attention, and the scores scale the advantage token by token within a response and response by response within each prompt's group (on DAPO). Scripts and setting: [examples/reproduction/vgpo](examples/reproduction/vgpo/README.md).
+- **VAPO** · [More Thought, Less Accuracy? On the Dual Nature of Reasoning in Vision-Language Models](https://arxiv.org/abs/2509.25848) · Xinyu Tian et al. · ICLR 2026 · [code](https://github.com/xytian1008/VAPO)<br>
+  Rewards perception during long reasoning: at random points of a correct response the policy is asked, in one greedy token, whether a pre-generated claim about the image is correct, and the weighted rate of right answers (later points weigh more) is added to the GRPO reward of correct answers. Scripts and setting: [examples/reproduction/vapo](examples/reproduction/vapo/README.md).
 - **GRIT** · [GRIT: Teaching MLLMs to Think with Images](https://arxiv.org/abs/2505.15879) · Yue Fan et al. · NeurIPS 2025 · [code](https://github.com/UCSB-AI/GRIT)<br>
   Trains single-turn grounded reasoning chains that interleave text with bounding boxes, without feeding crops back to the model. GRPO-GR rewards the output structure, producing boxes (with a counting bonus) and answer correctness, with no supervision on the boxes; the paper trains on only 20 image-question-answer triplets. Scripts and setting: [examples/reproduction/grit](examples/reproduction/grit/README.md).
 - **DeepEyes** · [DeepEyes: Incentivizing "Thinking with Images" via Reinforcement Learning](https://arxiv.org/abs/2505.14362) · Ziwei Zheng et al. · ICLR 2026 · [code](https://github.com/Visual-Agent/DeepEyes)<br>
@@ -415,7 +422,6 @@ Each method below can be trained with the scripts in `examples/reproduction/<met
 | 2026-01 | [CPPO: Contrastive Perception Policy Optimization for VLM Agents](https://arxiv.org/abs/2601.00501)<br>Ahmad Rezaei et al. · `2601.00501` | ICML 2026 Workshop (AIWILD) | [GitHub](https://github.com/vbdi/cppo) | **CPPO**: Contrastive Perception Loss applied to perception tokens detected by entropy shifts under perturbed images. |
 | 2025-12 | [Learning When to Look: A Disentangled Curriculum for Strategic Perception in Multimodal Reasoning](https://arxiv.org/abs/2512.17227)<br>Siqi Yang et al. · `2512.17227` | CVPR 2026 Findings | [GitHub](https://github.com/gaozilve-max/learning-when-to-look) | **Learning When to Look**: Disentangled SFT curriculum, then RL with a Pivotal Perception Reward teaching when to look. |
 | 2025-12 | [Boosting RL-Based Visual Reasoning with Selective Adversarial Entropy Intervention](https://arxiv.org/abs/2512.10414)<br>Yang Yu et al. · `2512.10414` | arXiv | - | **SaEI**: Entropy-guided adversarial perturbation of visual inputs during RL sampling to enlarge the explored answer space. |
-| 2025-09 | [More Thought, Less Accuracy? On the Dual Nature of Reasoning in Vision-Language Models](https://arxiv.org/abs/2509.25848)<br>Xinyu Tian et al. · `2509.25848` | ICLR 2026 | [GitHub](https://github.com/xytian1008/VAPO) | **VAPO**: Counters visual forgetting in long reasoning by explicitly steering the policy toward visually grounded trajectories. |
 | 2025-09 | [VTPerception-R1: Enhancing Multimodal Reasoning via Explicit Visual and Textual Perceptual Grounding](https://arxiv.org/abs/2509.24776)<br>Yizhuo Ding et al. · `2509.24776` | arXiv | - | **VTPerception-R1**: Perception-augmented SFT, then RL with visual, textual and consistency perception rewards. |
 | 2025-09 | [Perception-Consistency Multimodal Large Language Models Reasoning via Caption-Regularized Policy Optimization](https://arxiv.org/abs/2509.21854)<br>Songjun Tu et al. · `2509.21854` | arXiv | - | **CapPO**: Caption-based consistency regularization between image- and caption-conditioned responses, plus KL-weighted advantage estimation. |
 | 2025-09 | [Perception Before Reasoning: Two-Stage Reinforcement Learning for Visual Reasoning in Vision-Language Models](https://arxiv.org/abs/2509.13031)<br>Yan Chen et al. · `2509.13031` | arXiv | [GitHub](https://github.com/cythu/PeBR-R1) | **PeBR-R1**: Two-stage RL: first perception (coarse and fine visual understanding), then reasoning, with dataset-level sampling. |
