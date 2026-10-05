@@ -2,7 +2,7 @@
 
 One-command evaluation of the base models and checkpoints produced by this repository.
 The harness covers the benchmarks used by the reproduced papers (PAPO, VPPO, DVRP, ToR,
-PGPO, PEPO, CFPO, VEPO, GRIT, DeepEyes, VA-OPD, VGS, VCSD, Vision-OPD) and CGPO, downloads
+PGPO, PEPO, CFPO, VEPO, NoisyRollout, GRIT, DeepEyes, VA-OPD, VGS, VCSD, Vision-OPD) and CGPO, downloads
 them from public sources, runs inference with vLLM on all visible GPUs, and scores every
 benchmark with a documented, rule-based protocol (an LLM judge is only used for MM-Vet and,
 optionally, GQA).
@@ -99,6 +99,7 @@ repository is prompted as it was trained, and explicit flags always win (see [Pr
 | `pepo` | geo3k, mathvista, wemath, mathverse, logicvista, clevr_count, mmmu_pro | PEPO Table 1 + Table 5 (ViRL39K scaling); Geometry3K val is not included |
 | `pepo_geometry` | geo3k, mathvista, mathverse, logicvista | PEPO Table 1 with the prompt of the Geometry3K-trained models (`pepo.jinja`, `<answer>` tags), their image size, and PEPO's answer protocol (`--answer-protocol pepo`: MathVista, LogicVista and MathVerse are asked as PEPO's evaluation scripts ask them, the question, a newline and the `<think>`/`<answer>` instruction, which MathVerse follows with the request for the option letter; LogicVista reads the last standalone letter of the answer) |
 | `vepo` | geo3k, mmk12, hallusionbench, mathvista, wemath, mathverse, mathvision | VEPO Table 1; the paper uses greedy decoding and a gpt-4o-mini judge for 4 benchmarks, we use rule-based avg@8 |
+| `noisyrollout` | geo3k, mathverse, mathvision, mathvista, wemath, hallusionbench | NoisyRollout Table 1 (and Geometry3K test, in-domain); the paper uses greedy decoding and Gemini-2.0-Flash answer parsing for 4 benchmarks, we use rule-based avg@8 (HallusionBench greedy); the paper's MathVision is the full 3,040-item test set |
 | `tor` | mathverse, mathvision, mathvista, wemath, hallusionbench | ToR Table 4; the paper follows NoisyRollout (greedy + Gemini answer parsing), we use rule-based avg@8 |
 | `cfpo` | cvqa_real, mars_bench, pope, textvqa, mmmu_pro, geo3k, wemath, mmk12, mathverse, logicvista | CFPO Table 1; CFPO reports POPE as pooled accuracy with avg@8 (same 9,000 questions; our primary is greedy macro F1, pooled accuracy in the details); CFPO's LogicVista file has 448 items, PAPO-Eval's 447 |
 | `grit` | grit_vsr, grit_tallyqa, grit_gqa, ovdeval_position | GRIT Table 1 (GRIT judges answers with GPT-4o, we use relaxed exact match); defaults follow GRIT's evaluation, for models trained with GRIT's prompt: its prompt (`grit.jinja`, no system prompt), the bare question (`--grounding-instruction none`; elsewhere a box instruction is appended to these sets) and 3,136–200,704 pixels. Evaluate other models on these sets with `--benchmarks grit_vsr,grit_tallyqa,grit_gqa,ovdeval_position` and their own prompt flags |
@@ -116,7 +117,7 @@ repository is prompted as it was trained, and explicit flags always win (see [Pr
 
 The reasoning columns of all papers are scored with one protocol (PAPO-Eval, below), which
 is what PAPO, VPPO, DVRP, PGPO, PEPO (Table 5) and CFPO use. Where a paper used another
-protocol (VEPO and ToR: greedy decoding and an LLM answer parser; PEPO Table 1: the official
+protocol (VEPO, NoisyRollout and ToR: greedy decoding and an LLM answer parser; PEPO Table 1: the official
 MathVista checker; GRIT: a GPT-4o judge; DeepEyes: a Qwen2.5-72B judge fallback; VA-OPD: a
 GPT-4o judge where applicable; Vision-OPD: a gpt-oss-120b judge; VGS and VCSD do not describe
 their scoring), numbers are comparable across methods within this harness but not
@@ -139,19 +140,19 @@ temperature 1.0, top_p 1.0 and 2048 new tokens; "greedy" = 1 sample at temperatu
 
 | Key | Benchmark | Source (HF) | #Samples | Primary metric | Decoding | Used by |
 |---|---|---|---:|---|---|---|
-| `geo3k` | Geometry3K test | `PAPO-Galaxy/PAPO_eval` | 601 | boxed exact match, mean acc@k | avg@8 | PAPO, VPPO, DVRP, PGPO, PEPO, CFPO, VEPO, CGPO |
-| `mathvista` | MathVista testmini | `PAPO-Galaxy/PAPO_eval` | 1000 | boxed exact match | avg@8 | PAPO, DVRP, PEPO, VEPO, ToR, CGPO, VA-OPD, VCSD |
-| `wemath` | We-Math | `PAPO-Galaxy/PAPO_eval` | 1740 | boxed exact match | avg@8 | PAPO, VPPO, DVRP, PEPO, CFPO, VEPO, ToR, CGPO, VA-OPD |
+| `geo3k` | Geometry3K test | `PAPO-Galaxy/PAPO_eval` | 601 | boxed exact match, mean acc@k | avg@8 | PAPO, VPPO, DVRP, PGPO, PEPO, CFPO, VEPO, NoisyRollout, CGPO |
+| `mathvista` | MathVista testmini | `PAPO-Galaxy/PAPO_eval` | 1000 | boxed exact match | avg@8 | PAPO, DVRP, PEPO, VEPO, NoisyRollout, ToR, CGPO, VA-OPD, VCSD |
+| `wemath` | We-Math | `PAPO-Galaxy/PAPO_eval` | 1740 | boxed exact match | avg@8 | PAPO, VPPO, DVRP, PEPO, CFPO, VEPO, NoisyRollout, ToR, CGPO, VA-OPD |
 | `mmk12` | MMK12 test | `PAPO-Galaxy/PAPO_eval` | 2000 | boxed exact match | avg@8 | PAPO, VPPO, DVRP, PGPO, CFPO, VEPO, CGPO |
-| `mathverse` | MathVerse testmini (multi-choice) | `PAPO-Galaxy/PAPO_eval` | 2180 | boxed exact match | avg@8 | PAPO, VPPO, DVRP, PGPO, PEPO, CFPO, VEPO, ToR, CGPO, VA-OPD |
+| `mathverse` | MathVerse testmini (multi-choice) | `PAPO-Galaxy/PAPO_eval` | 2180 | boxed exact match | avg@8 | PAPO, VPPO, DVRP, PGPO, PEPO, CFPO, VEPO, NoisyRollout, ToR, CGPO, VA-OPD |
 | `mathverse_v` | MathVerse vision-dependent | `PAPO-Galaxy/PAPO_eval` | 1308 | boxed exact match | avg@8 | PAPO, DVRP, PGPO, CGPO, VGS |
 | `logicvista` | LogicVista | `PAPO-Galaxy/PAPO_eval` | 447 | boxed exact match | avg@8 | PAPO, VPPO, PGPO, PEPO, CFPO, CGPO, VGS |
 | `clevr_count` | Counting (PAPO's "SuperClevr counting" column) | `PAPO-Galaxy/PAPO_eval` | 200 | boxed exact match | avg@8 | PAPO, PEPO, CGPO |
 | `mmmu_pro` | MMMU-Pro (vision setting) | `PAPO-Galaxy/PAPO_eval` | 1730 | boxed exact match | avg@8 | PAPO, VPPO, PGPO, PEPO, CFPO, CGPO, VGS |
 | `dynamath` | DynaMath (verifiable subset) | `chamber111/VPPO-Eval` | 3666 | boxed exact match | avg@8 | VPPO, PGPO |
-| `mathvision` | MathVision (verifiable subset) | `chamber111/VPPO-Eval` | 2907 | boxed exact match | avg@8 | VPPO, PGPO, VEPO, ToR, VGS |
+| `mathvision` | MathVision (verifiable subset) | `chamber111/VPPO-Eval` | 2907 | boxed exact match | avg@8 | VPPO, PGPO, VEPO, NoisyRollout, ToR, VGS |
 | `pope` | POPE random/popular/adversarial | `lmms-lab/POPE` | 9000 | macro F1 over the 3 splits (accuracy in details) | greedy | CFPO, DeepEyes, Vision-OPD |
-| `hallusionbench` | HallusionBench (image questions) | `lmms-lab/HallusionBench` | 951 | question accuracy aAcc (fAcc, qAcc and their mean `aqf_mean` in details) | greedy | VEPO, ToR, VA-OPD, VCSD |
+| `hallusionbench` | HallusionBench (image questions) | `lmms-lab/HallusionBench` | 951 | question accuracy aAcc (fAcc, qAcc and their mean `aqf_mean` in details) | greedy | VEPO, NoisyRollout, ToR, VA-OPD, VCSD |
 | `mme` | MME | `lmms-lab/MME` | 2374 | total score (acc + acc+); /2800 in averages | greedy (PGPO averages 8 samples) | PGPO |
 | `gqa` | GQA testdev-balanced | `lmms-lab/GQA` | 12578 | exact match (EM→judge cascade with a judge) | greedy | general |
 | `mm_vet` | MM-Vet | `lmms-lab/MMVet` | 218 | LLM-judge score; **skipped without a judge** | greedy | general |
@@ -370,6 +371,7 @@ method's training from these flags or suite defaults:
 | PAPO, VPPO, DVRP, PGPO, ToR, GRPO/DAPO baselines, the OPD comparison | default (`math_perception.jinja`) |
 | CFPO | `--format-prompt none --system-prompt examples/system_prompt/cfpo.txt` (suite `cfpo`) |
 | VEPO | `--format-prompt none --system-prompt examples/system_prompt/vepo.txt` (suite `vepo`) |
+| NoisyRollout | `--format-prompt none --system-prompt examples/system_prompt/noisyrollout.txt --min-pixels 262144 --max-pixels 1000000` (suite `noisyrollout`) |
 | PEPO (Geometry3K setting) | `--format-prompt examples/format_prompt/pepo.jinja` (suite `pepo_geometry`) |
 | CGPO | `--format-prompt examples/format_prompt/xml_grounded_reasoning.jinja` (suite `cgpo`) |
 | GRIT (`examples/reproduction/grit`) | `--format-prompt examples/format_prompt/grit.jinja --system-prompt none --min-pixels 3136 --max-pixels 200704` (suite `grit`) |
