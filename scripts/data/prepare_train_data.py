@@ -142,6 +142,31 @@ DATASETS: dict[str, TrainDataset] = {
         description="Vision-SR1-47K as split by the VGS authors for validation (2,382 problems)",
         used_by=["vgs"],
     ),
+    "vapo": TrainDataset(
+        name="vapo",
+        repo_id="xytian1008/VAPO-Thinker-train36k",
+        splits={"train": []},
+        description="VAPO-Thinker-train36k: the 36,581 single-image ViRL39K problems with 20 visual claims each",
+        used_by=["vapo"],
+        converter="vapo",
+        required_columns=("visual_claims",),
+    ),
+    "vapo_val": TrainDataset(
+        name="vapo_val",
+        repo_id="xytian1008/VAPO-Thinker-val1k",
+        splits={"val": ["data/val-*.parquet"]},
+        description="VAPO-Thinker-val1k: 1,000 problems sampled from the evaluation benchmarks (monitoring only)",
+        used_by=["vapo"],
+    ),
+    "virl39k_claims": TrainDataset(
+        name="virl39k_claims",
+        repo_id="xytian1008/VAPO-Thinker-train36k",
+        splits={"train": []},
+        description="virl39k row for row plus VAPO's visual claims (`[]` for the 2,289 multi-image problems)",
+        used_by=["comparison"],
+        converter="virl39k_claims",
+        required_columns=("visual_claims",),
+    ),
     "deepeyes": TrainDataset(
         name="deepeyes",
         repo_id="ChenShawn/DeepEyes-Datasets-47k",
@@ -160,7 +185,7 @@ METHOD_GROUPS: dict[str, list[str]] = {
     "pgpo": ["virl39k", "mmk12"],
     "cfpo": ["cfpo", "mmk12"],
     "cgpo": ["virl39k", "mmk12"],
-    "comparison": ["virl39k", "mmk12"],
+    "comparison": ["virl39k", "mmk12", "virl39k_claims"],
     "tor": ["geometry3k"],
     "pepo": ["geometry3k"],
     "vepo": ["geometry3k", "vepo"],
@@ -173,6 +198,7 @@ METHOD_GROUPS: dict[str, list[str]] = {
     "vcsd": ["virl39k", "mmk12"],
     "vision_opd": ["vision_opd", "mmk12"],
     "vgpo": ["virl39k", "mmk12"],
+    "vapo": ["vapo", "vapo_val"],
 }
 
 

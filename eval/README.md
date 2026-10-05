@@ -101,6 +101,7 @@ repository is prompted as it was trained, and explicit flags always win (see [Pr
 | `vepo` | geo3k, mmk12, hallusionbench, mathvista, wemath, mathverse, mathvision | VEPO Table 1; the paper uses greedy decoding and a gpt-4o-mini judge for 4 benchmarks, we use rule-based avg@8 |
 | `noisyrollout` | geo3k, mathverse, mathvision, mathvista, wemath, hallusionbench | NoisyRollout Table 1 (and Geometry3K test, in-domain); the paper uses greedy decoding and Gemini-2.0-Flash answer parsing for 4 benchmarks, we use rule-based avg@8 (HallusionBench greedy); the paper's MathVision is the full 3,040-item test set |
 | `vgpo` | mathvista, mathverse, wemath, mmk12, geo3k, logicvista, clevr_count, mmmu_pro, mathverse_v | VGPO Table 1 without GeoMath (no public data); the paper decodes greedily, the default here is avg@8 |
+| `vapo` | mathverse_v, mathvista, mathvision, logicvista, wemath, geo3k, mmmu_val, mmstar, hallusionbench, mm_vet | VAPO Tables 1-2; the paper decodes greedily with VLMEvalKit and GPT answer extraction, our math sets are rule-based avg@8 (the other four greedy); the paper's MathVerse is testmini Vision Only (here `mathverse_v`, which includes it), its MathVision the full 3,040-item test set, its We-Math the strict score; MM-Vet needs a judge |
 | `tor` | mathverse, mathvision, mathvista, wemath, hallusionbench | ToR Table 4; the paper follows NoisyRollout (greedy + Gemini answer parsing), we use rule-based avg@8 |
 | `cfpo` | cvqa_real, mars_bench, pope, textvqa, mmmu_pro, geo3k, wemath, mmk12, mathverse, logicvista | CFPO Table 1; CFPO reports POPE as pooled accuracy with avg@8 (same 9,000 questions; our primary is greedy macro F1, pooled accuracy in the details); CFPO's LogicVista file has 448 items, PAPO-Eval's 447 |
 | `grit` | grit_vsr, grit_tallyqa, grit_gqa, ovdeval_position | GRIT Table 1 (GRIT judges answers with GPT-4o, we use relaxed exact match); defaults follow GRIT's evaluation, for models trained with GRIT's prompt: its prompt (`grit.jinja`, no system prompt), the bare question (`--grounding-instruction none`; elsewhere a box instruction is appended to these sets) and 3,136–200,704 pixels. Evaluate other models on these sets with `--benchmarks grit_vsr,grit_tallyqa,grit_gqa,ovdeval_position` and their own prompt flags |
@@ -374,6 +375,7 @@ method's training from these flags or suite defaults:
 | VEPO | `--format-prompt none --system-prompt examples/system_prompt/vepo.txt` (suite `vepo`) |
 | NoisyRollout | `--format-prompt none --system-prompt examples/system_prompt/noisyrollout.txt --min-pixels 262144 --max-pixels 1000000` (suite `noisyrollout`) |
 | VGPO | default prompt, `--min-pixels 262144 --max-pixels 4194304` (suite `vgpo`) |
+| VAPO | default prompt, `--min-pixels 262144 --max-pixels 4194304` (suite `vapo`) |
 | PEPO (Geometry3K setting) | `--format-prompt examples/format_prompt/pepo.jinja` (suite `pepo_geometry`) |
 | CGPO | `--format-prompt examples/format_prompt/xml_grounded_reasoning.jinja` (suite `cgpo`) |
 | GRIT (`examples/reproduction/grit`) | `--format-prompt examples/format_prompt/grit.jinja --system-prompt none --min-pixels 3136 --max-pixels 200704` (suite `grit`) |

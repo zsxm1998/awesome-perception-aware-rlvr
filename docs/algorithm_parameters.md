@@ -139,7 +139,8 @@ Used by VAPO. Off by default (`0`); the step then has no extra pass, column or r
   γ·1[accuracy = 1]·R_perc; a reward function without this argument is refused at start-up). Sets
   `worker.rollout.max_model_len` to prompt + response + 128 tokens when unset. Rejected with agentic rollout, `adv_estimator=remax`, `rollout_image_transform` and the
   grounding consistency reward. With online filtering, `filter_key` must be `accuracy` or `format`: the probes run
-  on the kept groups, before the perception score exists. The probes are seeded by `data.seed`,
+  on the kept groups, before the perception score exists (see the
+  [VAPO README](../examples/reproduction/vapo/README.md#dynamic-sampling)). The probes are seeded by `data.seed`,
   the step and the response's row. Implementation: `verl/trainer/claim_probes.py`.
 - `algorithm.claim_probe_late_emphasis` (β, default 1.5): weight of later cuts in R_perc.
 - `algorithm.claim_probe_question` (default: the released `"\n<anchor>{claim} Is this claim correct? Answer (Yes/No): "`):

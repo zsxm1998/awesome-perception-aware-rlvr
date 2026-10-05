@@ -425,3 +425,138 @@ def convert_vision_opd(repo_id: str, raw_dir: Path, out_dir: Path, snapshot) -> 
     tmp_output.replace(output)
     print(f"[write] {output} ({len(rows)} rows)")
     return {"train": len(rows)}
+
+
+# ---------------------------------------------------------------------------
+# VAPO (xytian1008/VAPO-Thinker-train36k): a `save_to_disk` copy of the single-image rows of PAPO's ViRL39K (36,581
+# rows, same order) with 20 visual claims per image (claim_1..20, label_1..20 CORRECT/WRONG). The claims are written
+# as one JSON column `visual_claims` = [{"claim": str, "correct": bool}, ...] (see verl/trainer/claim_probes.py).
+# ---------------------------------------------------------------------------
+
+_VAPO_NUM_CLAIMS = 20
+_VAPO_LABELS = {"CORRECT": True, "WRONG": False}
+
+
+def _vapo_claims_json(row: dict) -> str:
+    import json
+
+    claims = []
+    for idx in range(1, _VAPO_NUM_CLAIMS + 1):
+        claim, label = row[f"claim_{idx}"], row[f"label_{idx}"]
+        if not isinstance(claim, str) or not claim.strip() or label not in _VAPO_LABELS:
+            raise ValueError(f"incomplete visual claim {idx}: {claim!r} {label!r}")
+        claims.append({"claim": claim, "correct": _VAPO_LABELS[label]})
+    return json.dumps(claims, ensure_ascii=False)
+
+
+def _vapo_record_batches(raw_dir: Path, snapshot, columns: list[str]):
+    """The rows of the arrow shards in order, as record batches of ``columns``."""
+    import pyarrow as pa
+
+    snapshot(["data-*.arrow"])
+    shards = sorted(raw_dir.glob("data-*.arrow"))
+    if not shards:
+        raise FileNotFoundError(f"no arrow shards in {raw_dir}")
+    for shard in shards:
+        with pa.memory_map(str(shard)) as source:
+            for batch in pa.ipc.open_stream(source):
+                yield batch.select(columns)
+
+
+_VAPO_CLAIM_COLUMNS = [f"{kind}_{idx}" for idx in range(1, _VAPO_NUM_CLAIMS + 1) for kind in ("claim", "label")]
+
+
+@register("vapo")
+def convert_vapo(repo_id: str, raw_dir: Path, out_dir: Path, snapshot) -> dict[str, int]:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    schema = pa.schema(
+        [
+            ("problem", pa.string()),
+            ("answer", pa.string()),
+            ("images", pa.list_(pa.struct([("bytes", pa.binary()), ("path", pa.string())]))),
+            ("visual_claims", pa.string()),
+        ]
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    output = out_dir / "train.parquet"
+    tmp_output = output.with_suffix(".parquet.tmp")
+    rows = 0
+    with pq.ParquetWriter(tmp_output, schema) as writer:
+        for batch in _vapo_record_batches(raw_dir, snapshot, ["problem", "answer", "images", *_VAPO_CLAIM_COLUMNS]):
+            records = batch.to_pylist()
+            writer.write_table(
+                pa.table(
+                    {
+                        "problem": [record["problem"] for record in records],
+                        "answer": [record["answer"] for record in records],
+                        "images": batch.column("images"),
+                        "visual_claims": [_vapo_claims_json(record) for record in records],
+                    },
+                    schema=schema,
+                )
+            )
+            rows += batch.num_rows
+    tmp_output.replace(output)
+    print(f"[write] {output} ({rows} rows)")
+    return {"train": rows}
+
+
+def _image_sha1(images: list[dict]) -> str:
+    import hashlib
+
+    return hashlib.sha1(images[0]["bytes"]).hexdigest()
+
+
+@register("virl39k_claims")
+def convert_virl39k_claims(repo_id: str, raw_dir: Path, out_dir: Path, snapshot) -> dict[str, int]:
+    """data/virl39k/train.parquet row for row (same order, same columns) plus `visual_claims`: the VAPO claims of
+    each single-image row (the train36k rows follow these rows in order; problem, answer and image bytes are
+    checked) and "[]" for the multi-image rows, which VAPO has no claims for."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    virl39k = out_dir.parent / "virl39k" / "train.parquet"
+    if not virl39k.exists():
+        raise FileNotFoundError(f"{virl39k} is missing; prepare virl39k first")
+
+    def vapo_rows():
+        columns = ["problem", "answer", "images", *_VAPO_CLAIM_COLUMNS]
+        for batch in _vapo_record_batches(raw_dir, snapshot, columns):
+            for record in batch.to_pylist():
+                yield record["problem"], record["answer"], _image_sha1(record["images"]), _vapo_claims_json(record)
+
+    claims_rows = vapo_rows()
+    source = pq.ParquetFile(virl39k)
+    schema = source.schema_arrow.append(pa.field("visual_claims", pa.string()))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    output = out_dir / "train.parquet"
+    tmp_output = output.with_suffix(".parquet.tmp")
+    rows = with_claims = 0
+    with pq.ParquetWriter(tmp_output, schema) as writer:
+        for group in range(source.num_row_groups):
+            table = source.read_row_group(group)
+            claims = []
+            for problem, answer, images in zip(
+                table.column("problem").to_pylist(),
+                table.column("answer").to_pylist(),
+                table.column("images").to_pylist(),
+            ):
+                if problem.count("<image>") != 1:
+                    claims.append("[]")
+                    continue
+                vapo = next(claims_rows, None)
+                if vapo is None:
+                    raise ValueError(f"VAPO claims ran out at ViRL39K row {rows + len(claims)}")
+                if vapo[:3] != (problem, answer, _image_sha1(images)) or len(images) != 1:
+                    raise ValueError(f"ViRL39K row {rows + len(claims)} does not match the next VAPO row")
+                claims.append(vapo[3])
+                with_claims += 1
+            writer.write_table(table.append_column("visual_claims", pa.array(claims, pa.string())))
+            rows += table.num_rows
+    if next(claims_rows, None) is not None:
+        raise ValueError("VAPO rows remain after the last ViRL39K row")
+    tmp_output.replace(output)
+    print(f"[write] {output} ({rows} rows, {with_claims} with visual claims)")
+    return {"train": rows}
