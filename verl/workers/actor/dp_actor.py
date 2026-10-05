@@ -17,7 +17,7 @@ Implement Actor
 
 import os
 from collections import defaultdict
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from typing import Any, Optional
 
 import torch
@@ -107,6 +107,41 @@ class DataParallelPPOActor(BasePPOActor):
         model_config = self._get_actor_model_config()
         return getattr(model_config, "model_type", None) == "qwen3_5"
 
+    def _final_norm_module(self) -> nn.Module:
+        """The language model's final norm, whose output is the last entry of ``output_hidden_states``."""
+        module = getattr(self, "_final_norm", None)
+        if module is None:
+            matches = []
+            for name, candidate in self.actor_module.named_modules():
+                clean = name.replace("_fsdp_wrapped_module.", "").replace("_checkpoint_wrapped_module.", "")
+                if clean.endswith(("language_model.norm", "language_model.model.norm")):
+                    matches.append(candidate)
+            if len(matches) != 1:
+                raise ValueError(
+                    "visual_sensitivity_hidden_layers=last could not find the language model's final norm "
+                    f"(found {len(matches)} candidates)."
+                )
+            module = self._final_norm = matches[0]
+        return module
+
+    @contextmanager
+    def _capture_final_hidden_state(self, enabled: bool):
+        """Records the final-norm output of the forward run inside the context, without keeping every layer's
+        hidden states as ``output_hidden_states`` would."""
+        if not enabled:
+            yield None
+            return
+        captured: list[torch.Tensor] = []
+
+        def hook(_module, _inputs, output):
+            captured.append(output[0] if isinstance(output, tuple) else output)
+
+        handle = self._final_norm_module().register_forward_hook(hook)
+        try:
+            yield captured
+        finally:
+            handle.remove()
+
     def _visual_corruption_context(
         self,
         visual_corruption: dict[str, Any] | None,
@@ -149,6 +184,8 @@ class DataParallelPPOActor(BasePPOActor):
         visual_token_ids: list[int] | tuple[int, ...] | None = None,
         hidden_visual_metric: str = "cosine",
         model_level_visual_corruption: dict[str, Any] | None = None,
+        hidden_visual_layers: str = "all",
+        hidden_visual_pooling: str = "pairwise_mean",
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]:
         """
         Returns:
@@ -160,7 +197,10 @@ class DataParallelPPOActor(BasePPOActor):
         position_ids = micro_batch["position_ids"]
         responses = micro_batch["responses"]
         response_length = responses.size(-1)
-        hidden_state_kwargs = {"output_hidden_states": True} if return_hidden_visual_scores else {}
+        capture_last_hidden = return_hidden_visual_scores and hidden_visual_layers == "last"
+        hidden_state_kwargs = (
+            {"output_hidden_states": True} if return_hidden_visual_scores and not capture_last_hidden else {}
+        )
         if position_ids.dim() == 3:  # qwen2vl mrope
             position_ids = position_ids.transpose(0, 1)  # (bsz, 4, seqlen) -> (4, bsz, seqlen)
 
@@ -222,14 +262,15 @@ class DataParallelPPOActor(BasePPOActor):
             input_ids_rmpad_rolled = input_ids_rmpad_rolled.squeeze(0)  # ((total_nnz / sp) + pad)
 
             # only pass input_ids and position_ids to enable flash_attn_varlen
-            output = self.actor_module(
-                input_ids=input_ids_rmpad,
-                attention_mask=None,
-                position_ids=position_ids_rmpad,
-                **multi_modal_inputs,
-                use_cache=False,
-                **hidden_state_kwargs,
-            )  # prevent model thinks we are generating
+            with self._capture_final_hidden_state(capture_last_hidden) as last_hidden:
+                output = self.actor_module(
+                    input_ids=input_ids_rmpad,
+                    attention_mask=None,
+                    position_ids=position_ids_rmpad,
+                    **multi_modal_inputs,
+                    use_cache=False,
+                    **hidden_state_kwargs,
+                )  # prevent model thinks we are generating
             logits_rmpad = output.logits.squeeze(0)  # (total_nnz, vocab_size)
             logits_rmpad.div_(temperature)
             entropy_rmpad = None
@@ -259,7 +300,8 @@ class DataParallelPPOActor(BasePPOActor):
                 entropy = full_entropy.squeeze(-1)[:, -response_length - 1 : -1]
             hidden_visual_scores = None
             if return_hidden_visual_scores:
-                if not output.hidden_states:
+                hidden_layers = tuple(last_hidden) if capture_last_hidden else output.hidden_states
+                if not hidden_layers:
                     raise ValueError("hidden_state_similarity requires model outputs to include hidden_states.")
                 visual_mask, response_mask_bool = self._prepare_hidden_visual_masks(
                     input_ids=input_ids,
@@ -269,7 +311,7 @@ class DataParallelPPOActor(BasePPOActor):
                 )
                 hidden_scores_accum = None
                 num_layers = 0
-                for layer_hidden in output.hidden_states:
+                for layer_hidden in hidden_layers:
                     layer_hidden = layer_hidden.squeeze(0)
                     if self.config.ulysses_size > 1:
                         layer_hidden = gather_outputs_and_unpad(
@@ -283,6 +325,7 @@ class DataParallelPPOActor(BasePPOActor):
                         visual_mask=visual_mask,
                         response_length=response_length,
                         metric=hidden_visual_metric,
+                        pooling=hidden_visual_pooling,
                     )
                     if hidden_scores_accum is None:
                         hidden_scores_accum = layer_scores
@@ -297,10 +340,13 @@ class DataParallelPPOActor(BasePPOActor):
                 )
                 del visual_mask, response_mask_bool
         else:
-            with self._visual_corruption_context(
-                model_level_visual_corruption,
-                input_ids=input_ids,
-                attention_mask=attention_mask,
+            with (
+                self._visual_corruption_context(
+                    model_level_visual_corruption,
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                ),
+                self._capture_final_hidden_state(capture_last_hidden) as last_hidden,
             ):
                 output = self.actor_module(
                     input_ids=input_ids,
@@ -319,12 +365,13 @@ class DataParallelPPOActor(BasePPOActor):
             hidden_visual_scores = None
             if return_hidden_visual_scores:
                 hidden_visual_scores = self._compute_hidden_visual_scores(
-                    hidden_states=output.hidden_states,
+                    hidden_states=tuple(last_hidden) if capture_last_hidden else output.hidden_states,
                     input_ids=input_ids,
                     response_length=response_length,
                     response_mask=micro_batch.get("response_mask"),
                     visual_token_ids=visual_token_ids,
                     metric=hidden_visual_metric,
+                    pooling=hidden_visual_pooling,
                 )
 
         if return_hidden_visual_scores:
@@ -358,6 +405,7 @@ class DataParallelPPOActor(BasePPOActor):
         response_mask: torch.Tensor | None,
         visual_token_ids: list[int] | tuple[int, ...] | None,
         metric: str,
+        pooling: str = "pairwise_mean",
     ) -> torch.Tensor:
         if not hidden_states:
             raise ValueError("hidden_state_similarity requires model outputs to include hidden_states.")
@@ -376,6 +424,7 @@ class DataParallelPPOActor(BasePPOActor):
                 visual_mask=visual_mask,
                 response_length=response_length,
                 metric=metric,
+                pooling=pooling,
             )
             if scores_accum is None:
                 scores_accum = layer_scores
@@ -415,6 +464,7 @@ class DataParallelPPOActor(BasePPOActor):
         visual_mask: torch.Tensor,
         response_length: int,
         metric: str,
+        pooling: str = "pairwise_mean",
     ) -> torch.Tensor:
         response_hidden = layer_hidden[:, -response_length:, :]
         layer_scores = response_hidden.new_zeros((layer_hidden.size(0), response_length), dtype=torch.float32)
@@ -430,6 +480,7 @@ class DataParallelPPOActor(BasePPOActor):
                 response_hidden=row_response_hidden,
                 visual_hidden=row_visual_hidden,
                 metric=metric,
+                pooling=pooling,
             )
         return layer_scores
 
@@ -450,9 +501,18 @@ class DataParallelPPOActor(BasePPOActor):
         response_hidden: torch.Tensor,
         visual_hidden: torch.Tensor,
         metric: str,
+        pooling: str = "pairwise_mean",
     ) -> torch.Tensor:
         response_hidden = response_hidden.float()
         visual_hidden = visual_hidden.float()
+        if pooling == "prototype":
+            # cosine to the mean visual hidden state (VGPO), in fp32
+            if metric != "cosine":
+                raise ValueError("visual_sensitivity_hidden_pooling=prototype requires the cosine metric.")
+            prototype = F.normalize(visual_hidden.mean(dim=0), p=2, dim=-1)
+            return F.normalize(response_hidden, p=2, dim=-1).matmul(prototype)
+        if pooling != "pairwise_mean":
+            raise ValueError(f"Unsupported visual_sensitivity_hidden_pooling: {pooling}")
         if metric == "cosine":
             response_norm = F.normalize(response_hidden, p=2, dim=-1)
             visual_norm = F.normalize(visual_hidden, p=2, dim=-1)
@@ -937,8 +997,12 @@ class DataParallelPPOActor(BasePPOActor):
 
     @torch.no_grad()
     def compute_log_prob(
-        self, data: DataProto, return_entropy: bool = False, entropy_top_p: float = 1.0
-    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        self,
+        data: DataProto,
+        return_entropy: bool = False,
+        entropy_top_p: float = 1.0,
+        hidden_visual_kwargs: dict[str, Any] | None = None,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]:
         """Compute the log probability of the responses given input_ids, attention_mask and position_ids
 
         Args:
@@ -954,13 +1018,17 @@ class DataParallelPPOActor(BasePPOActor):
                 ``responses``:  tensor of shape [batch_size, response_length]. torch.int64.
 
         Returns:
-            torch.Tensor: the log_prob tensor
+            torch.Tensor: the log_prob tensor; with ``hidden_visual_kwargs`` (``visual_token_ids``,
+            ``hidden_visual_metric``, ``hidden_visual_layers``, ``hidden_visual_pooling``) also the entropies (or
+            None) and the hidden-state visual scores of the response tokens, as (log_probs, entropies, scores)
         """
         self.actor_module.eval()
 
         temperature = data.meta_info["temperature"]
         model_level_visual_corruption = data.meta_info.get("model_level_visual_corruption")
         select_keys = ["input_ids", "attention_mask", "position_ids", "responses"]
+        if hidden_visual_kwargs:
+            select_keys.append("response_mask")
         non_tensor_select_keys = ["multi_modal_inputs"]
 
         data = data.select(select_keys, non_tensor_select_keys)
@@ -981,9 +1049,11 @@ class DataParallelPPOActor(BasePPOActor):
 
         log_probs_lst = []
         entropy_lst = [] if return_entropy else None
+        scores_lst = []
         if self.rank == 0:
             micro_batches = tqdm(micro_batches, desc="Compute log probs", position=1)
 
+        hidden_kwargs = {"return_hidden_visual_scores": True, **hidden_visual_kwargs} if hidden_visual_kwargs else {}
         for micro_batch in micro_batches:
             model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
             output = self._forward_micro_batch(
@@ -993,8 +1063,14 @@ class DataParallelPPOActor(BasePPOActor):
                 entropy_requires_grad=False,
                 entropy_top_p=entropy_top_p,
                 model_level_visual_corruption=model_level_visual_corruption,
+                **hidden_kwargs,
             )
-            if return_entropy:
+            if hidden_visual_kwargs:
+                log_probs, entropy, scores = output
+                scores_lst.append(scores)
+                if return_entropy:
+                    entropy_lst.append(entropy)
+            elif return_entropy:
                 log_probs, entropy = output
                 entropy_lst.append(entropy)
             else:
@@ -1004,11 +1080,17 @@ class DataParallelPPOActor(BasePPOActor):
         log_probs = torch.concat(log_probs_lst, dim=0)
         entropies = torch.concat(entropy_lst, dim=0) if return_entropy else None
 
+        scores = torch.concat(scores_lst, dim=0) if hidden_visual_kwargs else None
+
         if batch_idx_list is not None:
             log_probs = restore_dynamic_batch(log_probs, batch_idx_list)
             if return_entropy:
                 entropies = restore_dynamic_batch(entropies, batch_idx_list)
+            if scores is not None:
+                scores = restore_dynamic_batch(scores, batch_idx_list)
 
+        if hidden_visual_kwargs:
+            return log_probs, entropies, scores
         if return_entropy:
             return log_probs, entropies
         return log_probs
@@ -1236,6 +1318,7 @@ class DataParallelPPOActor(BasePPOActor):
             "batch_perception_mask",
             "distill_token_weights",
             "distill_text_prior_gate",
+            "advantage_scaling_factors",
         ]:
             if optional_key in data.batch.keys():
                 select_keys.append(optional_key)
@@ -1308,6 +1391,10 @@ class DataParallelPPOActor(BasePPOActor):
                                 "hidden_visual_metric": loss_config.get("visual_sensitivity_hidden_metric", "cosine"),
                             }
                         )
+                        for option, default in (("layers", "all"), ("pooling", "pairwise_mean")):
+                            value = loss_config.get(f"visual_sensitivity_hidden_{option}", default)
+                            if value != default:
+                                forward_kwargs[f"hidden_visual_{option}"] = value
                     hidden_visual_scores = None
                     if distill_config is not None:
                         log_probs, distill_per_token, distill_stats = self._forward_micro_batch_distill(
@@ -1355,6 +1442,7 @@ class DataParallelPPOActor(BasePPOActor):
                             advantage_shaping_context=advantage_shaping_context,
                             batch_entropy_mask=model_inputs.get("batch_entropy_mask"),
                             batch_perception_mask=model_inputs.get("batch_perception_mask"),
+                            advantage_scaling_factors=model_inputs.get("advantage_scaling_factors"),
                         )
                     else:
                         pg_loss, pg_metrics = compute_policy_loss(

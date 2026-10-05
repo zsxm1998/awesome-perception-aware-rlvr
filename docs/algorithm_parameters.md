@@ -45,11 +45,13 @@ Used by perception-token selection and response-level scaling. The default keeps
 - `algorithm.visual_sensitivity_metric`: sampled-token metrics `sampled_low_var_kl` (k3), `sampled_boxcox`, `sampled_abs_log_ratio` (\|log p − log q\|, ToR), `sampled_positive_log_ratio` (max(log p − log q, 0), VA-OPD's visual advantage), full-vocabulary metrics, `vepo`, or `hidden_state_similarity` (PEPO)
 - `algorithm.visual_sensitivity_boxcox_alpha`
 - `algorithm.visual_sensitivity_hidden_metric`
+- `algorithm.visual_sensitivity_hidden_layers`: `all` (default, PEPO) averages the scores of every hidden state the model returns; `last` scores the final-norm output only (VGPO), captured without keeping the other layers
+- `algorithm.visual_sensitivity_hidden_pooling`: `pairwise_mean` (default, PEPO) averages a token's similarity to each visual token; `prototype` takes the cosine to the mean visual hidden state (VGPO)
 - `algorithm.visual_token`
 - `algorithm.visual_sensitivity_log_metrics`
 - `algorithm.visual_sensitivity_jsd_weight`
 - `algorithm.visual_sensitivity_entropy_gate`
-- `algorithm.visual_sensitivity_reference`: `current`, `old`, or `teacher` (the distillation teacher scores both views; VA-OPD, with `distill_weighting`)
+- `algorithm.visual_sensitivity_reference`: `current`, `old`, or `teacher` (the distillation teacher scores both views; VA-OPD, with `distill_weighting`). With `hidden_state_similarity` and `advantage_scaling_method=vgpo`, `old` scores the tokens in the old log-prob forward
 - `algorithm.visual_sensitivity_loss_coef`
 - `algorithm.decremental_entropy_coef`
 - `algorithm.top_perception_quantile`
@@ -59,7 +61,7 @@ Used by perception-token selection and response-level scaling. The default keeps
 
 ## Advantage Scaling
 
-Used by VPPO, CGPO, PGPO and PEPO. `algorithm.response_advantage_scaling_method`
+Used by VPPO, CGPO, PGPO, PEPO and VGPO. `algorithm.response_advantage_scaling_method`
 is a legacy alias for the VPPO/CGPO response-level formulas; new configs should
 prefer `algorithm.advantage_scaling_method`.
 
@@ -75,6 +77,15 @@ prefer `algorithm.advantage_scaling_method`.
 - `algorithm.advantage_scaling_schedule`
 - `algorithm.pepo_gate_alpha`
 - `algorithm.pepo_gate_temperature`
+- `advantage_scaling_method=vgpo` (VGPO): before the update, the driver turns the old-policy cosines S of every response token into
+  factors f_inter · f_intra that multiply the advantages. Scores ρ = S − m; in the last `vgpo_gate_tail_ratio` (γ) of each
+  response, the top `vgpo_gate_top_ratio` (κ) of ρ are multiplied by 1 + β t / (T − 1) (`vgpo_compensation_strength`, β);
+  per response these compensated scores are min-max normalized to ŵ and f_intra = clamp(1 + ŵ − mean ŵ, 0.1, 2); the sum
+  of ŵ is min-max normalized among the responses of the same prompt and f_inter = clamp(1 + ŝ − mean ŝ, 0.9, 2). Requires
+  `visual_sensitivity_metric=hidden_state_similarity` and `visual_sensitivity_reference=old`.
+- `algorithm.vgpo_compensation_strength` (β, default 0.3), `algorithm.vgpo_gate_tail_ratio` (γ, 0.5), `algorithm.vgpo_gate_top_ratio` (κ, 0.2)
+- `algorithm.vgpo_score_offset`: `official` (default; m = min(0, smallest cosine of the rollout batch), what the released code's min-max amounts to) or `paper` (m = −1, Eq. 4)
+- `algorithm.vgpo_trajectory_score`: `compensated` (default, the released code: the sum of ŵ) or `raw` (Eq. 9: the sum of the compensated scores before normalization)
 
 ## ToR Token Weighting
 

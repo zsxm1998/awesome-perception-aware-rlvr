@@ -235,6 +235,13 @@ class AlgorithmConfig:
     """extra sampled sensitivity estimators to log for diagnosis (detached, never trained on), e.g. `sampled_low_var_kl` while training with `sampled_boxcox`. Accepts a list or a comma-separated string; only sampled-family metrics are allowed. Each entry also emits comparison diagnostics against the active signal: top-quantile token overlap (`diag_topq_overlap_{active}_vs_{extra}`, needs `top_perception_quantile < 1`) and response-level Spearman rank correlation (`diag_response_rank_corr_...`). Takes effect when decremental log-probs are available."""
     visual_sensitivity_hidden_metric: str = "cosine"
     """hidden-state visual sensitivity metric for single-forward visual-token/response-token similarity."""
+    visual_sensitivity_hidden_layers: str = "all"
+    """hidden states scored by `hidden_state_similarity`: `all` averages the scores of every hidden state the model
+    returns (embeddings and each decoder layer; PEPO), `last` uses the final-norm output only (VGPO)."""
+    visual_sensitivity_hidden_pooling: str = "pairwise_mean"
+    """how `hidden_state_similarity` compares a response token with the visual tokens: `pairwise_mean` averages its
+    similarity to each visual token (PEPO), `prototype` takes the cosine to the mean visual hidden state (VGPO;
+    requires `visual_sensitivity_hidden_metric=cosine`)."""
     visual_token: str = "auto"
     """visual payload token used by hidden-state visual sensitivity. `auto` resolves common Qwen/InternVL image/video placeholder ids from the tokenizer."""
     visual_sensitivity_jsd_weight: float = 0.5
@@ -275,6 +282,18 @@ class AlgorithmConfig:
     """PEPO entropy-gated visual-weight alpha; only used when `advantage_scaling_method='pepo'`."""
     pepo_gate_temperature: float = 1.8
     """PEPO softmax temperature for visual-token similarity weights; only used when `advantage_scaling_method='pepo'`."""
+    vgpo_compensation_strength: float = 0.3
+    """VGPO β: a gated token's score is multiplied by 1 + β · t / (T - 1), t its position in the response."""
+    vgpo_gate_tail_ratio: float = 0.5
+    """VGPO γ: the gate considers the last γ of each response (from token ⌊(1 - γ) T⌋ on)."""
+    vgpo_gate_top_ratio: float = 0.2
+    """VGPO κ: within that tail, the ⌊κ n⌋ (at least 1) highest-scoring tokens are compensated, ties included."""
+    vgpo_score_offset: str = "official"
+    """how VGPO turns cosines S into scores ρ = S - m: `official` uses m = min(0, smallest cosine of the rollout
+    batch), what the released code's min-max with padding zeros amounts to; `paper` uses m = -1, Eq. 4's (S + 1) / 2."""
+    vgpo_trajectory_score: str = "compensated"
+    """VGPO's response score for the group-level factor: the sum of the normalized compensated scores
+    (`compensated`, the released code) or of the compensated scores before normalization (`raw`, Eq. 9)."""
     incremental_image_transform: Optional[str] = None
     """incremental auxiliary-view transform. Configuring this, or non-zero incremental-view loss coefficients, enters DVRP-style dual-view mode. Currently only `vp_diffusion` is supported."""
     incremental_image_kwargs: Any = None
@@ -467,7 +486,7 @@ class AlgorithmConfig:
         _validate_choice(
             "advantage_scaling_method",
             self.advantage_scaling_method,
-            {"vppo", "cgpo", "pgpo", "pepo"},
+            {"vppo", "cgpo", "pgpo", "pepo", "vgpo"},
             allow_none=True,
         )
         _validate_choice(
@@ -485,6 +504,52 @@ class AlgorithmConfig:
         ):
             raise ValueError("`advantage_scaling_method` conflicts with legacy `response_advantage_scaling_method`.")
         _validate_choice("advantage_scaling_schedule", self.advantage_scaling_schedule, {"none", "linear"})
+        _validate_choice("visual_sensitivity_hidden_layers", self.visual_sensitivity_hidden_layers, {"all", "last"})
+        _validate_choice(
+            "visual_sensitivity_hidden_pooling",
+            self.visual_sensitivity_hidden_pooling,
+            {"pairwise_mean", "prototype"},
+        )
+        if (
+            self.visual_sensitivity_hidden_layers != "all" or self.visual_sensitivity_hidden_pooling != "pairwise_mean"
+        ) and self.visual_sensitivity_metric != "hidden_state_similarity":
+            raise ValueError(
+                "visual_sensitivity_hidden_layers and visual_sensitivity_hidden_pooling only apply to "
+                "visual_sensitivity_metric=hidden_state_similarity."
+            )
+        if self.visual_sensitivity_hidden_pooling == "prototype" and self.visual_sensitivity_hidden_metric != "cosine":
+            raise ValueError(
+                "visual_sensitivity_hidden_pooling=prototype requires visual_sensitivity_hidden_metric=cosine."
+            )
+        _validate_choice("vgpo_score_offset", self.vgpo_score_offset, {"official", "paper"})
+        _validate_choice("vgpo_trajectory_score", self.vgpo_trajectory_score, {"compensated", "raw"})
+        if self.vgpo_compensation_strength < 0.0:
+            raise ValueError(
+                f"vgpo_compensation_strength must be non-negative, got {self.vgpo_compensation_strength}."
+            )
+        for field_name in ("vgpo_gate_tail_ratio", "vgpo_gate_top_ratio"):
+            if not 0.0 < getattr(self, field_name) <= 1.0:
+                raise ValueError(f"{field_name} must be in (0, 1], got {getattr(self, field_name)}.")
+        if self.advantage_scaling_method == "vgpo":
+            if (
+                self.visual_sensitivity_metric != "hidden_state_similarity"
+                or self.visual_sensitivity_reference != "old"
+            ):
+                raise ValueError(
+                    "advantage_scaling_method=vgpo scores the tokens in the old log-prob forward: set "
+                    "visual_sensitivity_metric=hidden_state_similarity and visual_sensitivity_reference=old."
+                )
+            conflicts = {
+                "top_perception_quantile < 1": self.top_perception_quantile < 1.0,
+                "top_entropy_quantile < 1": self.top_entropy_quantile < 1.0,
+                "tor_use_token_weighting": self.tor_use_token_weighting,
+                "advantage_scaling_schedule": self.advantage_scaling_schedule != "none",
+                "corrupt_image": self.corrupt_image is not None,
+                "visual_sensitivity_loss_coef": self.visual_sensitivity_loss_coef != 0.0,
+            }
+            enabled = [name for name, on in conflicts.items() if on]
+            if enabled:
+                raise ValueError("advantage_scaling_method=vgpo does not combine with " + ", ".join(enabled) + ".")
         if self.pepo_gate_alpha < 0.0:
             raise ValueError(f"pepo_gate_alpha must be non-negative, but got {self.pepo_gate_alpha}.")
         if self.pepo_gate_temperature <= 0.0:

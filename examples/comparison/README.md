@@ -49,11 +49,12 @@ perturbation; patch masking uses Qwen3-VL's 16-px patches. Parameter names are l
 | `cfpo.sh` | [CFPO](../reproduction/cfpo/README.md) | in-model attention-value counterfactual | `corrupt_image=cross_modal_attention_value_mean` (λ=2), `visual_sensitivity_loss_coef=0.02`, `visual_sensitivity_reference=current` |
 | `vepo.sh` | [VEPO](../reproduction/vepo/README.md) | Gaussian noise on the normalized pixel values, std 1.08 (about 0.54 in pixel units with Qwen3-VL's image_std 0.5, the strength VEPO's code comment and paper describe), one noisy image per prompt | `visual_sensitivity_metric=vepo`, `visual_sensitivity_jsd_weight=0.7`, `visual_sensitivity_entropy_gate=normal_entropy`, `top_perception_quantile=0.2` per response, `normalize_pg_loss_by_selected_tokens=true` |
 | `noisyrollout.sh` | [NoisyRollout](../reproduction/noisyrollout/README.md) | VP-diffusion noise on the pixels, one noised image per prompt and step, used only to sample 4 of the 8 rollouts of the prompt | `rollout_image_transform=vp_diffusion`; α₀=450, λ=60, γ = t_max / 3 (the shape of the official MMK12-7B script over this run's steps), `pixel_rounding=floor`; all 8 rollouts form one group and are trained on the clean image |
+| `vgpo.sh` | [VGPO](../reproduction/vgpo/README.md) | none (single forward) | `visual_sensitivity_metric=hidden_state_similarity` on the last layer against the mean image-token state (`visual_sensitivity_hidden_layers=last`, `visual_sensitivity_hidden_pooling=prototype`), scored before the update (`visual_sensitivity_reference=old`); `advantage_scaling_method=vgpo` with β=0.3, γ=0.5, κ=0.2; factors per prompt group |
 | `grit.sh` | [GRIT](../reproduction/grit/README.md) | – | think / rethink / answer format with inline JSON evidence boxes (`examples/system_prompt/grit_GR.txt`, no format prompt) and `grit.py:compute_score` (format, box format, rule-based answer, 0.1·BLEU-1); trained on ViRL39K instead of GRIT's 20 samples |
 | `cgpo.sh` | CGPO ([examples/reproduction/cgpo](../reproduction/cgpo/README.md)) | evidence regions flattened to their local mean (`cgpo_flat`, one per response) | `<region>` evidence format (`xml_grounded_reasoning.jinja` and reward, format weight 0.1); `top_entropy_quantile=0.3`, `top_perception_quantile=0.3` (within each update micro-batch, `*_thr_granularity=micro_batch`, as in the CGPO paper), `include_region_tokens_in_perception_mask=true`; `advantage_scaling_method=cgpo`, `cgpo_response_scaling_coef=0.1`; grounding-consistency reward weight 0.1; `visual_sensitivity_reference=old` |
 
 Settings that belong to a paper's base recipe rather than to its method are replaced by the shared
-recipe. The methods that their papers run on DAPO (VPPO and PGPO; PAPO, ToR and DVRP report both
+recipe. The methods that their papers run on DAPO (VPPO, PGPO and VGPO; PAPO, ToR and DVRP report both
 GRPO and DAPO) run on GRPO here, without DAPO's dynamic sampling and clip-higher; the DAPO baseline
 keeps both. VPPO's entropy penalty (which the paper applies to its baseline as well), NoisyRollout's
 entropy bonus, and the frozen vision tower of VEPO and NoisyRollout are not used either. The shared entropy penalty of 0.005 keeps
@@ -96,7 +97,7 @@ against `qwen*_grpo_deepeyes.sh`).
 ```bash
 bash scripts/prepare_data.sh comparison
 bash examples/comparison/qwen3_vl_4b/papo.sh                      # one method
-for m in grpo papo vppo tor dvrp pgpo pepo cfpo vepo noisyrollout grit cgpo; do
+for m in grpo papo vppo tor dvrp pgpo pepo cfpo vepo noisyrollout vgpo grit cgpo; do
     bash examples/comparison/qwen3_vl_4b/$m.sh                    # all methods, one after another
 done
 bash scripts/prepare_eval_data.sh comparison
@@ -137,6 +138,7 @@ the best validation reward.
 | CFPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | VEPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | NoisyRollout | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | GRIT | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | CGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | OPD from sampled tokens, 8B teacher (`opd_sampled.sh`) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |

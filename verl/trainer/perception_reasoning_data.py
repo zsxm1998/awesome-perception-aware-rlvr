@@ -428,6 +428,8 @@ def build_perception_reasoning_loss_config(
         "visual_sensitivity_boxcox_alpha": config.visual_sensitivity_boxcox_alpha,
         "visual_sensitivity_log_metrics": config.visual_sensitivity_log_metrics,
         "visual_sensitivity_hidden_metric": config.visual_sensitivity_hidden_metric,
+        "visual_sensitivity_hidden_layers": config.visual_sensitivity_hidden_layers,
+        "visual_sensitivity_hidden_pooling": config.visual_sensitivity_hidden_pooling,
         "visual_token": config.visual_token,
         "visual_sensitivity_jsd_weight": config.visual_sensitivity_jsd_weight,
         "visual_sensitivity_entropy_gate": config.visual_sensitivity_entropy_gate,

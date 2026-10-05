@@ -55,7 +55,7 @@ DATASETS: dict[str, TrainDataset] = {
         repo_id="PAPOGalaxy/PAPO_ViRL39K_train",
         splits={"train": ["data/train-*.parquet"]},
         description="ViRL39K (38,870 multimodal reasoning problems) as preprocessed by PAPO",
-        used_by=["papo", "vppo", "dvrp", "pgpo", "cgpo", "comparison", "opd_comparison", "va_opd", "vcsd"],
+        used_by=["papo", "vppo", "dvrp", "pgpo", "cgpo", "comparison", "opd_comparison", "va_opd", "vcsd", "vgpo"],
     ),
     "mmk12": TrainDataset(
         name="mmk12",
@@ -74,6 +74,7 @@ DATASETS: dict[str, TrainDataset] = {
             "va_opd",
             "vcsd",
             "vision_opd",
+            "vgpo",
         ],
     ),
     "geometry3k": TrainDataset(
@@ -171,6 +172,7 @@ METHOD_GROUPS: dict[str, list[str]] = {
     "vgs": ["vision_sr1", "vision_sr1_val"],
     "vcsd": ["virl39k", "mmk12"],
     "vision_opd": ["vision_opd", "mmk12"],
+    "vgpo": ["virl39k", "mmk12"],
 }
 
 
