@@ -371,6 +371,46 @@ class vLLMRollout(BaseRollout):
         return DataProto(batch=batch, non_tensor_batch=non_tensor_batch, meta_info=prompts.meta_info)
 
     @torch.no_grad()
+    def answer_claim_probes(self, probes: DataProto) -> DataProto:
+        """Greedy one-token yes/no answers to visual-claim probes (see verl/trainer/claim_probes.py)."""
+        from ...trainer.claim_probes import (
+            CLAIM_PROBE_LONG_RESPONSE_MARGIN,
+            answer_claim_probes,
+            claim_probe_answer_ids,
+        )
+
+        meta = probes.meta_info
+        yes_ids, no_ids = claim_probe_answer_ids(
+            self.tokenizer, meta["claim_probe_yes_tokens"], meta["claim_probe_no_tokens"]
+        )
+
+        def generate(inputs: list[dict[str, Any]]) -> list[int]:
+            with self.update_sampling_params(
+                n=1, temperature=0.0, top_p=1.0, top_k=-1, max_tokens=1, allowed_token_ids=yes_ids + no_ids
+            ):
+                completions: list[RequestOutput] = self.inference_engine.generate(
+                    prompts=inputs, sampling_params=self.sampling_params, use_tqdm=self.use_tqdm
+                )
+            return [completion.outputs[0].token_ids[0] for completion in completions]
+
+        return answer_claim_probes(
+            probes,
+            tokenizer=self.tokenizer,
+            generate_fn=generate,
+            process_image_fn=process_image,
+            count=meta["claim_probe_count"],
+            question=meta["claim_probe_question"],
+            yes_words=meta["claim_probe_yes_tokens"],
+            no_words=meta["claim_probe_no_tokens"],
+            long_response_tokens=self.config.prompt_length
+            + self.config.response_length
+            - CLAIM_PROBE_LONG_RESPONSE_MARGIN,
+            max_model_len=self.config.max_model_len or self.config.prompt_length + self.config.response_length,
+            min_pixels=meta["min_pixels"],
+            max_pixels=meta["max_pixels"],
+        )
+
+    @torch.no_grad()
     def _generate_agent_sequences(self, prompts: DataProto) -> DataProto:
         from ..agent.backends import (
             VLLMAgentBatchScheduler,

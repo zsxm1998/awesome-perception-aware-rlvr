@@ -49,6 +49,13 @@ from ..utils.seqlen_balancing import get_seqlen_balanced_partitions, log_seqlen_
 from ..utils.tokenizer import check_teacher_compatibility
 from ..workers.fsdp_workers import FSDPWorker
 from ..workers.reward import AutoRewardManager
+from .claim_probes import (
+    VISUAL_CLAIMS_KEY,
+    attach_perception_scores,
+    build_claim_probe_batch,
+    claim_probe_answer_ids,
+    claim_probe_rows,
+)
 from .config import PPOConfig
 from .core_algos import (
     AdvantageEstimator,
@@ -324,6 +331,18 @@ class RayPPOTrainer:
         config.worker.actor.optim.training_steps = self.training_steps
         config.worker.critic.optim.training_steps = self.training_steps
         print(f"Total training steps: {self.training_steps}")
+
+        if config.algorithm.claim_probe_count > 0:
+            # fails unless every yes/no candidate is one token
+            claim_probe_answer_ids(
+                tokenizer, config.algorithm.claim_probe_yes_tokens, config.algorithm.claim_probe_no_tokens
+            )
+            train_columns = train_dataloader.dataset.dataset.column_names
+            if VISUAL_CLAIMS_KEY not in train_columns:
+                raise ValueError(
+                    f"algorithm.claim_probe_count > 0 needs the training data column {VISUAL_CLAIMS_KEY!r} "
+                    "(e.g. data/vapo or data/virl39k_claims from scripts/prepare_data.sh)."
+                )
 
         self._latest_vision_metrics: dict[str, float] = {}
         self.visual_token_ids: list[int] = []
@@ -717,6 +736,42 @@ class RayPPOTrainer:
         return self._attach_grounding_consistency_reward_inputs(
             batch, rollout_config, eligible_sample_mask, cache_token
         )
+
+    def _attach_claim_probe_scores(self, batch: DataProto, metrics: dict[str, Any]) -> None:
+        """Probe the responses with accuracy 1 and write their perception scores (see claim_probes.py).
+
+        Runs once per step on the batch _make_batch_data returns, i.e. after online filtering, so no probe is
+        spent on dropped groups. Accuracy comes from a rule-based reward pass without the perception score,
+        which does not change it. A reward that online filtering computed is dropped, so the step scores the
+        batch again with the perception score.
+        """
+        count = self.config.algorithm.claim_probe_count
+        _, pre_reward_metrics = ray.get(self.reward_fn.compute_reward.remote(self._reward_rpc_input(batch)))
+        if "accuracy" not in pre_reward_metrics:
+            raise KeyError("claim probes need the reward function to report `accuracy`")
+        rows = claim_probe_rows(batch, pre_reward_metrics["accuracy"], count)
+        probe_output = None
+        if rows:
+            probes = build_claim_probe_batch(batch, rows, self.config.data.seed, self.global_step)
+            probes.meta_info.update(
+                {
+                    "claim_probe_count": count,
+                    "claim_probe_question": self.config.algorithm.claim_probe_question,
+                    "claim_probe_yes_tokens": list(self.config.algorithm.claim_probe_yes_tokens),
+                    "claim_probe_no_tokens": list(self.config.algorithm.claim_probe_no_tokens),
+                    "min_pixels": self.config.data.min_pixels,
+                    "max_pixels": self.config.data.max_pixels,
+                }
+            )
+            probes, pad_size = pad_dataproto_to_divisor(probes, self.actor_rollout_ref_wg.world_size)
+            probe_output = unpad_dataproto(self.actor_rollout_ref_wg.answer_claim_probes(probes), pad_size)
+        metrics.update(
+            attach_perception_scores(batch, rows, probe_output, self.config.algorithm.claim_probe_late_emphasis)
+        )
+        batch.non_tensor_batch.pop("raw_prompt_ids")
+        if "token_level_scores" in batch.batch.keys():
+            batch.batch.pop("token_level_scores")
+            batch.non_tensor_batch.pop("reward_details", None)
 
     def _reward_rpc_input(self, batch: DataProto) -> DataProto:
         """Build the minimal payload required by an agentic reward actor.
@@ -1259,6 +1314,10 @@ class RayPPOTrainer:
                 new_batch,
                 meta_info_keys=["min_pixels", "max_pixels", "video_fps"],
             )
+            # claim probes re-read the prompt after the rollout (see _attach_claim_probe_scores)
+            probe_prompt_ids = (
+                gen_batch.non_tensor_batch["raw_prompt_ids"] if self.config.algorithm.claim_probe_count > 0 else None
+            )
 
             rollout_image_transform = self.config.algorithm.rollout_image_transform
             if rollout_image_transform is not None:
@@ -1303,6 +1362,10 @@ class RayPPOTrainer:
 
             # repeat to align with repeated responses in rollout
             new_batch = new_batch.repeat(repeat_times=self.config.worker.rollout.n, interleave=True)
+            if probe_prompt_ids is not None:
+                new_batch.non_tensor_batch["raw_prompt_ids"] = np.repeat(
+                    probe_prompt_ids, self.config.worker.rollout.n, axis=0
+                )
             new_batch = new_batch.union(gen_batch_output)
 
             # filter group
@@ -1458,6 +1521,9 @@ class RayPPOTrainer:
                         reward_fn=self.reward_fn,
                         cache_token=f"train-step-{self.global_step}",
                     )
+                    if self.config.algorithm.claim_probe_count > 0:
+                        with timer("claim_probe", timing_raw):
+                            self._attach_claim_probe_scores(batch, metrics)
                     self.actor_rollout_ref_wg.release_rollout_engine()
 
                 # balance the number of valid tokens on each dp rank.
@@ -1555,7 +1621,17 @@ class RayPPOTrainer:
                         # get token level scores asynchronously
                         reward_tensor, reward_metrics = ray.get(reward_ref)
                         train_reward_metrics = reward_metrics
-                        metrics.update({f"reward/{k}": v for k, v in reduce_metrics(reward_metrics).items()})
+                        reward_metric_values = {f"reward/{k}": v for k, v in reduce_metrics(reward_metrics).items()}
+                        if self.config.algorithm.online_filtering:
+                            # rescored after the claim probes: as on the other filtered paths, reward/overall
+                            # describes the kept batch and the metrics online filtering logged describe every
+                            # candidate
+                            reward_metric_values = {
+                                k: v
+                                for k, v in reward_metric_values.items()
+                                if k == "reward/overall" or k not in metrics
+                            }
+                        metrics.update(reward_metric_values)
                         if grounding_reward_result is not None:
                             metrics.update(grounding_reward_result.metrics)
                         batch.batch["token_level_scores"] = reward_tensor

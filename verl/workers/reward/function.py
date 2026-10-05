@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import importlib.util
+import inspect
+import math
 import os
 import sys
 from collections import defaultdict
@@ -35,6 +37,7 @@ class RewardInput(TypedDict):
     num_images: NotRequired[int]
     grounding_consistency: NotRequired[float]
     grounding_consistency_raw: NotRequired[float]
+    perception_score: NotRequired[float]  # claim probes (verl/trainer/claim_probes.py), only for probed responses
     data_source: NotRequired[str]
     question: NotRequired[str]
     tool_call_successes: NotRequired[int]
@@ -100,6 +103,13 @@ def _get_optional_scalar(data: DataProto, idx: int, key: str) -> float | None:
     if values is None:
         return None
     return float(values[idx])
+
+
+def _add_perception_score(reward_input: RewardInput, data: DataProto, idx: int) -> None:
+    """The claim probes' perception score, for the responses that were probed (the others hold NaN)."""
+    values = data.non_tensor_batch.get("perception_score")
+    if values is not None and math.isfinite(float(values[idx])):
+        reward_input["perception_score"] = float(values[idx])
 
 
 def _response_payload(
@@ -231,6 +241,7 @@ class SequentialFunctionRewardManagerMixin:
             grounding_consistency_raw = _get_optional_scalar(data, i, "grounding_consistency_raw")
             if grounding_consistency_raw is not None:
                 reward_input["grounding_consistency_raw"] = grounding_consistency_raw
+            _add_perception_score(reward_input, data, i)
             score = self.reward_fn(reward_input)
             reward_tensor[i, reward_position] = score["overall"]
             for key, value in score.items():
@@ -271,6 +282,7 @@ class BatchFunctionRewardManagerMixin:
             grounding_consistency_raw = _get_optional_scalar(data, i, "grounding_consistency_raw")
             if grounding_consistency_raw is not None:
                 reward_input["grounding_consistency_raw"] = grounding_consistency_raw
+            _add_perception_score(reward_input, data, i)
             reward_inputs.append(reward_input)
             reward_positions.append(reward_position)
 
@@ -307,6 +319,14 @@ class AutoRewardManager(BatchFunctionRewardManagerMixin, SequentialFunctionRewar
             raise AttributeError(f"Module {module} does not have function {config.reward_function_name}.")
 
         reward_fn = getattr(module, config.reward_function_name)
+        parameters = inspect.signature(reward_fn).parameters.values()
+        if not any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters):
+            unknown = sorted(set(config.reward_function_kwargs) - {parameter.name for parameter in parameters})
+            if unknown:  # fail at start-up rather than at the first reward
+                raise TypeError(
+                    f"`{config.reward_function_name}` of {config.reward_function} takes no argument {unknown} "
+                    "(worker.reward.reward_function_kwargs); e.g. perception_weight needs math.py:compute_score."
+                )
         reward_name = getattr(module, "REWARD_NAME", "unknown")
         reward_type = getattr(module, "REWARD_TYPE", "batch")
         # the response token ids, only for reward functions that ask for them (a list per response is costly)

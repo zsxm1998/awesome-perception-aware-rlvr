@@ -123,6 +123,33 @@ Used by NoisyRollout. Off by default (`null`); the generation step is then uncha
   the number of training steps; `noise_t_max` (default 1000) caps the step; `pixel_rounding` (`floor`,
   the default, truncates to 8 bits as the released NoisyRollout code; `round`).
 
+## Visual-Claim Probes
+
+Used by VAPO. Off by default (`0`); the step then has no extra pass, column or reward term.
+
+- `algorithm.claim_probe_count` (K): after the rollout (and after online filtering), every response with accuracy 1
+  whose row has claims is cut at K random punctuation marks of its reasoning (the text before `</think>`, else
+  `<answer>`, else `\boxed`); at each cut the policy answers (greedy, one token among the candidates below)
+  whether one of the row's claims is correct. The claims come from the training column `visual_claims` (a JSON
+  list of `{"claim", "correct"}`; `[]` for rows without claims). The perception score
+  R_perc = max(0, (Σ w·s / Σ w − 0.5) / 0.5) of a response, with s the right/wrong answers and
+  w = exp(β · cut position / response length) in characters, is passed to the reward function as
+  `perception_score`. Requires `worker.reward.reward_function_kwargs.perception_weight > 0` (γ of
+  `examples/reward_function/math.py:compute_score`: (1 − format_weight − γ)·accuracy + format_weight·format +
+  γ·1[accuracy = 1]·R_perc; a reward function without this argument is refused at start-up). Sets
+  `worker.rollout.max_model_len` to prompt + response + 128 tokens when unset. Rejected with agentic rollout, `adv_estimator=remax`, `rollout_image_transform` and the
+  grounding consistency reward. With online filtering, `filter_key` must be `accuracy` or `format`: the probes run
+  on the kept groups, before the perception score exists. The probes are seeded by `data.seed`,
+  the step and the response's row. Implementation: `verl/trainer/claim_probes.py`.
+- `algorithm.claim_probe_late_emphasis` (β, default 1.5): weight of later cuts in R_perc.
+- `algorithm.claim_probe_question` (default: the released `"\n<anchor>{claim} Is this claim correct? Answer (Yes/No): "`):
+  the text after the response prefix, `{claim}` replaced by the claim. On the command line, put the value in
+  double quotes inside the argument, e.g. `'algorithm.claim_probe_question="\n<anchor>{claim} Is this claim correct? Answer (Yes/No):"'`.
+- `algorithm.claim_probe_yes_tokens`, `algorithm.claim_probe_no_tokens` (default: the released
+  `["yes", "Yes", "True", "true", "1"]` and `["0", "no", "No", "false", "False"]`): the candidates of the greedy
+  answer, each a single token of the tokenizer. Quote every item (`'algorithm.claim_probe_yes_tokens=["Yes"]'`):
+  YAML reads an unquoted yes/Yes/True as a boolean, which is refused.
+
 ## Grounding Consistency
 
 Used by CGPO.
