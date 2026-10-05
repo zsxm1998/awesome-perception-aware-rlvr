@@ -14,6 +14,7 @@
 
 from typing import Any, Optional
 
+import numpy as np
 import torch
 
 from ..protocol import DataProto
@@ -185,7 +186,7 @@ def build_sensitivity_advantage_shaping_context(
     scaling_method = _get_advantage_scaling_method(loss_config)
     if not loss_config or scaling_method is None:
         return None
-    if scaling_method in {"pgpo", "pepo"}:
+    if scaling_method in {"pgpo", "pepo", "vgpo"}:
         return None
     batch = data.batch if isinstance(data, DataProto) else data
     if "per_token_sensitivity_scores" in batch:
@@ -243,6 +244,7 @@ def compute_perception_reasoning_policy_loss(
     advantage_shaping_context: dict[str, float] | None = None,
     batch_entropy_mask: torch.Tensor | None = None,
     batch_perception_mask: torch.Tensor | None = None,
+    advantage_scaling_factors: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     """Unified policy loss for PAPO / VPPO / ToR / DVRP / VEPO / PGPO / PEPO / CFPO / CGPO.
 
@@ -417,7 +419,14 @@ def compute_perception_reasoning_policy_loss(
     # Step 2: Compute and apply advantage modulation.
     scaling_method = _get_advantage_scaling_method(loss_config)
     scaling_factors = None
-    if scaling_method is not None:
+    if scaling_method == "vgpo":
+        # computed on the driver per prompt group before the update (compute_vgpo_advantage_factors)
+        if advantage_scaling_factors is None:
+            raise ValueError(
+                "advantage_scaling_method=vgpo requires the advantage_scaling_factors built before the update."
+            )
+        scaling_factors = advantage_scaling_factors.to(advantages.dtype)
+    elif scaling_method is not None:
         if perception_scores is None:
             raise ValueError(
                 "advantage_scaling_method requires either decremental_old_log_probs or per_token_sensitivity_scores."
@@ -1053,3 +1062,102 @@ def _combine_masks(entropy_mask: torch.Tensor | None, perception_mask: torch.Ten
     if perception_mask is not None:
         return perception_mask
     raise ValueError("At least one mask must be provided.")
+
+
+VGPO_TOKEN_FACTOR_RANGE = (0.1, 2.0)  # clamp of the within-response factor in the released code (not in the paper)
+VGPO_RESPONSE_FACTOR_RANGE = (0.9, 2.0)  # clamp of the within-group factor in the released code (not in the paper)
+
+
+def compute_vgpo_advantage_factors(
+    cosine: torch.Tensor,
+    response_mask: torch.Tensor,
+    uids: Any,
+    compensation_strength: float = 0.3,
+    gate_tail_ratio: float = 0.5,
+    gate_top_ratio: float = 0.2,
+    score_offset: str = "official",
+    trajectory_score: str = "compensated",
+) -> tuple[torch.Tensor, dict[str, float]]:
+    """VGPO's advantage factors (Eqs. 4-12) for a rollout batch, f_inter(response) * f_intra(token).
+
+    ``cosine`` is each response token's cosine to its prompt's mean visual hidden state (last layer, before the
+    update). Scores ρ = S - m (``score_offset``); tokens in the last ``gate_tail_ratio`` of a response whose ρ is
+    among the top ``gate_top_ratio`` there get ρ · (1 + β t / (T - 1)); each response's compensated scores are
+    min-max normalized to ŵ and give f_intra = clamp(1 + ŵ - mean(ŵ), 0.1, 2). The response score s = Σ ŵ
+    (``trajectory_score=raw``: the compensated scores before normalization) is min-max normalized within the
+    responses of the same prompt (uid) and gives f_inter = clamp(1 + ŝ - mean(ŝ), 0.9, 2). The steps, epsilons,
+    rounding, ties and clamps follow the released code; its groups are adjacent responses of a micro-batch, ours are
+    the prompt's responses.
+    """
+    mask = response_mask.to(torch.bool)
+    cosine = cosine.float()
+    if score_offset == "official":
+        valid = cosine[mask]
+        offset = min(0.0, valid.min().item()) if valid.numel() > 0 else 0.0
+    elif score_offset == "paper":
+        offset = -1.0
+    else:
+        raise ValueError(f"Unknown vgpo_score_offset: {score_offset}")
+    rho = (cosine - offset).masked_fill(~mask, 0.0)
+
+    batch_size, response_length = rho.shape
+    lengths = mask.sum(-1)
+    positions = torch.arange(response_length, device=rho.device).unsqueeze(0).expand(batch_size, -1)
+    # the released code's linear schedule: (t - 0) / (T - 1 + 1e-8), then / (1 - 0 + 1e-8)
+    span = (lengths - 1).clamp_min(0).float().unsqueeze(-1) + 1e-8
+    compensation = compensation_strength * (positions.float() / span) / (1.0 + 1e-8)
+
+    # gate: from int(T * (1 - γ)) on, scores >= the int(n * κ)-th largest (at least the largest), ties included
+    start = torch.floor(lengths.double() * (1.0 - gate_tail_ratio)).long()
+    tail = mask & (positions >= start.unsqueeze(-1))
+    num_tail = tail.sum(-1)
+    k = torch.floor(num_tail.double() * gate_top_ratio).long().clamp_min(1)
+    sorted_tail = rho.masked_fill(~tail, float("-inf")).sort(dim=-1, descending=True).values
+    threshold = sorted_tail.gather(-1, (k - 1).clamp_max(response_length - 1).unsqueeze(-1))
+    gate = tail & (rho >= threshold) & (num_tail > 0).unsqueeze(-1)
+
+    weights = (rho * (1.0 + gate.float() * compensation)).masked_fill(~mask, 0.0)
+    big = torch.finfo(torch.float32).max
+    w_min = weights.masked_fill(~mask, big).min(dim=-1, keepdim=True).values
+    w_max = weights.masked_fill(~mask, -big).max(dim=-1, keepdim=True).values
+    w_hat = ((weights - w_min) / (w_max - w_min + 1e-8)).masked_fill(~mask, 0.0)
+    w_mean = w_hat.sum(-1, keepdim=True) / lengths.clamp_min(1).unsqueeze(-1)
+    intra = torch.clamp(1.0 + w_hat - w_mean, *VGPO_TOKEN_FACTOR_RANGE).masked_fill(~mask, 1.0)
+
+    scores = (w_hat if trajectory_score == "compensated" else weights).sum(-1)
+    _, group = np.unique(np.asarray(uids).astype(str), return_inverse=True)
+    group = torch.as_tensor(group.reshape(-1), device=rho.device)
+    num_groups = int(group.max()) + 1 if batch_size > 0 else 0
+    group_min = torch.full((num_groups,), big, device=rho.device).scatter_reduce(0, group, scores, "amin")
+    group_max = torch.full((num_groups,), -big, device=rho.device).scatter_reduce(0, group, scores, "amax")
+    normalized = (scores - group_min[group]) / (group_max[group] - group_min[group] + 1e-8)
+    group_sum = torch.zeros(num_groups, device=rho.device).index_add(0, group, normalized)
+    group_size = torch.zeros(num_groups, device=rho.device).index_add(0, group, torch.ones_like(normalized))
+    inter = torch.clamp(1.0 + normalized - (group_sum / group_size)[group], *VGPO_RESPONSE_FACTOR_RANGE)
+
+    factors = inter.unsqueeze(-1) * intra
+    valid_cosine = cosine[mask]
+    first_half = mask & (positions.float() < lengths.float().unsqueeze(-1) / 2)
+    second_half = mask & ~first_half
+    metrics = {
+        "vgpo/cosine_mean": to_float(valid_cosine.mean()) if valid_cosine.numel() else 0.0,
+        "vgpo/cosine_min": to_float(valid_cosine.min()) if valid_cosine.numel() else 0.0,
+        "vgpo/cosine_negative_fraction": to_float((valid_cosine < 0).float().mean()) if valid_cosine.numel() else 0.0,
+        "vgpo/score_offset": float(offset),
+        "vgpo/gate_pass_rate": to_float(gate.sum() / mask.sum().clamp_min(1)),
+        "vgpo/token_factor_mean": to_float(intra[mask].mean()) if mask.any() else 1.0,
+        "vgpo/token_factor_min": to_float(intra[mask].min()) if mask.any() else 1.0,
+        "vgpo/token_factor_max": to_float(intra[mask].max()) if mask.any() else 1.0,
+        "vgpo/token_factor_late_early_ratio": to_float(
+            intra[second_half].mean() / intra[first_half].mean().clamp_min(1e-8)
+        )
+        if first_half.any() and second_half.any()
+        else 1.0,
+        "vgpo/response_factor_mean": to_float(inter.mean()) if batch_size else 1.0,
+        "vgpo/response_factor_min": to_float(inter.min()) if batch_size else 1.0,
+        "vgpo/response_factor_max": to_float(inter.max()) if batch_size else 1.0,
+        "vgpo/response_factor_at_lower_clamp": to_float((inter <= VGPO_RESPONSE_FACTOR_RANGE[0] + 1e-6).float().mean())
+        if batch_size
+        else 0.0,
+    }
+    return factors, metrics

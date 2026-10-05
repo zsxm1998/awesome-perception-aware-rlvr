@@ -95,6 +95,19 @@ suites:
       decoding. The paper uses the full 3,040-item MathVision test set (here VPPO-Eval's 2,907
       verifiable items) and asks HallusionBench questions for a \boxed{yes} or \boxed{no} answer.
 
+  vgpo:
+    description: VGPO Table 1 (6 math + 4 vision-dependent benchmarks; GeoMath is not public)
+    benchmarks: [mathvista, mathverse, wemath, mmk12, geo3k, logicvista, clevr_count, mmmu_pro, mathverse_v]
+    defaults:  # the training prompt and pixels of examples/reproduction/vgpo
+      format_prompt: examples/format_prompt/math_perception.jinja
+      min_pixels: 262144
+      max_pixels: 4194304
+    notes: >-
+      VGPO takes these benchmarks from PAPO-Eval and reports greedy accuracy (temperature 0); add
+      `--temperature 0 --num-samples 1` to match, the default is PAPO-Eval's avg@8 at T=1.0. The
+      remote-sensing GeoMath benchmark of the paper has no public data and is left out, so
+      Avg-Math here averages 5 benchmarks instead of 6. The official evaluation code is not released.
+
   tor:
     description: ToR Table 4 (4 reasoning benchmarks + HallusionBench)
     benchmarks: [mathverse, mathvision, mathvista, wemath, hallusionbench]

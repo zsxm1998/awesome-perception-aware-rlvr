@@ -97,6 +97,7 @@ from .perception_reasoning_data import (
 from .perception_reasoning_loss import (
     build_batch_token_masks,
     build_sensitivity_advantage_shaping_context,
+    compute_vgpo_advantage_factors,
     has_perception_reasoning,
 )
 from .rollout_image_transform import (
@@ -1489,9 +1490,17 @@ class RayPPOTrainer:
                         ):
                             batch.meta_info["return_old_entropies"] = True
                             batch.meta_info["old_entropy_top_p"] = self.config.algorithm.entropy_top_p
+                        if self.config.algorithm.advantage_scaling_method == "vgpo":
+                            batch.meta_info["old_hidden_visual_scores"] = {
+                                "visual_token_ids": self.visual_token_ids,
+                                "hidden_visual_metric": self.config.algorithm.visual_sensitivity_hidden_metric,
+                                "hidden_visual_layers": self.config.algorithm.visual_sensitivity_hidden_layers,
+                                "hidden_visual_pooling": self.config.algorithm.visual_sensitivity_hidden_pooling,
+                            }
                         old_log_probs = self.actor_rollout_ref_wg.compute_log_probs(batch)
                         batch.meta_info.pop("return_old_entropies", None)
                         batch.meta_info.pop("old_entropy_top_p", None)
+                        batch.meta_info.pop("old_hidden_visual_scores", None)
                         batch = batch.union(old_log_probs)
 
                 if needs_auxiliary_log_probs(self.config.algorithm):
@@ -1618,6 +1627,21 @@ class RayPPOTrainer:
                     for key, mask in batch_masks.items():
                         batch.batch[key] = mask
                     metrics.update(mask_metrics)
+                    if self.config.algorithm.advantage_scaling_method == "vgpo":
+                        # per prompt group over the whole rollout batch, before the update
+                        algorithm = self.config.algorithm
+                        factors, vgpo_metrics = compute_vgpo_advantage_factors(
+                            batch.batch["per_token_sensitivity_scores"],
+                            batch.batch["response_mask"],
+                            batch.non_tensor_batch["uid"],
+                            compensation_strength=algorithm.vgpo_compensation_strength,
+                            gate_tail_ratio=algorithm.vgpo_gate_tail_ratio,
+                            gate_top_ratio=algorithm.vgpo_gate_top_ratio,
+                            score_offset=algorithm.vgpo_score_offset,
+                            trajectory_score=algorithm.vgpo_trajectory_score,
+                        )
+                        batch.batch["advantage_scaling_factors"] = factors
+                        metrics.update(vgpo_metrics)
 
                 # update critic
                 if self.use_critic:

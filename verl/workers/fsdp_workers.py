@@ -939,6 +939,8 @@ class FSDPWorker(Worker):
         data.meta_info["temperature"] = self.config.rollout.temperature
         # the rollout policy's entropy is returned for batch-level entropy masks (entropy_thr_granularity=batch)
         return_entropy = bool(data.meta_info.get("return_old_entropies", False))
+        # hidden-state visual scores of the response tokens from the same forward (VGPO)
+        hidden_visual_kwargs = data.meta_info.get("old_hidden_visual_scores")
         # perform recompute log_prob
         with self.ulysses_sharding_manager:
             data = self.ulysses_sharding_manager.preprocess_data(data)
@@ -946,12 +948,16 @@ class FSDPWorker(Worker):
                 data=data,
                 return_entropy=return_entropy,
                 entropy_top_p=float(data.meta_info.get("old_entropy_top_p", 1.0)),
+                **({"hidden_visual_kwargs": hidden_visual_kwargs} if hidden_visual_kwargs else {}),
             )
-            tensors = (
-                {"old_log_probs": output[0], "old_entropies": output[1]}
-                if return_entropy
-                else {"old_log_probs": output}
-            )
+            if hidden_visual_kwargs:
+                tensors = {"old_log_probs": output[0], "per_token_sensitivity_scores": output[2]}
+                if return_entropy:
+                    tensors["old_entropies"] = output[1]
+            elif return_entropy:
+                tensors = {"old_log_probs": output[0], "old_entropies": output[1]}
+            else:
+                tensors = {"old_log_probs": output}
             output = DataProto.from_dict(tensors=tensors, meta_info={"temperature": self.config.rollout.temperature})
             output = self.ulysses_sharding_manager.postprocess_data(output)
 
