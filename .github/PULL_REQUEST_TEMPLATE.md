@@ -22,15 +22,15 @@
 
 <!-- Keep the items that apply and tick them. -->
 
-**Paper list**
-
-- [ ] Added to both `README.md` and `README_zh.md`, newest first: arXiv link, first author, venue (only if confirmed by the arXiv comments, OpenReview or the official repository), code link and a one-line key idea
-- [ ] `python scripts/check_docs.py --fix` passes (it also updates the paper-count badges)
-
 **All**
 
 - [ ] The title follows the commit message format (`[type] scope: summary`)
 - [ ] `pre-commit run --all-files` passes (hooks installed with `pre-commit install`)
+
+**Paper list**
+
+- [ ] Added to both `README.md` and `README_zh.md`, newest first: arXiv link, first author, venue (only if confirmed by the arXiv comments, OpenReview or the official repository), code link and a one-line key idea
+- [ ] `python scripts/check_docs.py --fix` passes (it also updates the paper-count badges)
 
 **Code**
 
