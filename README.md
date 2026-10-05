@@ -90,9 +90,11 @@ so they can be combined, compared and extended with a few configuration switches
 - [ ] Results of the controlled comparison and of the reproductions (runs in progress).
 - [x] On-policy distillation (OPD) next to GRPO and DAPO (a teacher model, OPD from sampled tokens and on
   the full distributions), with VA-OPD, VGS, VCSD and Vision-OPD.
-- [ ] More thinking-with-images methods in the line of DeepEyes, e.g. MGPO, Chain-of-Focus and
-  Pixel Reasoner.
-- [ ] More grounded-reasoning methods in the line of GRIT, e.g. TreeVGR, DeFacto and ViGoRL.
+- [ ] More single-turn methods in the controlled comparison: NoisyRollout and VGPO (next), then VAPO.
+- [ ] A grounded-reasoning comparison on data with evidence boxes: TreeVGR, DeFacto and iVGR next to
+  GRIT and CGPO.
+- [ ] More thinking-with-images methods in the line of DeepEyes: MGPO, Mini-o3 and Pixel Reasoner, and
+  MED's evaluation with and without the tool.
 
 Suggestions are welcome: open an issue to propose a method, or see [Contributing](#-contributing).
 

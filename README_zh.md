@@ -81,8 +81,9 @@ PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · GRIT · DeepEyes 
 - [ ] 统一对比和各方法复现的结果（正在跑）。
 - [x] 在线策略蒸馏（OPD）：GRPO、DAPO 之外的基础训练方式（教师模型，基于采样 token 和基于完整分布的两种目标），
   及 VA-OPD、VGS、VCSD、Vision-OPD。
-- [ ] 更多 DeepEyes 方向的"用图像思考"方法，如 MGPO、Chain-of-Focus、Pixel Reasoner。
-- [ ] 更多 GRIT 方向的定位推理方法，如 TreeVGR、DeFacto、ViGoRL。
+- [ ] 统一对比加入更多单轮方法：先做 NoisyRollout、VGPO，再做 VAPO。
+- [ ] 在带证据框的数据上新开定位推理对比：TreeVGR、DeFacto、iVGR，与 GRIT、CGPO 一起比较。
+- [ ] 更多 DeepEyes 方向的"用图像思考"方法：MGPO、Mini-o3、Pixel Reasoner，以及 MED 的"有工具/无工具"评测。
 
 欢迎提建议：可以开 issue 提议要加入的方法，或参见[贡献](#-贡献)。
 
