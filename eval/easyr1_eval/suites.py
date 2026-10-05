@@ -27,6 +27,8 @@ from .schemas import BenchmarkSpec
 SUITE_DEFAULT_KEYS = (
     "format_prompt",
     "system_prompt",
+    "chat_template",
+    "plain_think_tokens",
     "interaction_mode",
     "agent_profile",
     "min_pixels",
@@ -80,6 +82,10 @@ def load_suites(path: Path, specs: list[BenchmarkSpec]) -> dict[str, Suite]:
         bad = sorted(set(defaults) - set(SUITE_DEFAULT_KEYS))
         if bad:
             raise ValueError(f"suite {name}: unsupported defaults {bad}; allowed: {list(SUITE_DEFAULT_KEYS)}")
+        if "plain_think_tokens" in defaults:
+            from verl.utils.plain_think import normalize_plain_think_tokens
+
+            defaults["plain_think_tokens"] = normalize_plain_think_tokens(defaults["plain_think_tokens"])
         suite = Suite(
             name=name,
             benchmarks=tuple(dict.fromkeys(keys)),

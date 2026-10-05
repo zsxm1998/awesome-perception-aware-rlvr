@@ -60,6 +60,7 @@ from .scorers import JUDGE_PROVIDERS, SCORER_VERSION, resolve_judge_max_tokens
 from .state import fingerprint, is_complete, mark_complete, mark_failed
 from .suites import SUITE_DEFAULT_KEYS, load_suites, merged_suite_defaults, suite_benchmarks
 from .summary import update_global_summary_csv, write_summary_csv
+from .training_record import load_training_record, same_setting
 
 
 DEFAULT_MIN_PIXELS = 200704
@@ -84,6 +85,14 @@ def main(argv: list[str] | None = None) -> None:
     args.output_dir = Path(args.output_dir).resolve()
 
     specs = selected_specs(args)
+    if getattr(args, "training_record", None):
+        print(f"[info] training record: {args.training_record}", flush=True)
+    sources = getattr(args, "prompt_sources", None) or {}
+    if sources:
+        print(
+            "[info] prompt settings from " + ", ".join(f"{key}={source}" for key, source in sorted(sources.items())),
+            flush=True,
+        )
     print(f"[info] box format: {args.box_format} ({args.box_format_reason})", flush=True)
     if getattr(args, "interaction_mode", "one_shot") == "agentic":
         print(f"[info] agent system prompt: {args.system_prompt}", flush=True)
@@ -214,10 +223,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--agent-prompt-style",
         choices=["native", "official"],
-        default="native",
-        help="native: --system-prompt (examples/system_prompt/deepeyes*.txt) through the tool-call chat template; "
-        "official: DeepEyes' own system prompt, its format instruction after the question and its tool response "
-        "format, as worker.rollout.agent_prompt_style=official in training.",
+        default=None,
+        help="native (default): --system-prompt (examples/system_prompt/deepeyes*.txt) through the tool-call chat "
+        "template; official: DeepEyes' own system prompt, its format instruction after the question and its tool "
+        "response format, as worker.rollout.agent_prompt_style=official in training.",
     )
     parser.add_argument(
         "--agent-tool-image-mode",
@@ -260,7 +269,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--format-prompt",
         help="Jinja template rendered with {{ content }} (same semantics as data.format_prompt in training). "
-        "Default for one-shot runs: examples/format_prompt/math_perception.jinja; 'none' disables it.",
+        "Default: the training setting of a checkpoint trained in this repository, else the suite's, else "
+        "examples/format_prompt/math_perception.jinja for one-shot runs; 'none' disables it.",
     )
     parser.add_argument("--system-prompt", help="Path to a system prompt text file ('none' for no system prompt).")
     parser.add_argument(
@@ -276,16 +286,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--chat-template",
         help="Jinja chat template that replaces the processor's (data.override_chat_template in training). "
-        "Agentic runs of Qwen2-VL / Qwen2.5-VL default to examples/chat_template/qwen2_5_vl_tool_call.jinja, "
-        "because the stock template ignores tool definitions; 'none' keeps the model's template.",
+        "Default: the model's template (a checkpoint trained in this repository saves its training template), "
+        "else the suite's for other models; agentic runs of Qwen2-VL / Qwen2.5-VL default to "
+        "examples/chat_template/qwen2_5_vl_tool_call.jinja, because the stock template ignores tool definitions; "
+        "'none' keeps the model's template.",
     )
     parser.add_argument(
         "--plain-think-tokens",
         choices=["auto", "true", "false"],
-        default="auto",
+        default=None,
         help="Tokenize <think>/</think> as plain text (worker.actor.model.plain_think_tokens in training). auto "
-        "(default) applies to models whose tokenizer has them as added tokens that the chat template never uses, "
-        "i.e. Qwen3-VL Instruct; evaluate a checkpoint with the setting it was trained with.",
+        "applies to models whose tokenizer has them as added tokens that the chat template never uses, i.e. "
+        "Qwen3-VL Instruct. Default: the training setting of a checkpoint trained in this repository, else the "
+        "suite's, else auto.",
     )
     parser.add_argument(
         "--grounding-instruction",
@@ -318,10 +331,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-model-len", type=int, default=DEFAULT_MAX_MODEL_LEN)
     parser.add_argument("--gpu-memory-utilization", type=float, default=DEFAULT_GPU_MEMORY_UTILIZATION)
     parser.add_argument(
-        "--min-pixels", type=int, default=None, help=f"default: the suite's, else {DEFAULT_MIN_PIXELS} (as training)"
+        "--min-pixels",
+        type=int,
+        default=None,
+        help=f"default: the training setting of a checkpoint, else the suite's, else {DEFAULT_MIN_PIXELS}",
     )
     parser.add_argument(
-        "--max-pixels", type=int, default=None, help=f"default: the suite's, else {DEFAULT_MAX_PIXELS} (as training)"
+        "--max-pixels",
+        type=int,
+        default=None,
+        help=f"default: the training setting of a checkpoint, else the suite's, else {DEFAULT_MAX_PIXELS}",
     )
     parser.add_argument("--trust-remote-code", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--resume", action=argparse.BooleanOptionalAction, default=True)
@@ -442,12 +461,53 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
-def apply_prompt_defaults(args: argparse.Namespace) -> None:
-    """Fill prompt/interaction flags that were not given: suite defaults first, then built-ins.
+# options a training record sets that the suites do not
+RECORD_ONLY_KEYS = ("agent_prompt_style",)
 
-    Suite defaults (eval/config/suites.yaml) hold paths relative to the repository root.
-    ``none`` disables the format prompt / system prompt.
+
+def apply_prompt_defaults(args: argparse.Namespace) -> None:
+    """Fill the prompt and interaction options that were not given, from the first source that sets them:
+
+    1. the command line;
+    2. the training record of a checkpoint trained in this repository (``<run>/experiment_config.json``, see
+       training_record.py): format and system prompt, image size, ``<think>`` tokenization, interaction mode and
+       agent prompt style; its chat template is saved with the checkpoint, so no other template is applied;
+    3. the suite defaults (eval/config/suites.yaml, paths relative to the repository root), for models without a
+       training record, such as the released models;
+    4. the built-in defaults.
+
+    ``none`` disables the format prompt / system prompt. A flag that differs from the training record is kept,
+    with a warning. ``args.prompt_sources`` records where each option came from.
     """
+    explicit = {key for key in (*SUITE_DEFAULT_KEYS, *RECORD_ONLY_KEYS) if getattr(args, key, None) is not None}
+    sources = dict.fromkeys(explicit, "flag")
+    record = load_training_record(str(args.model))
+    record_applied: dict[str, Any] = {}
+    if record is not None:
+        for key, value in record.values.items():
+            if key not in explicit:
+                setattr(args, key, value)
+                record_applied[key] = value
+                sources[key] = "checkpoint"
+            elif not same_setting(key, getattr(args, key), value):
+                print(
+                    f"[warn] --{key.replace('_', '-')} {getattr(args, key)} differs from the training setting "
+                    f"{value} ({record.path}); evaluating with the flag",
+                    flush=True,
+                )
+        if "chat_template" not in explicit:
+            sources["chat_template"] = "checkpoint"
+        elif record.chat_template and not same_setting("chat_template", args.chat_template, record.chat_template):
+            print(
+                f"[warn] --chat-template {args.chat_template} differs from the training template "
+                f"{record.chat_template} ({record.path}), which the checkpoint carries; evaluating with the flag",
+                flush=True,
+            )
+        for note in record.notes:
+            print(f"[note] {note} ({record.path})", flush=True)
+    args.training_record = str(record.path) if record is not None else None
+    args.training_record_applied = record_applied
+
     suite_defaults: dict[str, Any] = {}
     suite_names = _split_csv(getattr(args, "suite", None)) or []
     if suite_names:
@@ -456,16 +516,23 @@ def apply_prompt_defaults(args: argparse.Namespace) -> None:
         for name in suite_names:
             if name not in suites:
                 raise KeyError(f"unknown suite: {name} (available: {', '.join(sorted(suites))})")
-        explicit = {key for key in SUITE_DEFAULT_KEYS if getattr(args, key, None) is not None}
-        suite_defaults = merged_suite_defaults(suites, suite_names, ignore=explicit)
+        # a checkpoint's own template comes with it; its training record replaces the suite's prompt
+        ignore = set(explicit) | set(record_applied) | ({"chat_template"} if record is not None else set())
+        suite_defaults = merged_suite_defaults(suites, suite_names, ignore=ignore)
     applied = {}
     for key, value in suite_defaults.items():
         if getattr(args, key, None) is None:
-            if key in {"format_prompt", "system_prompt"} and str(value).lower() != "none":
+            if key in {"format_prompt", "system_prompt", "chat_template"} and str(value).lower() != "none":
                 value = str(PROJECT_ROOT / str(value))
             setattr(args, key, value)
             applied[key] = value
+            sources[key] = "suite"
     args.suite_defaults_applied = applied
+    args.prompt_sources = sources
+    if getattr(args, "plain_think_tokens", None) is None:
+        args.plain_think_tokens = "auto"
+    if getattr(args, "agent_prompt_style", None) is None:
+        args.agent_prompt_style = "native"
     if getattr(args, "grounding_instruction", None) is None:
         args.grounding_instruction = "append"
     if getattr(args, "answer_protocol", None) is None:
@@ -737,6 +804,7 @@ def write_run_summaries(results, args: argparse.Namespace, run_id: str) -> None:
         "system_prompt": args.system_prompt or "",
         "chat_template": getattr(args, "chat_template", None) or "",
         "plain_think_tokens": getattr(args, "plain_think_tokens", "auto"),
+        "training_record": getattr(args, "training_record", None) or "",
         "prompt_mode": args.prompt_mode,
         "box_format": getattr(args, "box_format", "norm1000"),
         "interaction_mode": getattr(args, "interaction_mode", "one_shot"),
@@ -1472,12 +1540,19 @@ def print_dry_run(specs: list[BenchmarkSpec], args: argparse.Namespace) -> None:
         print(f"suite: {args.suite}")
     if getattr(args, "suite_defaults_applied", None):
         print(f"suite_defaults_applied: {args.suite_defaults_applied}")
+    if getattr(args, "training_record", None):
+        print(f"training_record: {args.training_record}")
+        print(f"training_record_applied: {args.training_record_applied}")
     judge = judge_config_from_args(args)
     print(f"judge: {judge.provider + '/' + judge.model if judge else 'none'}")
     print(f"global_summary: {args.global_summary}")
     print(f"prompt_mode: {args.prompt_mode}")
     print(f"box_format: {getattr(args, 'box_format', 'norm1000')} ({getattr(args, 'box_format_reason', '')})")
-    print(f"chat_template: {getattr(args, 'chat_template', None) or 'model default'}")
+    model_template = (
+        "the checkpoint's (saved in training)" if getattr(args, "training_record", None) else "model default"
+    )
+    print(f"chat_template: {getattr(args, 'chat_template', None) or model_template}")
+    print(f"plain_think_tokens: {getattr(args, 'plain_think_tokens', 'auto')}")
     print(f"interaction_mode: {getattr(args, 'interaction_mode', 'one_shot')}")
     if getattr(args, "interaction_mode", "one_shot") == "agentic":
         print(f"agent_profile: {args.agent_profile}")

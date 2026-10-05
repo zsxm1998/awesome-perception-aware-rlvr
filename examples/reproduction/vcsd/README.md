@@ -43,8 +43,8 @@ See [docs/algorithm_parameters.md](../../../docs/algorithm_parameters.md#on-poli
 bash scripts/prepare_data.sh vcsd
 bash examples/reproduction/vcsd/qwen3_vl_2b_vcsd.sh
 bash scripts/prepare_eval_data.sh vcsd
-bash scripts/eval.sh checkpoints/VCSD-Reproduce/qwen3_vl_2b_vcsd --suite vcsd \
-    --chat-template examples/chat_template/qwen_no_thinking.jinja --plain-think-tokens false
+bash scripts/eval.sh checkpoints/VCSD-Reproduce/qwen3_vl_2b_vcsd --suite vcsd
+bash scripts/eval.sh Qwen/Qwen3-VL-2B-Instruct --suite vcsd   # the Base column
 ```
 
 Checkpoints go to `checkpoints/VCSD-Reproduce/<script name>`; append `key=value` overrides and set
@@ -88,8 +88,9 @@ validated with `DRY_RUN=1` only; the 8B and 9B runs have not been run in this re
   with the reference answer) is not scripted.
 - **Evaluation** (suite `vcsd`): the paper does not state its evaluation protocol. The suite uses greedy decoding
   for the high-resolution benchmarks and reports HallusionBench as (aAcc + fAcc + qAcc) / 3 (`aqf_mean` in the
-  details), as the paper; Acc. is the unweighted mean of the seven scores. The suite asks the bare
-  problem at the training image size; add the training chat template and tokenizer, as in the command above.
+  details), as the paper; Acc. is the unweighted mean of the seven scores. A checkpoint is asked as it was trained
+  (the bare problem, the image size, the chat template and tokenizer, read from its run); the suite gives the
+  released models the same prompt.
 
 ## Results
 

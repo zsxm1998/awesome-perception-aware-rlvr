@@ -87,7 +87,8 @@ python -m eval.prepare papo --data-root /data/eval       # same CLI as a module 
 
 `--suite NAME` (several: `--suite papo,tor`) selects the benchmarks of a paper table.
 `--benchmarks` adds benchmarks to the suite and `--skip-benchmarks` removes them. Some suites
-also set prompt defaults (see [Prompts](#prompts)); explicit flags always win.
+also set prompt defaults for models without a training record; a checkpoint trained in this
+repository is prompted as it was trained, and explicit flags always win (see [Prompts](#prompts)).
 
 | Suite | Benchmarks | Paper table / notes |
 |---|---|---|
@@ -104,8 +105,8 @@ also set prompt defaults (see [Prompts](#prompts)); explicit flags always win.
 | `deepeyes` | vstar, hrbench_4k, hrbench_8k, mme_realworld_lite, pope | DeepEyes Tables 1-3; default: agentic DeepEyes inference (see [Agentic evaluation](#agentic-evaluation-deepeyes)) |
 | `va_opd` | wemath, mathvista, mathverse, hallusionbench, ai2d, mmmu_val, mmstar | VA-OPD Table 1 without OCRBench (not available); the paper reports avg@8 at T=1.0 with official scoring and a GPT-4o judge where applicable, for the best checkpoint; our math sets are avg@8, the other four greedy by default (`--temperature 1.0 --num-samples 8` for avg@8; HallusionBench scores the first sample only); our MathVerse holds the 2,180 multiple-choice testmini questions with an image; defaults: the training prompt (`math.jinja`) and image size |
 | `vgs` | mathvision, mathverse_v, logicvista, mmmu_pro | VGS Table 1, the 4 of 7 benchmarks available (no VisualPuzzles, VlmsAreBlind); the paper reports Acc@1 (greedy) and Acc@16 (T=1); our MathVerse-V and MMMU-Pro come from PAPO-Eval and differ from the subsets the VGS authors use (MathVerse VD / VO multiple choice, 4-option MMMU-Pro); defaults: the training prompt (VGS' system prompt) and image size |
-| `vcsd` | blink, mmstar, vstar, mathvista, hrbench_4k, hrbench_8k, hallusionbench | VCSD Table 1; the paper's HallusionBench score is (aAcc+fAcc+qAcc)/3 (`aqf_mean` in the details) and its Acc. the mean of the seven scores; decoding and scoring are not given in the paper (we use greedy rule-based scoring, MathVista avg@8); defaults: the training prompt (the bare problem) and image size; add the training chat template (see [Prompts](#prompts)) |
-| `vision_opd` | vstar, zoombench, hrbench_4k, hrbench_8k, mme_realworld_lite, mmstar, pope | Vision-OPD Table 1 + holdout set of Table 2; the paper uses the full MME-RealWorld EN/CN (we have the lite version) and a gpt-oss-120b judge; MMVP and CV-Bench are not available; defaults: the training prompt (the dataset prompt, no system prompt) and image size (65,536-16,777,216 pixels); evaluate Qwen3.5 models in non-thinking mode (see [Prompts](#prompts)) |
+| `vcsd` | blink, mmstar, vstar, mathvista, hrbench_4k, hrbench_8k, hallusionbench | VCSD Table 1; the paper's HallusionBench score is (aAcc+fAcc+qAcc)/3 (`aqf_mean` in the details) and its Acc. the mean of the seven scores; decoding and scoring are not given in the paper (we use greedy rule-based scoring, MathVista avg@8); defaults: the training prompt (the bare problem), chat template, tokenizer and image size |
+| `vision_opd` | vstar, zoombench, hrbench_4k, hrbench_8k, mme_realworld_lite, mmstar, pope | Vision-OPD Table 1 + holdout set of Table 2; the paper uses the full MME-RealWorld EN/CN (we have the lite version) and a gpt-oss-120b judge; MMVP and CV-Bench are not available; defaults: the training prompt (the dataset prompt, no system prompt), the non-thinking chat template and the image size (65,536-16,777,216 pixels) |
 | `cgpo` | = `papo` | CGPO natural-image reproduction (trained on ViRL39K); default prompt `xml_grounded_reasoning.jinja` |
 | `comparison` | `papo` + `vppo` + pope, hallusionbench | the benchmark set used by `examples/comparison/` |
 | `opd` | = `comparison` | the benchmark set used by `examples/comparison/opd_qwen3_vl_2b` |
@@ -329,19 +330,37 @@ VlmsAreBlind (VGS), MMVP, CV-Bench and the full MME-RealWorld EN/CN sets (Vision
 Loaders return the bare question; the runner renders it the way training does:
 
 - `--format-prompt` (Jinja template with `{{ content }}`, same as `data.format_prompt`).
-  Default for one-shot runs: `examples/format_prompt/math_perception.jinja`, i.e. the PAPO
+  Built-in default for one-shot runs: `examples/format_prompt/math_perception.jinja`, i.e. the PAPO
   instruction ("... enclosed within <think> </think> tags. Then, provide your final answer
   enclosed within \boxed{}."), which makes the reasoning prompts identical to PAPO-Eval's.
   `--format-prompt none` sends the bare question.
 - `--system-prompt FILE` (same as `data.system_prompt`; `none` for no system prompt) and
   `--prompt-mode chat` (default: the model's chat template) or `raw`.
-- `--plain-think-tokens auto|true|false` (default `auto`) tokenizes `<think>` / `</think>` as plain
-  text for models in which they are untrained added tokens (Qwen3-VL Instruct), as training does
-  (`worker.actor.model.plain_think_tokens`); evaluate a checkpoint with the setting it was trained with.
+- `--plain-think-tokens auto|true|false` (built-in default `auto`) tokenizes `<think>` / `</think>` as
+  plain text for models in which they are untrained added tokens (Qwen3-VL Instruct), as training
+  does (`worker.actor.model.plain_think_tokens`).
 - `--chat-template FILE` replaces the processor's chat template (same as
-  `data.override_chat_template`); recorded in `summary.csv`.
+  `data.override_chat_template`; `none` keeps the model's); recorded in `summary.csv`.
 
-Evaluate a model with the prompt it was trained with:
+Each of these options, the image size (`--min-pixels`, `--max-pixels`), `--interaction-mode` and
+`--agent-prompt-style` is taken from the first source that sets it:
+
+1. the command line;
+2. the training record of a checkpoint trained in this repository (`<run>/global_step_N/actor`,
+   merged or not): the run's `experiment_config.json`, which the trainer writes, gives the format and
+   system prompt, the image size, `plain_think_tokens`, the interaction mode and the agent prompt
+   style, and the checkpoint carries the chat template and tokenizer it was trained with (saved with
+   its processor). A flag that differs from the training setting is used, with a warning. A prompt
+   file that is no longer at its recorded path is looked up under this repository's `examples/`;
+   if it is not there either, the run stops and asks for the flag;
+3. the defaults of the selected suites, for models without a training record (the released models
+   of a paper's tables, or a model directory copied without its run);
+4. the built-in defaults.
+
+The runner prints where each setting came from (`[info] prompt settings from ...`), and
+`summary.csv` names the training record it used. Checkpoints trained with the scripts of this
+repository therefore need no prompt flags, whatever the suite. Other models get the prompt of each
+method's training from these flags or suite defaults:
 
 | Model | Flags (or suite default) |
 |---|---|
@@ -355,8 +374,8 @@ Evaluate a model with the prompt it was trained with:
 | DeepEyes, Qwen2.5-VL (`qwen2_5_vl_7b_grpo_deepeyes.sh`, DeepEyes' own prompts) | `--interaction-mode agentic --agent-prompt-style official` (suite `deepeyes` plus `--agent-prompt-style official`) |
 | VA-OPD (`examples/reproduction/va_opd`) | `--format-prompt examples/format_prompt/math.jinja --min-pixels 262144 --max-pixels 4194304` (suite `va_opd`) |
 | VGS (`examples/reproduction/vgs`) | `--format-prompt none --system-prompt examples/system_prompt/vgs.txt --min-pixels 262144 --max-pixels 4194304` (suite `vgs`) |
-| VCSD (`examples/reproduction/vcsd`) | `--format-prompt none --min-pixels 262144 --max-pixels 4194304` (suite `vcsd`) plus `--chat-template examples/chat_template/qwen_no_thinking.jinja --plain-think-tokens false` |
-| Vision-OPD (`examples/reproduction/vision_opd`) | `--format-prompt none --system-prompt none --min-pixels 65536 --max-pixels 16777216` (suite `vision_opd`) plus `--chat-template examples/chat_template/qwen_no_thinking.jinja` |
+| VCSD (`examples/reproduction/vcsd`) | `--format-prompt none --chat-template examples/chat_template/qwen_no_thinking.jinja --plain-think-tokens false --min-pixels 262144 --max-pixels 4194304` (suite `vcsd`) |
+| Vision-OPD (`examples/reproduction/vision_opd`) | `--format-prompt none --system-prompt none --chat-template examples/chat_template/qwen_no_thinking.jinja --min-pixels 65536 --max-pixels 16777216` (suite `vision_opd`) |
 | DeepEyes, rewritten prompt (Qwen3-VL and `*_native.sh`) | `--interaction-mode agentic --system-prompt examples/system_prompt/deepeyes.txt` (suite `deepeyes`; `deepeyes_pixel.txt` is picked for Qwen2-VL / Qwen2.5-VL) |
 
 ## LLM judge

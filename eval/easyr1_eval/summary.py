@@ -39,6 +39,7 @@ OPTIONAL_RUN_FIELDNAMES = [
     "max_dynamic_patch",
     "agent_prompt_style",
     "agent_observation_min_pixels",
+    "training_record",
 ]
 
 SUMMARY_FIELDNAMES = [

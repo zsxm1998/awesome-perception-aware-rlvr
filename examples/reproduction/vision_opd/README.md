@@ -40,8 +40,8 @@ See [docs/algorithm_parameters.md](../../../docs/algorithm_parameters.md#on-poli
 bash scripts/prepare_data.sh vision_opd
 bash examples/reproduction/vision_opd/qwen3_5_4b_vision_opd.sh
 bash scripts/prepare_eval_data.sh vision_opd
-bash scripts/eval.sh checkpoints/Vision-OPD-Reproduce/qwen3_5_4b_vision_opd --suite vision_opd \
-    --chat-template examples/chat_template/qwen_no_thinking.jinja
+bash scripts/eval.sh checkpoints/Vision-OPD-Reproduce/qwen3_5_4b_vision_opd --suite vision_opd
+bash scripts/eval.sh Qwen/Qwen3.5-4B --suite vision_opd   # the base model
 ```
 
 Qwen3.5 needs the fast-path packages (`QWEN35_FASTPATH_ONLY=1 bash scripts/install_env.sh`, see the
@@ -95,10 +95,10 @@ repository.
   teacher and the sampled-token variant with the crop are not implemented.
 - **Evaluation** (suite `vision_opd`): the paper judges free-form answers with gpt-oss-120b and matches option
   letters for the multiple-choice benchmarks; we score ZoomBench with rules (see
-  [eval/README.md](../../../eval/README.md)) and the others with option-letter matching, with greedy decoding.
-  The suite asks the dataset prompt without a system prompt at the training image size (65,536-16,777,216
-  pixels). We have MME-RealWorld-Lite instead of the full English and Chinese sets; MMVP and CV-Bench are not
-  available.
+  [eval/README.md](../../../eval/README.md)) and the others with option-letter matching, with greedy decoding. A
+  checkpoint is asked as it was trained (the dataset prompt without a system prompt, 65,536-16,777,216 pixels, the
+  non-thinking chat template, read from its run); the suite gives the base models the same prompt. We have
+  MME-RealWorld-Lite instead of the full English and Chinese sets; MMVP and CV-Bench are not available.
   Third-party reproductions in the authors' issue tracker reach 1-3 points below the released weights and report
   intermediate steps that score higher than the last one.
 - **Data license.** The dataset card states Apache-2.0; the student images are SA-1B images, which Meta

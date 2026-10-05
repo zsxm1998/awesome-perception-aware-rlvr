@@ -627,13 +627,26 @@ def test_opd_suites_list_the_paper_benchmarks_and_can_be_prepared():
             "min_pixels": 262144,
             "max_pixels": 4194304,
         },
-        "vcsd": {"format_prompt": "none", "system_prompt": "none", "min_pixels": 262144, "max_pixels": 4194304},
-        "vision_opd": {"format_prompt": "none", "system_prompt": "none", "min_pixels": 65536, "max_pixels": 16777216},
+        "vcsd": {
+            "format_prompt": "none",
+            "system_prompt": "none",
+            "chat_template": "examples/chat_template/qwen_no_thinking.jinja",
+            "plain_think_tokens": "false",
+            "min_pixels": 262144,
+            "max_pixels": 4194304,
+        },
+        "vision_opd": {
+            "format_prompt": "none",
+            "system_prompt": "none",
+            "chat_template": "examples/chat_template/qwen_no_thinking.jinja",
+            "min_pixels": 65536,
+            "max_pixels": 16777216,
+        },
     }
     for name, benchmarks in expected.items():
         assert suites[name].benchmarks == benchmarks
         assert suites[name].notes and suites[name].defaults == defaults[name]
-        for key in ("format_prompt", "system_prompt"):
+        for key in ("format_prompt", "system_prompt", "chat_template"):
             value = defaults[name].get(key, "none")
             assert value == "none" or (ROOT / value).is_file()
         assert cli.resolve_targets([name]) == list(benchmarks)

@@ -6,10 +6,13 @@
 #   benchmarks: registry keys (eval/config/benchmarks.yaml), or `all` for every
 #               non-optional benchmark
 #   include:    other suites whose benchmarks are prepended (order preserved, no duplicates)
-#   defaults:   runner options applied only when the flag is NOT given on the command line
-#               (format_prompt, system_prompt, interaction_mode, agent_profile, min_pixels,
-#               max_pixels, grounding_instruction, answer_protocol). Paths are relative to the
-#               repository root; `none` disables the format prompt.
+#   defaults:   runner options applied only when the flag is NOT given on the command line and the
+#               model has no training record (format_prompt, system_prompt, chat_template,
+#               plain_think_tokens, interaction_mode, agent_profile, min_pixels, max_pixels,
+#               grounding_instruction, answer_protocol). Paths are relative to the repository root;
+#               `none` disables the format prompt. A checkpoint trained in this repository is
+#               evaluated with the prompt settings of its run's experiment_config.json and the chat
+#               template saved with it instead (eval/README.md, "Prompts").
 #   notes:      where our protocol differs from the paper's own evaluation
 #
 # Every reasoning benchmark is scored with the PAPO-Eval protocol (rule-based exact match on
@@ -172,9 +175,11 @@ suites:
   vcsd:
     description: VCSD Table 1 (7 benchmarks; Acc. is their unweighted mean)
     benchmarks: [blink, mmstar, vstar, mathvista, hrbench_4k, hrbench_8k, hallusionbench]
-    defaults:  # the training prompt (the bare problem) and image size of examples/reproduction/vcsd
+    defaults:  # as examples/reproduction/vcsd trains: the bare problem, its template, tokenizer and images
       format_prompt: none
       system_prompt: none
+      chat_template: examples/chat_template/qwen_no_thinking.jinja
+      plain_think_tokens: "false"
       min_pixels: 262144
       max_pixels: 4194304
     notes: >-
@@ -183,28 +188,29 @@ suites:
       does not state its evaluation tool, prompts, decoding or answer extraction. We use greedy
       decoding and rule-based scoring, except for MathVista (PAPO-Eval testmini, avg@8 at T=1.0;
       add `--temperature 0 --num-samples 1` for greedy decoding everywhere). BLINK is the val
-      split (1,901 questions). The paper reports step 90 of every run. Evaluate with the training
-      chat template and tokenizer (`--chat-template examples/chat_template/qwen_no_thinking.jinja
-      --plain-think-tokens false`).
+      split (1,901 questions). The paper reports step 90 of every run. The released models are
+      asked with the template of the training scripts (an empty think block) and the released
+      tokenizer, as the trained checkpoints are.
 
   vision_opd:
     description: Vision-OPD fine-grained (Table 1) and holdout (Table 2) benchmarks available here
     benchmarks: [vstar, zoombench, hrbench_4k, hrbench_8k, mme_realworld_lite, mmstar, pope]
-    defaults:  # the training prompt (the dataset prompt) and image size of examples/reproduction/vision_opd
+    defaults:  # as examples/reproduction/vision_opd trains: the dataset prompt, its template and images
       format_prompt: none
       system_prompt: none
+      chat_template: examples/chat_template/qwen_no_thinking.jinja
       min_pixels: 65536
       max_pixels: 16777216
     notes: >-
       Vision-OPD asks the dataset prompts without a system prompt (the defaults above), decodes
       greedily with up to 32768 new tokens and scores with mathruler, letter matching and a
-      gpt-oss-120b judge; we score with rules (ZoomBench: the `zoombench` scorer, eval/README.md)
-      and 2048 new tokens. Vision-OPD sends the original images to a vLLM server; the suite uses
-      the training range of 65,536-16,777,216 pixels. The paper uses the full MME-RealWorld EN and CN sets; we have MME-RealWorld-Lite. MMVP and
-      CV-Bench (holdout) are not available. POPE's primary here is macro-F1 (accuracy in the
-      details); the paper does not say which POPE number it reports. Qwen3.5 models must be
-      evaluated in non-thinking mode, as the paper does (`--chat-template
-      examples/chat_template/qwen_no_thinking.jinja`, the template of the training scripts).
+      gpt-oss-120b judge; we score with rules (ZoomBench: the `zoombench` scorer,
+      eval/README.md) and 2048 new tokens. Vision-OPD sends the original images to a vLLM
+      server; the suite uses the training range of 65,536-16,777,216 pixels. The paper uses the
+      full MME-RealWorld EN and CN sets; we have MME-RealWorld-Lite. MMVP and CV-Bench (holdout)
+      are not available. POPE's primary here is macro-F1 (accuracy in the details); the paper
+      does not say which POPE number it reports. The models are evaluated in non-thinking mode,
+      as the paper does, with the template of the training scripts.
 
   cgpo:
     description: CGPO (natural-image reproduction trained on ViRL39K) = the PAPO suite

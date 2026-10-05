@@ -296,8 +296,10 @@ LogicVista, CLEVR counting, MMMU-Pro, MMMU, DynaMath, MathVision), perception an
 HallusionBench, MME, MMStar, BLINK, AI2D, TextVQA, CFPO's counterfactual C-VQA-Real and MARS-Bench,
 SEED-Bench, ...), grounded reasoning (GRIT's VSR / TallyQA / GQA / OVDEval, refCOCO) and high-resolution
 perception (V*, HR-Bench, MME-RealWorld-Lite, ZoomBench). Each benchmark has a download script, and each paper
-has a suite (`--suite papo`, `--suite deepeyes`, ...). Adding a benchmark takes a loader, a scorer
-and a registry entry; see the tutorial in [eval/README.md](eval/README.md#adding-a-new-benchmark).
+has a suite (`--suite papo`, `--suite deepeyes`, ...). A checkpoint trained here is prompted as it was trained
+(prompt, image size, chat template and tokenizer, read from its run;
+[details](eval/README.md#prompts)), whatever the suite. Adding a benchmark takes a loader, a scorer and a
+registry entry; see the tutorial in [eval/README.md](eval/README.md#adding-a-new-benchmark).
 
 > [!IMPORTANT]
 > The papers use different evaluation protocols (rule-based avg@8 at temperature 1.0 for
@@ -333,8 +335,8 @@ the tokenizer is loaded as usual (Hugging Face hub, ModelScope or a local path),
 added tokens removed under `~/.cache/parlvr/tokenizers` (`PARLVR_CACHE_DIR`), and used by training,
 rollout and evaluation; checkpoints save this tokenizer. Models whose chat template uses the tokens
 (Qwen3-VL Thinking) or that do not have them (Qwen2.5-VL, InternVL) are not changed. Set
-`worker.actor.model.plain_think_tokens=false` (evaluation: `--plain-think-tokens false`) to keep the
-released tokenizer.
+`worker.actor.model.plain_think_tokens=false` to keep the released tokenizer (the evaluation reads the
+setting from a checkpoint's training record; `--plain-think-tokens false` for other models).
 
 ## 📚 Paper list
 

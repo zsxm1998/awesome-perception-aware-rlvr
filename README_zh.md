@@ -262,7 +262,8 @@ MathVerse、MathVerse-V、LogicVista、CLEVR 计数、MMMU-Pro、MMMU、DynaMath
 （POPE、HallusionBench、MME、MMStar、BLINK、AI2D、TextVQA、CFPO 的反事实基准 C-VQA-Real 与 MARS-Bench、
 SEED-Bench 等），基于定位的推理（GRIT 的 VSR / TallyQA / GQA / OVDEval、refCOCO），以及高分辨率感知
 （V*、HR-Bench、MME-RealWorld-Lite、ZoomBench）。每个基准都有下载脚本，每篇论文都有评测套件（`--suite papo`、
-`--suite deepeyes` 等）。新增基准只需要 loader、scorer 和注册表条目，教程见
+`--suite deepeyes` 等）。无论用哪个套件，本仓库训练的检查点都按训练时的方式提问（提示词、图像尺寸、对话模板与
+分词器，从其训练目录读取，[详见](eval/README.md#prompts)）。新增基准只需要 loader、scorer 和注册表条目，教程见
 [eval/README.md](eval/README.md#adding-a-new-benchmark)。
 
 > [!IMPORTANT]
@@ -294,8 +295,8 @@ SEED-Bench 等），基于定位的推理（GRIT 的 VSR / TallyQA / GQA / OVDEv
 token 当普通文字处理：分词器照常加载（Hugging Face、ModelScope 或本地路径均可），删掉这两个附加 token 后
 保存在 `~/.cache/parlvr/tokenizers`（可用 `PARLVR_CACHE_DIR` 修改），训练、rollout 和评测都使用它，检查点
 也保存这份分词器。对话模板会用到这两个 token 的模型（Qwen3-VL Thinking）或本来没有它们的模型（Qwen2.5-VL、
-InternVL）不受影响。设置 `worker.actor.model.plain_think_tokens=false`（评测：`--plain-think-tokens false`）
-可保留原版分词器。
+InternVL）不受影响。设置 `worker.actor.model.plain_think_tokens=false`
+可保留原版分词器（评测从检查点的训练记录读取该设置；其他模型用 `--plain-think-tokens false`）。
 
 ## 📚 论文清单
 
