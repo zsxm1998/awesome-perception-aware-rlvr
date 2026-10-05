@@ -48,9 +48,11 @@ class FSDPVLLMShardingManager(BaseShardingManager):
         inference_engine: LLM,
         device_mesh: DeviceMesh,
         use_param_offload: bool,
+        reset_mm_cache_on_offload: bool = False,
     ):
         self.module = module
         self.inference_engine = inference_engine
+        self.reset_mm_cache_on_offload = reset_mm_cache_on_offload
         self.device_mesh = device_mesh
         self.use_param_offload = use_param_offload
         self.loaded = False
@@ -204,6 +206,11 @@ class FSDPVLLMShardingManager(BaseShardingManager):
 
         print_gpu_memory_usage("Before vllm offload in sharding manager")
         free_bytes_before_sleep = torch.cuda.mem_get_info()[0]
+        if self.reset_mm_cache_on_offload:
+            # sleep(level=1) empties the engine's multimodal processor cache but not the front end's record of
+            # it, which then sends a later request only the hash of an image the engine no longer holds
+            # ("Expected a cached item for mm_hash"); empty both sides together
+            self.inference_engine.reset_mm_cache()
         self.inference_engine.sleep(level=1)
         free_bytes_after_sleep = torch.cuda.mem_get_info()[0]
         self.freed_bytes = free_bytes_after_sleep - free_bytes_before_sleep

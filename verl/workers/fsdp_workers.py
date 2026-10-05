@@ -456,6 +456,7 @@ class FSDPWorker(Worker):
             inference_engine=self.rollout.inference_engine,
             device_mesh=rollout_device_mesh,
             use_param_offload=self._use_param_offload,
+            reset_mm_cache_on_offload=self.config.rollout.mm_processor_cache_gb > 0,
         )
         print_gpu_memory_usage("After vllm init")
 
@@ -924,6 +925,15 @@ class FSDPWorker(Worker):
 
         output = output.to("cpu")
         return output
+
+    @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
+    def answer_claim_probes(self, probes: DataProto):
+        assert self._has_rollout
+
+        probes = self.rollout_sharding_manager.preprocess_data(probes)
+        output = self.rollout.answer_claim_probes(probes)
+        output = self.rollout_sharding_manager.postprocess_data(output)
+        return output.to("cpu")
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def compute_log_probs(self, data: DataProto):

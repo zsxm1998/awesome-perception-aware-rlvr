@@ -34,19 +34,34 @@ def accuracy_reward(response: str, ground_truth: str) -> float:
     return 1.0 if grade_answer(answer, ground_truth) else 0.0
 
 
-def compute_score(reward_inputs: list[dict[str, Any]], format_weight: float = 0.1) -> list[dict[str, float]]:
+def compute_score(
+    reward_inputs: list[dict[str, Any]], format_weight: float = 0.1, perception_weight: float = 0.0
+) -> list[dict[str, float]]:
+    """(1 - format_weight) * accuracy + format_weight * format. With `perception_weight` > 0 (VAPO, with
+    algorithm.claim_probe_count > 0), a response that carries the claim probes' `perception_score` gets
+    (1 - format_weight - perception_weight) * accuracy + format_weight * format
+    + perception_weight * 1[accuracy = 1] * perception_score, as the released VAPO reward."""
     scores = []
     for reward_input in reward_inputs:
         response = re.sub(r"\s*(<|>|/)\s*", r"\1", reward_input["response"])  # handle qwen2.5vl-32b format
         format_score = format_reward(response)
         accuracy_score = accuracy_reward(response, reward_input["ground_truth"])
-        scores.append(
-            {
-                "overall": (1 - format_weight) * accuracy_score + format_weight * format_score,
-                "format": format_score,
-                "accuracy": accuracy_score,
-            }
-        )
+        score = {
+            "overall": (1 - format_weight) * accuracy_score + format_weight * format_score,
+            "format": format_score,
+            "accuracy": accuracy_score,
+        }
+        if perception_weight > 0.0:
+            perception = reward_input.get("perception_score")
+            if perception is not None:
+                score["overall"] = (
+                    (1 - format_weight - perception_weight) * accuracy_score
+                    + format_weight * format_score
+                    + perception_weight * (perception if accuracy_score == 1.0 else 0.0)
+                )
+            score["perception"] = 0.0 if perception is None else perception  # 0 for responses not probed
+            score["perception_scored"] = float(perception is not None)
+        scores.append(score)
 
     return scores
 

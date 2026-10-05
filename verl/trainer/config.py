@@ -16,6 +16,7 @@ PPO config
 """
 
 import json
+import math
 import os
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
@@ -23,6 +24,11 @@ from typing import Any, Optional, Tuple
 
 from ..utils.py_functional import get_abs_path
 from ..workers.config import WorkerConfig
+
+
+CLAIM_PROBE_ENGINE_HEADROOM = 128
+"""tokens added to the rollout engine's max_model_len for the claim probe question (the longest in the VAPO data
+is 77 tokens); see verl/trainer/claim_probes.py"""
 
 
 MODEL_LEVEL_VISUAL_CORRUPTIONS = frozenset({"cross_modal_attention_value_mean"})
@@ -337,6 +343,59 @@ class AlgorithmConfig:
     """mini-batch size for Grounding DINO detector inference."""
     include_region_tokens_in_perception_mask: bool = False
     """OR tokens inside `<region>...</region>` spans into the perception mask. Used by CGPO; ignored elsewhere."""
+    claim_probe_count: int = 0
+    """VAPO's visual anchors: K probes per response with accuracy 1; each cuts the response at a random punctuation
+    mark of its reasoning and asks the policy (greedy, one token) whether one of the row's visual claims (dataset
+    column `visual_claims`) is correct. 0 disables them. The perception score of the probes enters the reward
+    through `perception_weight` of examples/reward_function/math.py, which must be set together; see
+    verl/trainer/claim_probes.py"""
+    claim_probe_late_emphasis: float = 1.5
+    """beta of the probe weights exp(beta * position / response length) in the perception score (VAPO: 1.5)"""
+    claim_probe_question: str = "\n<anchor>{claim} Is this claim correct? Answer (Yes/No): "
+    """text appended to the response prefix of each probe, with `{claim}` replaced by the claim (default: the
+    released VAPO question). On the command line, double-quote the value inside the argument (YAML then keeps the
+    `\\n` escape, the colon and a trailing space)"""
+    claim_probe_yes_tokens: list = field(default_factory=lambda: ["yes", "Yes", "True", "true", "1"])
+    """candidates read as yes; the probe answer is the greedy token among the yes and no candidates, each a single
+    token (default: the released ones). Quote every item on the command line (`["Yes"]`): YAML reads an unquoted
+    yes/Yes/True as a boolean"""
+    claim_probe_no_tokens: list = field(default_factory=lambda: ["0", "no", "No", "false", "False"])
+    """candidates read as no (see claim_probe_yes_tokens)"""
+
+    def _validate_claim_probe_text(self):
+        """The question and the candidates of the claim probes, as they arrive from the command line."""
+        if self.claim_probe_question.count("{claim}") != 1:
+            raise ValueError("algorithm.claim_probe_question must contain `{claim}` exactly once.")
+        if "\\n" in self.claim_probe_question or "\\t" in self.claim_probe_question:
+            raise ValueError(
+                f"algorithm.claim_probe_question holds a literal backslash escape: {self.claim_probe_question!r}. "
+                "Put the value in double quotes inside the argument ('algorithm.claim_probe_question=\"\\n...\"'), "
+                "which YAML turns into a newline; single quotes keep the backslash."
+            )
+        for name in ("claim_probe_yes_tokens", "claim_probe_no_tokens"):
+            words = list(getattr(self, name))
+            if not words or not all(isinstance(word, str) and word for word in words):
+                raise ValueError(
+                    f"algorithm.{name} must be a non-empty list of non-empty strings, got {words}; quote every item "
+                    "on the command line ('algorithm.claim_probe_yes_tokens=[\"Yes\"]'): YAML reads an unquoted "
+                    "yes/Yes/True as a boolean and 1/0 as a number."
+                )
+            if len(set(words)) != len(words):
+                raise ValueError(f"algorithm.{name} repeats a candidate: {words}.")
+            setattr(self, name, words)
+        if set(self.claim_probe_yes_tokens) & set(self.claim_probe_no_tokens):
+            raise ValueError("algorithm.claim_probe_yes_tokens and claim_probe_no_tokens must not share a candidate.")
+        if self.claim_probe_count == 0:
+            defaults = AlgorithmConfig()
+            changed = [
+                f"algorithm.{name}"
+                for name in ("claim_probe_question", "claim_probe_yes_tokens", "claim_probe_no_tokens")
+                if getattr(self, name) != getattr(defaults, name)
+            ]
+            if changed:
+                raise ValueError(
+                    f"{', '.join(changed)} only apply to claim probes: set algorithm.claim_probe_count > 0."
+                )
 
     def post_init(self):
         self.corrupt_image_kwargs = _parse_optional_json_dict(self.corrupt_image_kwargs, "corrupt_image_kwargs")
@@ -375,6 +434,11 @@ class AlgorithmConfig:
         )
         if not 0.0 < self.noise_t_max <= 1000.0:
             raise ValueError(f"noise_t_max must be in (0, 1000], but got {self.noise_t_max}.")
+        if self.claim_probe_count < 0:
+            raise ValueError(f"claim_probe_count must be non-negative, but got {self.claim_probe_count}.")
+        if not math.isfinite(self.claim_probe_late_emphasis):
+            raise ValueError(f"claim_probe_late_emphasis must be finite, but got {self.claim_probe_late_emphasis}.")
+        self._validate_claim_probe_text()
         _validate_choice("filter_criterion", self.filter_criterion, {"mean_range", "std"})
         _validate_choice(
             "online_filtering_fallback", self.online_filtering_fallback, {"error", "keep_round", "first_round"}
@@ -901,6 +965,7 @@ class PPOConfig:
                 )
             if self.algorithm.adv_estimator == "remax":
                 raise ValueError("algorithm.rollout_image_transform does not support adv_estimator=remax.")
+        self._validate_claim_probes()
         if self.worker.rollout.interaction_mode == "agentic":
             unsupported_interventions = []
             intervention_fields = {
@@ -965,6 +1030,48 @@ class PPOConfig:
                 check_chat_template_supports_tools(
                     self.worker.actor.model.model_path, self.data.override_chat_template
                 )
+
+    def _validate_claim_probes(self):
+        """Claim probes and the perception reward are set together; the probes run after online filtering, so the
+        filter cannot use the reward that includes them; the rollout engine needs room for the claim question."""
+        algorithm, rollout = self.algorithm, self.worker.rollout
+        perception_weight = float(self.worker.reward.reward_function_kwargs.get("perception_weight", 0.0))
+        if algorithm.claim_probe_count == 0:
+            if perception_weight > 0.0:
+                raise ValueError(
+                    "worker.reward.reward_function_kwargs.perception_weight > 0 needs the perception score of claim "
+                    "probes: set algorithm.claim_probe_count > 0."
+                )
+            return
+        if perception_weight <= 0.0:
+            raise ValueError(
+                "algorithm.claim_probe_count > 0 needs worker.reward.reward_function_kwargs.perception_weight > 0 "
+                "(VAPO: 0.1) with examples/reward_function/math.py:compute_score."
+            )
+        unsupported = {
+            "worker.rollout.interaction_mode=agentic": rollout.interaction_mode == "agentic",
+            "algorithm.adv_estimator=remax": algorithm.adv_estimator == "remax",
+            "algorithm.rollout_image_transform": algorithm.rollout_image_transform is not None,
+            "algorithm.use_grounding_consistency_reward": algorithm.use_grounding_consistency_reward,
+        }
+        enabled = [name for name, value in unsupported.items() if value]
+        if enabled:
+            raise ValueError(f"algorithm.claim_probe_count > 0 does not support: {', '.join(enabled)}.")
+        if algorithm.online_filtering and algorithm.filter_key not in {"accuracy", "format"}:
+            raise ValueError(
+                "algorithm.claim_probe_count > 0 runs the probes on the batch kept by online filtering, before the "
+                "perception score exists, so the filter cannot use it: set algorithm.filter_key=accuracy or format "
+                f"(got {algorithm.filter_key}). See examples/reproduction/vapo/README.md#dynamic-sampling."
+            )
+        needed = rollout.prompt_length + rollout.response_length + CLAIM_PROBE_ENGINE_HEADROOM
+        if rollout.max_model_len is None:
+            rollout.max_model_len = needed
+        elif rollout.max_model_len < needed:
+            raise ValueError(
+                f"worker.rollout.max_model_len ({rollout.max_model_len}) leaves no room for the claim probe question: "
+                f"set it to at least data.max_prompt_length + data.max_response_length + "
+                f"{CLAIM_PROBE_ENGINE_HEADROOM} = {needed}, or leave it unset."
+            )
 
     def _validate_teacher(self):
         """The teacher of on-policy distillation: needed exactly when an objective uses it, and the rollout must
