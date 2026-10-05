@@ -21,7 +21,7 @@ import uuid
 import pytest
 from transformers import GenerationConfig, PretrainedConfig
 
-from verl.utils.checkpoint import CHECKPOINT_TRACKER, find_latest_ckpt, remove_obsolete_ckpt
+from verl.utils.checkpoint import CHECKPOINT_TRACKER, find_latest_ckpt, remove_obsolete_ckpt, require_resumable_ckpt
 from verl.utils.checkpoint.fsdp_checkpoint_manager import _save_generation_config
 
 
@@ -154,3 +154,14 @@ def test_finalized_runs_are_not_resumed(tmp_path):
     (tmp_path / CHECKPOINT_TRACKER).write_text(json.dumps(tracker))
     with pytest.raises(RuntimeError, match="finalized"):
         find_latest_ckpt(str(tmp_path))
+
+
+def test_a_weights_only_checkpoint_is_refused_with_the_remedy(tmp_path):
+    step = tmp_path / "global_step_5"
+    (step / "actor").mkdir(parents=True)
+    (step / "actor" / "model_world_size_4_rank_0.pt").write_bytes(b"x")
+    with pytest.raises(RuntimeError, match="save_model_only=true.*find_last_checkpoint=false"):
+        require_resumable_ckpt(str(step))
+    (step / "actor" / "optim_world_size_4_rank_0.pt").write_bytes(b"x")
+    require_resumable_ckpt(str(step))  # a full checkpoint passes
+    require_resumable_ckpt(str(tmp_path / "missing"))  # nothing to judge: the loader reports the missing files

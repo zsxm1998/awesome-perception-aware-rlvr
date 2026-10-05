@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import glob
 import json
 import os
 import random
@@ -173,3 +174,17 @@ def remove_obsolete_ckpt(
             print(f"Removed obsolete checkpoint: {folder_path}")
         except Exception as e:
             print(f"Failed to remove {folder_path}: {e}")
+
+
+def require_resumable_ckpt(path: str) -> None:
+    """Refuse a checkpoint that holds the model weights only (saved with `trainer.save_model_only=true`): the
+    optimizer and extra state it would need to resume from were never written."""
+    actor_path = os.path.join(path, "actor")
+    if glob.glob(os.path.join(actor_path, "model_world_size_*")) and not glob.glob(
+        os.path.join(actor_path, "optim_world_size_*")
+    ):
+        raise RuntimeError(
+            f"{path} holds the model weights only (saved with trainer.save_model_only=true), so the run cannot "
+            "resume from it. Set trainer.find_last_checkpoint=false to start a new run, or point "
+            "trainer.load_checkpoint_path at a full checkpoint; runs to resume need trainer.save_model_only=false."
+        )

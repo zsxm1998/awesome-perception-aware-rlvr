@@ -237,9 +237,35 @@ from verl.trainer.distillation import (  # noqa: E402
     DistillationSpec,
     build_distillation_config,
     chunked_distillation,
-    reference_divergence,
     stat_names,
 )
+
+
+def reference_divergence(
+    student_logits: torch.Tensor, teacher_logits: torch.Tensor, spec: DistillationSpec
+) -> torch.Tensor:
+    """Direct, unchunked definition of the per-row divergence the chunked path is compared to."""
+    temperature = spec.temperature if spec.temperature_scope == "all" else 1.0
+    student = student_logits.float()[:, : spec.vocab_size] / temperature
+    teacher = teacher_logits.float()[:, : spec.vocab_size] / temperature
+    log_p, log_q = torch.log_softmax(student, dim=-1), torch.log_softmax(teacher, dim=-1)
+    p, q = log_p.exp(), log_q.exp()
+    if spec.support == "student_top_k":
+        top_k_ids = student.detach().topk(spec.top_k, dim=-1).indices
+        p_top, q_top = p.gather(-1, top_k_ids), q.gather(-1, top_k_ids)
+        p = torch.cat([p_top, (1 - p_top.sum(-1, keepdim=True)).clamp(min=1e-30)], dim=-1)
+        q = torch.cat([q_top, (1 - q_top.sum(-1, keepdim=True)).clamp(min=1e-30)], dim=-1)
+        log_p, log_q = p.log(), q.log()
+    if spec.divergence == "reverse_kl":
+        value = (p * (log_p - log_q)).sum(-1)
+    elif spec.divergence == "forward_kl":
+        value = (q * (log_q - log_p)).sum(-1)
+    else:
+        beta = spec.jsd_beta
+        m = (1 - beta) * p + beta * q
+        log_m = m.log()
+        value = beta * (q * (log_q - log_m)).sum(-1) + (1 - beta) * (p * (log_p - log_m)).sum(-1)
+    return value * spec.temperature**2 if spec.temperature != 1.0 else value
 
 
 VOCAB, LM_HEAD = 37, 40  # the LM head has padding rows beyond the tokenizer, as Qwen's
@@ -1182,6 +1208,38 @@ def test_text_prior_gate_takes_the_micro_batch_quantile():
     assert gate.tolist() == [1.0, 0.0, 0.0]
 
 
+def test_text_prior_gate_scores_the_exact_kl_on_the_tokenizer_ids():
+    """The visual dependency score is KL(q || q_text) without the 1e-8 clamp of the sensitivity metrics (a token
+    the text-only teacher gives less than 1e-8 saturates there at 18.4 nats), on the tokenizer's ids only."""
+    from verl.trainer.distillation import _kl
+    from verl.trainer.visual_sensitivity import compute_full_vocab_visual_sensitivity_components
+
+    teacher, teacher_text = torch.zeros(4, 8), torch.zeros(4, 8)
+    teacher[0, 0], teacher_text[0, 0] = 40.0, -40.0  # the image makes token 0 certain, the text rules it out
+    teacher[1, 1], teacher_text[1, 1] = 40.0, -30.0  # less so, but both below 1e-8: the clamp cannot tell
+    teacher[2, 2], teacher_text[2, 2] = 40.0, 0.0
+    teacher[3, 3] = 2.0
+    teacher[:, 6:] = teacher_text[:, 6:] = -1e4  # padding rows of the LM head (ids beyond the tokenizer)
+    teacher[2, 6] = 45.0  # mass on a padding row must not count
+    exact = _kl(torch.log_softmax(teacher[:, :6], -1), torch.log_softmax(teacher_text[:, :6], -1))
+    assert exact[0] > exact[1] + 5 > exact[2] > exact[3]
+
+    scores = compute_full_vocab_visual_sensitivity_components(teacher, teacher_text, {"kl"}, eps=None, vocab_size=6)[
+        "kl"
+    ]
+    torch.testing.assert_close(scores, exact)
+    clamped = compute_full_vocab_visual_sensitivity_components(teacher[:, :6], teacher_text[:, :6], {"kl"})["kl"]
+    assert abs(clamped[0] - clamped[1]) < 1e-3  # both saturate
+
+    rows = {"row_valid": torch.ones(4)}
+    gate = DataParallelPPOActor._text_prior_gate(
+        {}, rows, teacher, teacher_text, {"text_prior_quantile": 0.5, "vocab_size": 6}
+    )
+    assert gate.tolist() == [1.0, 1.0, 0.0, 0.0]  # with the padding row counted, row 2 would be gated instead
+    unsliced = compute_full_vocab_visual_sensitivity_components(teacher, teacher_text, {"kl"}, eps=None)["kl"]
+    assert unsliced[2] > unsliced[1]
+
+
 @pytest.mark.parametrize(
     "algorithm, message",
     [
@@ -1227,6 +1285,9 @@ def test_contrast_configs_build_their_views():
     assert built["views"] == [] and built["contrast_keep_ids"] == [5, 9]
     with pytest.raises(ValueError, match="normalization"):
         build_distillation_config(config.algorithm, VOCAB)
+    config.algorithm.vcsd_keep_token_ids = [5, VOCAB]  # an id of the LM head's padding rows would never match
+    with pytest.raises(ValueError, match="not ids of the tokenizer"):
+        build_distillation_config(config.algorithm, VOCAB, black_pixel_values=[-1.0] * 3)
 
 
 def test_black_pixel_values_follow_the_processor_normalization():

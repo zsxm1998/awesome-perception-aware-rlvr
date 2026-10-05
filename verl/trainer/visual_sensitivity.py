@@ -300,7 +300,8 @@ def compute_full_vocab_visual_sensitivity_scores(
     metric: str,
     jsd_weight: float = 0.5,
     entropy_gate: str = "none",
-    eps: float = 1e-8,
+    eps: float | None = 1e-8,
+    vocab_size: int | None = None,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     component_names = _required_full_vocab_component_names(metric=metric, entropy_gate=entropy_gate)
     components = compute_full_vocab_visual_sensitivity_components(
@@ -308,6 +309,7 @@ def compute_full_vocab_visual_sensitivity_scores(
         corrupted_logits=corrupted_logits,
         component_names=component_names,
         eps=eps,
+        vocab_size=vocab_size,
     )
     return combine_full_vocab_visual_sensitivity_scores(
         components=components,
@@ -322,9 +324,13 @@ def compute_full_vocab_visual_sensitivity_components(
     logits: torch.Tensor,
     corrupted_logits: torch.Tensor,
     component_names: set[str] | None = None,
-    eps: float = 1e-8,
+    eps: float | None = 1e-8,
     chunk_size: int = 32,
+    vocab_size: int | None = None,
 ) -> dict[str, torch.Tensor]:
+    """Per-position components over the vocabulary; ``eps`` clamps the log-probabilities (None: the exact values,
+    as VGS's visual dependency score needs), ``vocab_size`` restricts both distributions to the first ids (the
+    tokenizer's, without the LM head's padding rows)."""
     if logits.shape != corrupted_logits.shape:
         raise ValueError(
             "Full-vocab visual sensitivity requires normal and corrupted logits to have the same shape, "
@@ -343,6 +349,8 @@ def compute_full_vocab_visual_sensitivity_components(
     if "abs_entropy_gap" in component_names:
         component_names.update({"entropy", "corrupted_entropy"})
 
+    if vocab_size is not None:
+        logits, corrupted_logits = logits[..., :vocab_size], corrupted_logits[..., :vocab_size]
     original_shape = logits.shape[:-1]
     vocab_size = logits.shape[-1]
     flat_logits = logits.reshape(-1, vocab_size)
@@ -352,7 +360,7 @@ def compute_full_vocab_visual_sensitivity_components(
         return dict.fromkeys(component_names, empty)
 
     component_chunks: dict[str, list[torch.Tensor]] = {name: [] for name in component_names}
-    log_eps = math.log(eps)
+    log_eps = None if eps is None else math.log(eps)
 
     for logits_chunk, corrupted_logits_chunk in zip(
         flat_logits.split(chunk_size, dim=0),
@@ -361,8 +369,10 @@ def compute_full_vocab_visual_sensitivity_components(
     ):
         log_probs = F.log_softmax(logits_chunk.float(), dim=-1)
         corrupted_log_probs = F.log_softmax(corrupted_logits_chunk.float(), dim=-1)
-        safe_log_probs = torch.clamp(log_probs, min=log_eps)
-        safe_corrupted_log_probs = torch.clamp(corrupted_log_probs, min=log_eps)
+        safe_log_probs = log_probs if log_eps is None else torch.clamp(log_probs, min=log_eps)
+        safe_corrupted_log_probs = (
+            corrupted_log_probs if log_eps is None else torch.clamp(corrupted_log_probs, min=log_eps)
+        )
         probs = torch.exp(log_probs)
         corrupted_probs = torch.exp(corrupted_log_probs)
 
@@ -371,7 +381,7 @@ def compute_full_vocab_visual_sensitivity_components(
         if "corrupted_entropy" in component_names:
             component_chunks["corrupted_entropy"].append(-(corrupted_probs * safe_corrupted_log_probs).sum(dim=-1))
         if "jsd" in component_names:
-            mean_log_probs = torch.log(0.5 * (probs + corrupted_probs) + eps)
+            mean_log_probs = torch.log(0.5 * (probs + corrupted_probs) + (eps or 0.0))
             jsd_chunk = 0.5 * (probs * (safe_log_probs - mean_log_probs)).sum(dim=-1)
             jsd_chunk = jsd_chunk + 0.5 * (corrupted_probs * (safe_corrupted_log_probs - mean_log_probs)).sum(dim=-1)
             component_chunks["jsd"].append(torch.clamp(jsd_chunk, min=0.0))

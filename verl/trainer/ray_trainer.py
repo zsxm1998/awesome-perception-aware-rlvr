@@ -37,7 +37,7 @@ from ..single_controller.base import Worker
 from ..single_controller.ray import RayClassWithInitArgs, RayResourcePool, RayWorkerGroup
 from ..single_controller.ray.base import create_colocated_worker_cls
 from ..utils import torch_functional as VF
-from ..utils.checkpoint import CHECKPOINT_TRACKER, find_latest_ckpt, remove_obsolete_ckpt
+from ..utils.checkpoint import CHECKPOINT_TRACKER, find_latest_ckpt, remove_obsolete_ckpt, require_resumable_ckpt
 from ..utils.logger import GenerationSample, Tracker
 from ..utils.py_functional import convert_dict_to_str, timer, unflatten_dict
 from ..utils.reasoning import (
@@ -577,7 +577,9 @@ class RayPPOTrainer:
             weights, response_mask, batch.non_tensor_batch["uid"]
         )
 
-    def _attach_text_prior_gate(self, batch: DataProto, quantile: float, metrics: dict[str, Any]) -> None:
+    def _attach_text_prior_gate(
+        self, batch: DataProto, quantile: float, vocab_size: int, metrics: dict[str, Any]
+    ) -> None:
         """VGS with vgs_vds_scope=global: the teacher's visual dependency KL(q || q_text) of every response token of
         the step; the text-prior term applies to the tokens above its quantile over the whole step."""
         keys = view_keys("no_image")
@@ -590,6 +592,8 @@ class RayPPOTrainer:
         metric_batch = self._pack_visual_sensitivity_metric_batch(batch, text_only)
         metric_batch.meta_info["visual_sensitivity_metric"] = "full_vocab_kl"
         metric_batch.meta_info["visual_sensitivity_entropy_gate"] = "none"
+        metric_batch.meta_info["visual_sensitivity_exact"] = True  # the exact KL on the tokenizer's ids
+        metric_batch.meta_info["visual_sensitivity_vocab_size"] = int(vocab_size)
         scores = self.actor_rollout_ref_wg.compute_teacher_visual_sensitivity_scores(metric_batch)
         scores = scores.batch["per_token_sensitivity_scores"]
         mask = batch.batch["response_mask"].bool()
@@ -881,6 +885,7 @@ class RayPPOTrainer:
 
         print(f"Load from checkpoint: {load_checkpoint_path}.")
         self.global_step = int(load_checkpoint_path.strip(os.path.sep).split("global_step_")[-1])
+        require_resumable_ckpt(load_checkpoint_path)
         actor_path = os.path.join(load_checkpoint_path, "actor")
         self.actor_rollout_ref_wg.load_checkpoint(actor_path)
         if self.use_critic:
@@ -1565,7 +1570,12 @@ class RayPPOTrainer:
                         and distillation_config["text_prior_scope"] == "global"
                     ):
                         with timer("teacher_aux", timing_raw):
-                            self._attach_text_prior_gate(batch, distillation_config["text_prior_quantile"], metrics)
+                            self._attach_text_prior_gate(
+                                batch,
+                                distillation_config["text_prior_quantile"],
+                                distillation_config["vocab_size"],
+                                metrics,
+                            )
                 self._maybe_attach_region_token_mask(batch)
                 if has_perception_reasoning(perception_reasoning_config):
                     shaping_context = build_sensitivity_advantage_shaping_context(perception_reasoning_config, batch)

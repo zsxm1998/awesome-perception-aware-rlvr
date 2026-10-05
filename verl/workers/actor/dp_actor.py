@@ -606,6 +606,8 @@ class DataParallelPPOActor(BasePPOActor):
         metric: str,
         jsd_weight: float,
         entropy_gate: str,
+        eps: float | None = 1e-8,
+        vocab_size: int | None = None,
     ) -> tuple[torch.Tensor, dict[str, float]]:
         if isinstance(logits_output, dict):
             if not isinstance(auxiliary_logits_output, dict):
@@ -621,6 +623,8 @@ class DataParallelPPOActor(BasePPOActor):
                 logits=logits_output["logits"],
                 corrupted_logits=auxiliary_logits_output["logits"],
                 component_names=_required_full_vocab_component_names(metric=metric, entropy_gate=entropy_gate),
+                eps=eps,
+                vocab_size=vocab_size,
             )
             response_shape = logits_output["response_shape"]
             scatter_shape = (int(response_shape[0]), int(response_shape[1]))
@@ -644,6 +648,8 @@ class DataParallelPPOActor(BasePPOActor):
             metric=metric,
             jsd_weight=jsd_weight,
             entropy_gate=entropy_gate,
+            eps=eps,
+            vocab_size=vocab_size,
         )
 
     def _prepare_response_rows(
@@ -815,7 +821,7 @@ class DataParallelPPOActor(BasePPOActor):
         distill_config: dict[str, Any],
     ) -> torch.Tensor:
         """0/1 gate of VGS's text-prior term per row: the visual dependency score KL(q || q_text) of the teacher
-        (the full-vocabulary KL sensitivity of the visual-sensitivity module) is above its `text_prior_quantile` over
+        (exact, on the tokenizer's ids) is above its `text_prior_quantile` over
         the response rows of this micro-batch, or the gate the driver computed over the whole step
         (`distill_text_prior_gate`)."""
         valid = rows["row_valid"] > 0
@@ -824,7 +830,11 @@ class DataParallelPPOActor(BasePPOActor):
             return gate if valid.any() else torch.zeros_like(rows["row_valid"])
         with torch.no_grad():
             scores = compute_full_vocab_visual_sensitivity_components(
-                logits=teacher_logits, corrupted_logits=teacher_text_logits, component_names={"kl"}
+                logits=teacher_logits,
+                corrupted_logits=teacher_text_logits,
+                component_names={"kl"},
+                eps=None,  # the exact KL: the clamp of the sensitivity metrics saturates peaked teachers
+                vocab_size=distill_config.get("vocab_size"),
             )["kl"]
         if not valid.any():
             return torch.zeros_like(scores)
@@ -1016,6 +1026,9 @@ class DataParallelPPOActor(BasePPOActor):
         metric = data.meta_info["visual_sensitivity_metric"]
         jsd_weight = data.meta_info.get("visual_sensitivity_jsd_weight", 0.5)
         entropy_gate = data.meta_info.get("visual_sensitivity_entropy_gate", "none")
+        # exact values on the tokenizer's ids (VGS's gate of the text-prior term), else the clamped components
+        eps = None if data.meta_info.get("visual_sensitivity_exact", False) else 1e-8
+        vocab_size = data.meta_info.get("visual_sensitivity_vocab_size")
         select_keys = [
             "input_ids",
             "attention_mask",
@@ -1076,6 +1089,8 @@ class DataParallelPPOActor(BasePPOActor):
                 metric=metric,
                 jsd_weight=jsd_weight,
                 entropy_gate=entropy_gate,
+                eps=eps,
+                vocab_size=vocab_size,
             )
             scores_lst.append(scores)
             for key, value in batch_metrics.items():

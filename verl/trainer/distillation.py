@@ -348,6 +348,13 @@ def build_distillation_config(
     keep_ids = algorithm.vcsd_keep_token_ids
     if keep_ids == "auto":
         keep_ids = end_token_ids
+    keep_ids = tuple(int(index) for index in keep_ids)
+    outside = [index for index in keep_ids if not 0 <= index < int(vocab_size)]
+    if outside:
+        raise ValueError(
+            f"vcsd_keep_token_ids {outside} are not ids of the tokenizer (0 <= id < {vocab_size}); ids of the LM "
+            "head's padding rows would have no effect."
+        )
     if algorithm.distill_contrast_view == "black" and black_pixel_values is None:
         raise ValueError("distill_contrast_view=black needs the image processor's normalization.")
     config = {
@@ -557,28 +564,3 @@ def importance_weights(
     if clip is None:
         return None
     return torch.exp(torch.clamp(log_probs.detach() - old_log_probs, -20.0, 20.0)).clamp(max=clip)
-
-
-def reference_divergence(
-    student_logits: torch.Tensor, teacher_logits: torch.Tensor, spec: DistillationSpec
-) -> torch.Tensor:
-    """Direct, unchunked definition of the per-row divergence; the tests compare the chunked path to it."""
-    temperature = spec.temperature if spec.temperature_scope == "all" else 1.0
-    student = student_logits.float()[:, : spec.vocab_size] / temperature
-    teacher = teacher_logits.float()[:, : spec.vocab_size] / temperature
-    p = torch.softmax(student, dim=-1)
-    q = torch.softmax(teacher, dim=-1)
-    if spec.support == "student_top_k":
-        top_k_ids = student.detach().topk(spec.top_k, dim=-1).indices
-        p_top, q_top = p.gather(-1, top_k_ids), q.gather(-1, top_k_ids)
-        p = torch.cat([p_top, (1 - p_top.sum(-1, keepdim=True)).clamp(min=1e-30)], dim=-1)
-        q = torch.cat([q_top, (1 - q_top.sum(-1, keepdim=True)).clamp(min=1e-30)], dim=-1)
-    if spec.divergence == "reverse_kl":
-        value = (p * (p.log() - q.log())).sum(-1)
-    elif spec.divergence == "forward_kl":
-        value = (q * (q.log() - p.log())).sum(-1)
-    else:
-        beta = spec.jsd_beta
-        m = (1 - beta) * p + beta * q
-        value = beta * (q * (q.log() - m.log())).sum(-1) + (1 - beta) * (p * (p.log() - m.log())).sum(-1)
-    return value * spec.temperature**2 if spec.temperature != 1.0 else value

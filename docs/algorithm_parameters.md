@@ -138,7 +138,8 @@ Objective on the full distributions (a direct loss, no PPO ratio):
 - `algorithm.distill_support`: `full` (every id of the tokenizer) or `student_top_k` (the student's top
   `algorithm.distill_top_k` ids plus a tail bucket; Vision-OPD)
 - `algorithm.distill_temperature` and `algorithm.distill_temperature_scope` (`all`: the distributions use T and the
-  loss is multiplied by T²; `loss_scale_only`: only the T² factor, as VCSD's released code)
+  loss is multiplied by T²; `loss_scale_only`: only the T² factor, as VCSD's released code); they apply to every
+  target, and the reproductions set a temperature for VCSD only
 - `algorithm.distill_chunk_size` (response rows per fp32 chunk, default 256), `algorithm.distill_is_clip`
   (detached truncated importance weight, default none)
 - `worker.actor.loss_avg_mode` averages it as the policy loss (`token` or `seq`)
@@ -156,7 +157,8 @@ Inputs of the teacher and of the target:
 - VGS: `algorithm.vgs_steering_coef` (γ), `algorithm.vgs_text_prior_coef` (λ), `algorithm.vgs_vds_quantile`,
   `algorithm.vgs_vds_scope` (`micro_batch`, the default, takes the quantile within each update micro-batch and so
   depends on how a step is split; `global` takes it over the step with an extra teacher pass and does not),
-  `algorithm.vgs_loss_scale` (η)
+  `algorithm.vgs_loss_scale` (η); the visual dependency score of the gate is the teacher's exact KL(q ‖ q_text)
+  on the tokenizer's ids
 
 Per-token weights (VA-OPD):
 
