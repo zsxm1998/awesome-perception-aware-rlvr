@@ -245,6 +245,17 @@ class vLLMRollout(BaseRollout):
         print(f"Sampling params: {sampling_kwargs}.")
         self.sampling_params = SamplingParams(**sampling_kwargs)
 
+    def _lora_requests(self, count: int) -> Optional[list[LoRARequest]]:
+        """The current LoRA adapter for each of `count` requests (None without LoRA). The adapter is loaded next to
+        the base weights rather than merged into them, so every request of the policy has to name it."""
+        if not self.lora_kwargs:
+            return None
+        lora_int_ids = list(self.inference_engine.llm_engine.list_loras())
+        if len(lora_int_ids) == 0:
+            return None
+        lora_int_id = lora_int_ids[0]
+        return [LoRARequest(lora_name=f"{lora_int_id}", lora_int_id=lora_int_id, lora_path="/simon-stub-path")] * count
+
     @contextmanager
     def update_sampling_params(self, **kwargs):
         if not kwargs:
@@ -304,14 +315,7 @@ class vLLMRollout(BaseRollout):
         else:
             vllm_inputs = [{"prompt_token_ids": list(raw_prompt_ids)} for raw_prompt_ids in batch_raw_prompt_ids]
 
-        lora_requests = None
-        if self.lora_kwargs:
-            lora_int_ids = list(self.inference_engine.llm_engine.list_loras())
-            if len(lora_int_ids) > 0:
-                lora_int_id = lora_int_ids[0]
-                lora_requests = [
-                    LoRARequest(lora_name=f"{lora_int_id}", lora_int_id=lora_int_id, lora_path="/simon-stub-path")
-                ] * batch_size
+        lora_requests = self._lora_requests(batch_size)
 
         # users can customize different sampling_params at different run
         with self.update_sampling_params(**prompts.meta_info):
@@ -389,7 +393,10 @@ class vLLMRollout(BaseRollout):
                 n=1, temperature=0.0, top_p=1.0, top_k=-1, max_tokens=1, allowed_token_ids=yes_ids + no_ids
             ):
                 completions: list[RequestOutput] = self.inference_engine.generate(
-                    prompts=inputs, sampling_params=self.sampling_params, use_tqdm=self.use_tqdm
+                    prompts=inputs,
+                    sampling_params=self.sampling_params,
+                    lora_request=self._lora_requests(len(inputs)),
+                    use_tqdm=self.use_tqdm,
                 )
             return [completion.outputs[0].token_ids[0] for completion in completions]
 
@@ -470,7 +477,7 @@ class vLLMRollout(BaseRollout):
                 raise ValueError("DeepEyes rollout requires at least one source image")
             source_images_batch.append([process_image(image, None, None) for image in images])
 
-        lora_requests = self._agent_lora_requests(batch_size)
+        lora_requests = self._lora_requests(batch_size)
         with self.update_sampling_params(**prompts.meta_info):
             base_sampling_params = self.sampling_params.clone()
             rollout_n = int(base_sampling_params.n)
@@ -642,21 +649,3 @@ class vLLMRollout(BaseRollout):
             dtype=object,
         )
         return output
-
-    def _agent_lora_requests(
-        self,
-        batch_size: int,
-    ) -> Optional[list[LoRARequest]]:
-        if not self.lora_kwargs:
-            return None
-        lora_int_ids = list(self.inference_engine.llm_engine.list_loras())
-        if not lora_int_ids:
-            return None
-        lora_int_id = lora_int_ids[0]
-        return [
-            LoRARequest(
-                lora_name=f"{lora_int_id}",
-                lora_int_id=lora_int_id,
-                lora_path="/simon-stub-path",
-            )
-        ] * batch_size
