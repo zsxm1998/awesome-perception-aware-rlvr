@@ -27,7 +27,7 @@ from 0 to 1 over training. Variants: PEPO_G (on GRPO) and PEPO_D (on DAPO).
 | Optimization | AdamW (bf16), lr 1e-6 with cosine decay to 0 and no warmup, vision tower trainable, 1 epoch (262 steps) |
 | Lengths / pixels | max prompt 1,024, max response 1,024; 3,136-12,845,056 pixels (the processor's range: images keep their resolution, as in PEPO's ms-swift training) |
 | GPUs | 8 |
-| Perception prior | `algorithm.visual_sensitivity_metric=hidden_state_similarity`, `algorithm.visual_sensitivity_hidden_metric=cosine`, `algorithm.visual_token` (`auto`, `<|image_pad|>` for Qwen, `<IMG_CONTEXT>` for InternVL) |
+| Perception prior | `algorithm.visual_sensitivity_metric=hidden_state_similarity`, `algorithm.visual_sensitivity_hidden_metric=cosine`, `algorithm.visual_token` (`auto`, `<\|image_pad\|>` for Qwen, `<IMG_CONTEXT>` for InternVL) |
 | Token weighting | `algorithm.advantage_scaling_method=pepo`, `algorithm.advantage_scaling_schedule=linear` (λ: 0 → 1), `algorithm.pepo_gate_alpha=0.05` (α), `algorithm.pepo_gate_temperature=1.8` |
 
 See [docs/algorithm_parameters.md](../../../docs/algorithm_parameters.md) for the full list of `algorithm.*` switches.
