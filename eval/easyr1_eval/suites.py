@@ -45,6 +45,9 @@ class Suite:
     description: str = ""
     notes: str = ""
     defaults: dict[str, Any] = field(default_factory=dict)
+    # (group name, benchmarks) in order; when set, the summaries add each group's mean and the mean of the
+    # group means next to the registry groups and the mean over all benchmarks
+    groups: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
 
 def load_suites(path: Path, specs: list[BenchmarkSpec]) -> dict[str, Suite]:
@@ -86,12 +89,18 @@ def load_suites(path: Path, specs: list[BenchmarkSpec]) -> dict[str, Suite]:
             from verl.utils.plain_think import normalize_plain_think_tokens
 
             defaults["plain_think_tokens"] = normalize_plain_think_tokens(defaults["plain_think_tokens"])
+        unique_keys = tuple(dict.fromkeys(keys))
+        groups = _parse_groups(name, entry.get("groups"), unique_keys)
+        includes = entry.get("include") or []
+        if not groups and len(includes) == 1 and not benchmarks:
+            groups = resolve(str(includes[0]), stack + (name,)).groups  # an alias keeps the groups
         suite = Suite(
             name=name,
-            benchmarks=tuple(dict.fromkeys(keys)),
+            benchmarks=unique_keys,
             description=str(entry.get("description") or ""),
             notes=" ".join(str(entry.get("notes") or "").split()),
             defaults=defaults,
+            groups=groups,
         )
         resolved[name] = suite
         return suite
@@ -99,6 +108,40 @@ def load_suites(path: Path, specs: list[BenchmarkSpec]) -> dict[str, Suite]:
     for name in raw:
         resolve(str(name), ())
     return resolved
+
+
+def _parse_groups(name: str, raw: Any, benchmarks: tuple[str, ...]) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """``groups: {group: [benchmark, ...]}``: every benchmark of the suite in exactly one group."""
+    if raw is None:
+        return ()
+    if not isinstance(raw, dict) or not raw:
+        raise ValueError(f"suite {name}: groups must be a non-empty mapping of group name -> benchmarks")
+    groups = []
+    assigned: dict[str, str] = {}
+    for group, members in raw.items():
+        if not isinstance(members, list) or not members:
+            raise ValueError(f"suite {name}: group {group!r} must list benchmarks")
+        for key in members:
+            if key not in benchmarks:
+                raise ValueError(f"suite {name}: group {group!r} lists {key!r}, which is not in the suite")
+            if key in assigned:
+                raise ValueError(f"suite {name}: {key!r} is in groups {assigned[key]!r} and {group!r}")
+            assigned[key] = str(group)
+        groups.append((str(group), tuple(str(key) for key in members)))
+    ungrouped = [key for key in benchmarks if key not in assigned]
+    if ungrouped:
+        raise ValueError(f"suite {name}: benchmarks without a group: {ungrouped}")
+    return tuple(groups)
+
+
+def suite_groupings(suites: dict[str, Suite], names: list[str]) -> dict[str, tuple[tuple[str, tuple[str, ...]], ...]]:
+    """The groups of the selected suites that define them (aliases of the same groups appear once)."""
+    selected: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {}
+    for name in names:
+        groups = suites[name].groups
+        if groups and groups not in selected.values():
+            selected[name] = groups
+    return selected
 
 
 def suite_benchmarks(suites: dict[str, Suite], names: list[str]) -> list[str]:

@@ -233,19 +233,28 @@ token 选择、优势缩放、辅助损失和额外奖励；在线策略蒸馏�
 
 [`examples/comparison/qwen3_vl_4b`](examples/comparison/README.md) 在 Qwen3-VL-4B-Instruct 上训练除 DeepEyes 外的所有方法
 （[原因](examples/comparison/README.md#why-deepeyes-is-not-included)），使用相同的数据（ViRL39K / MMK12）、相同的
-GRPO 超参数和相同的评测，只有方法相关的参数不同，各方法沿用其论文中的图像扰动方式。结果将补充到这里。
+GRPO 超参数和相同的评测，只有方法相关的参数不同，各方法沿用其论文中的图像扰动方式。`comparison` 套件含 19 项基准，
+分为三组（见 [comparison README](examples/comparison/README.md#results)），总分取三组均值的平均。结果将补充到这里。
 
 | 方法 | GRPO | DAPO | PAPO | VPPO | ToR | DVRP | PGPO | PEPO | CFPO | VEPO | NoisyRollout | VGPO | VAPO | GRIT | CGPO |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 平均（comparison 套件） | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| 数学推理（7 项） | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| 依赖视觉的推理（6 项） | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| 感知与幻觉（6 项） | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| **总分**（三组均值的平均） | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| 全部（19 项基准的平均） | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 
 [`examples/comparison/opd_qwen3_vl_2b`](examples/comparison/opd_qwen3_vl_2b/README.md) 以 Qwen3-VL-2B 为学生、
 Qwen3-VL-8B-Instruct 为教师对比在线策略蒸馏，使用相同的数据、训练量和评测，每批采样只更新一次，不加 KL 和熵项。
-VCSD 从学生自身的 EMA 蒸馏，不使用外部教师；同一学生上的 GRPO 作为强化学习参照。
+VCSD 从学生自身的 EMA 蒸馏，不使用外部教师；同一学生上的 GRPO 作为强化学习参照。`opd` 套件即 `comparison` 套件。
 
 | 方法 | GRPO | OPD（采样 token） | OPD（完整分布） | VA-OPD | VGS | VCSD |
 | --- | --- | --- | --- | --- | --- | --- |
-| 平均（`opd` 套件） | TBD | TBD | TBD | TBD | TBD | TBD |
+| 数学推理（7 项） | TBD | TBD | TBD | TBD | TBD | TBD |
+| 依赖视觉的推理（6 项） | TBD | TBD | TBD | TBD | TBD | TBD |
+| 感知与幻觉（6 项） | TBD | TBD | TBD | TBD | TBD | TBD |
+| **总分**（三组均值的平均） | TBD | TBD | TBD | TBD | TBD | TBD |
+| 全部（19 项基准的平均） | TBD | TBD | TBD | TBD | TBD | TBD |
 
 ### 📌 关于结果的说明
 

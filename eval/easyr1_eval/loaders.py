@@ -61,6 +61,7 @@ def load_samples(spec: BenchmarkSpec, data_root: Path, limit: int | None = None)
         "mmvet": load_mmvet,
         "mmstar": load_mmstar,
         "blink": load_blink,
+        "cvbench": load_cvbench,
         "ai2d": load_ai2d,
         "mmmu": load_mmmu,
         "vstar": load_vstar,
@@ -376,12 +377,19 @@ def load_seed_bench(spec: BenchmarkSpec, data_root: Path, limit: int | None = No
 
 
 def load_mme(spec: BenchmarkSpec, data_root: Path, limit: int | None = None) -> list[EvalSample]:
+    """MME; ``metadata.categories`` keeps only these subtasks (``mme_perception``: the 10 perception ones)."""
+    categories = spec.metadata.get("categories")
+    wanted = set(categories) if categories is not None else None
     samples = []
+    seen = set()
     for path in _expand_paths(spec, data_root):
         df = pd.read_parquet(path)
         for index, row in df.iterrows():
             if limit is not None and len(samples) >= limit:
                 return samples
+            if wanted is not None and str(row["category"]) not in wanted:
+                continue
+            seen.add(str(row["category"]))
             question = str(row["question"]).strip()
             samples.append(
                 EvalSample(
@@ -398,6 +406,8 @@ def load_mme(spec: BenchmarkSpec, data_root: Path, limit: int | None = None) -> 
                     },
                 )
             )
+    if wanted is not None and limit is None and seen != wanted:
+        raise ValueError(f"{spec.key}: MME subtasks not found in the data: {sorted(wanted - seen)}")
     return samples
 
 
@@ -729,6 +739,34 @@ def load_blink(spec: BenchmarkSpec, data_root: Path, limit: int | None = None) -
                     extra_info={"options": [str(choice) for choice in row["choices"]]},
                     metadata={
                         "category": str(row["sub_task"]),
+                        "row_index": int(index),
+                        "question": str(row["question"]).strip(),
+                    },
+                )
+            )
+    return samples
+
+
+def load_cvbench(spec: BenchmarkSpec, data_root: Path, limit: int | None = None) -> list[EvalSample]:
+    """CV-Bench (2D and 3D parquet): the official ``prompt`` (question + ``(A) ...`` options) followed by the letter
+    instruction; ``source`` (ADE20K, COCO, Omni3D) is the category the official accuracy averages over."""
+    samples = []
+    for path in _expand_paths(spec, data_root):
+        df = pd.read_parquet(path)
+        for index, row in df.iterrows():
+            if limit is not None and len(samples) >= limit:
+                return samples
+            samples.append(
+                EvalSample(
+                    benchmark=spec.key,
+                    sample_id=str(row["idx"]),
+                    prompt=f"{str(row['prompt']).strip()}\n{MCQ_LETTER_SUFFIX}",
+                    target=str(row["answer"]).strip().strip("()").upper(),
+                    images=[_decode_image(row["image"])],
+                    extra_info={"options": [str(choice) for choice in row["choices"]]},
+                    metadata={
+                        "category": str(row["source"]),
+                        "task": f"{row['type']} {row['task']}",
                         "row_index": int(index),
                         "question": str(row["question"]).strip(),
                     },

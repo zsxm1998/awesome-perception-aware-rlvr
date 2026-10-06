@@ -197,6 +197,20 @@ MME_ROWS = [
     {"sample_id": "q3b", "target": "no", "responses": ["yes"], "metadata": {"category": "ocr", "question_id": "q3"}},
 ]
 
+
+def _cvbench_row(sample_id, source, response):
+    return {
+        "sample_id": sample_id,
+        "target": "A",
+        "responses": [response],
+        "extra_info": {"options": ["x", "y"]},
+        "metadata": {"category": source},
+    }
+
+
+# ADE20K right, COCO wrong, Omni3D right: (1 + 0) / 2 for 2D and 1 for 3D give 75, the plain mean 66.67
+CVBENCH_ROWS = [_cvbench_row("v1", "ADE20K", "A"), _cvbench_row("v2", "COCO", "B"), _cvbench_row("v3", "Omni3D", "A")]
+
 ANSWER_BBOX_ROWS = [
     {
         "sample_id": "two-boxes",
@@ -248,6 +262,8 @@ GROUNDING_IOU_ROWS = [
         ("refcoco", score_refcoco, REFCOCO_ROWS, {}),
         ("pope", score_pope, POPE_ROWS, {}),
         ("mme", score_mme, MME_ROWS, {}),
+        ("mme", score_mme, MME_ROWS, {"categories": ["art", "ocr"]}),
+        ("mcq", score_mcq, CVBENCH_ROWS, {"aggregate": "cvbench"}),
         ("answer_bbox", score_answer_bbox, ANSWER_BBOX_ROWS, {}),
         ("grounding_iou", score_grounding_iou, GROUNDING_IOU_ROWS, {}),
     ],
@@ -257,6 +273,16 @@ def test_extractor_matches_scorer_normalized_score(tmp_path, scorer, score_fn, r
     result = score_fn(spec, rows, None, tmp_path)
     samples = SCORER_EXTRACTORS[scorer](spec, rows, tmp_path)
     assert samples.observed_score() == pytest.approx(result.normalized_score_0_100, abs=1e-9)
+
+
+def test_cvbench_runs_with_equal_scores_compare_equal(tmp_path):
+    # both runs score 50 under CV-Bench's formula although their plain accuracies differ (2/3 and 1/3)
+    spec = _spec("cvbench", "mcq", metadata={"aggregate": "cvbench"})
+    run_a = [_cvbench_row("v1", "ADE20K", "A"), _cvbench_row("v2", "COCO", "A"), _cvbench_row("v3", "Omni3D", "B")]
+    run_b = [_cvbench_row("v1", "ADE20K", "B"), _cvbench_row("v2", "COCO", "B"), _cvbench_row("v3", "Omni3D", "A")]
+    for rows in (run_a, run_b):
+        assert score_mcq(spec, rows, None, tmp_path).normalized_score_0_100 == pytest.approx(50.0)
+        assert SCORER_EXTRACTORS["mcq"](spec, rows, tmp_path).observed_score() == pytest.approx(50.0)
 
 
 def test_agentic_answer_bbox_extractor_matches_scorer(tmp_path):

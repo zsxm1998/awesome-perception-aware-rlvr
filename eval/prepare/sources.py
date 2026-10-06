@@ -18,6 +18,7 @@ from __future__ import annotations
 from . import (
     blink,
     cfpo,
+    cvbench,
     grit,
     hrbench,
     lmms_lab,
@@ -41,6 +42,7 @@ SOURCES: dict[str, BenchmarkSource] = {
         lmms_lab,
         mmstar,
         blink,
+        cvbench,
         seed_bench,
         cfpo,
         grit,

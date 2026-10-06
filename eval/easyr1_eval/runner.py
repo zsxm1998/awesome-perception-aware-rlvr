@@ -58,8 +58,8 @@ from .schemas import (
 )
 from .scorers import JUDGE_PROVIDERS, SCORER_REVISIONS, SCORER_VERSION, resolve_judge_max_tokens
 from .state import fingerprint, is_complete, mark_complete, mark_failed
-from .suites import SUITE_DEFAULT_KEYS, load_suites, merged_suite_defaults, suite_benchmarks
-from .summary import update_global_summary_csv, write_summary_csv
+from .suites import SUITE_DEFAULT_KEYS, load_suites, merged_suite_defaults, suite_benchmarks, suite_groupings
+from .summary import SuiteGroups, suite_group_scores, update_global_summary_csv, write_summary_csv
 from .training_record import load_training_record, same_setting
 
 
@@ -838,15 +838,32 @@ def write_run_summaries(results, args: argparse.Namespace, run_id: str) -> None:
     if getattr(args, "interaction_mode", "one_shot") == "agentic":
         run_metadata.update(_agent_fingerprint_fields(args))
     run_metadata.update(perturbation_metadata(args.perturbation, args.perturbation_seed))
-    write_summary_csv(args.output_dir / "summary.csv", results, run_metadata=run_metadata)
-    update_global_summary_csv(Path(args.global_summary), results, run_metadata=run_metadata)
-    print(format_results_table(results, title=f"Results for {run_id} ({args.model})"), flush=True)
+    groups = all_suite_groups(args)
+    write_summary_csv(args.output_dir / "summary.csv", results, run_metadata=run_metadata, suite_groups=groups)
+    update_global_summary_csv(Path(args.global_summary), results, run_metadata=run_metadata, suite_groups=groups)
+    print(format_results_table(results, title=f"Results for {run_id} ({args.model})", suite_groups=groups), flush=True)
     print(f"[done] summary: {args.output_dir / 'summary.csv'}", flush=True)
     print(f"[done] global summary: {Path(args.global_summary)}", flush=True)
 
 
-def format_results_table(results, *, title: str = "Results") -> str:
-    """Plain-text table of the primary scores (benchmarks, group averages, overall)."""
+def all_suite_groups(args: argparse.Namespace) -> SuiteGroups:
+    """The groups of every suite that defines them, whatever --suite selected: the summaries merge all scored
+    benchmarks of the run, so a later partial invocation must still report a grouped suite's means.
+
+    Without --suite, a suites file that does not fit the registry (e.g. a custom --config with a few benchmarks)
+    only leaves these means out; a selected suite is checked strictly, as everywhere else."""
+    try:
+        suites = load_suites(Path(args.suites_config), load_benchmark_specs(Path(args.config)))
+    except (OSError, ValueError) as exc:
+        if _split_csv(getattr(args, "suite", None)):
+            raise
+        print(f"[info] no grouped-suite means: {exc}", flush=True)
+        return {}
+    return suite_groupings(suites, list(suites))
+
+
+def format_results_table(results, *, title: str = "Results", suite_groups: SuiteGroups | None = None) -> str:
+    """Plain-text table of the primary scores (benchmarks, group averages, overall, grouped suites)."""
     lines = [title, f"  {'benchmark':<20} {'group':<11} {'metric':<20} {'score':>8} {'n':>7}  status"]
     ok = []
     for result in results:
@@ -865,6 +882,10 @@ def format_results_table(results, *, title: str = "Results") -> str:
     if ok:
         overall = sum(float(result.normalized_score_0_100) for result in ok) / len(ok)
         lines.append(f"  {'overall avg':<20} {'':<11} {'':<20} {overall:8.2f}")
+    for score in suite_group_scores(results, suite_groups):
+        text = f"{score.value:8.2f}" if score.value is not None else f"{'-':>8}"
+        status = f"  missing: {', '.join(score.missing)}" if score.missing else ""
+        lines.append(f"  {score.column:<53} {text}{status}")
     return "\n".join(lines)
 
 

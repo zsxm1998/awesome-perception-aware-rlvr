@@ -98,7 +98,8 @@ repository.
   [eval/README.md](../../../eval/README.md)) and the others with option-letter matching, with greedy decoding. A
   checkpoint is asked as it was trained (the dataset prompt without a system prompt, 65,536-16,777,216 pixels, the
   non-thinking chat template, read from its run); the suite gives the base models the same prompt. We have
-  MME-RealWorld-Lite instead of the full English and Chinese sets; MMVP and CV-Bench are not available.
+  MME-RealWorld-Lite instead of the full English and Chinese sets; MMVP is not available and CV-Bench is not in the
+  suite (`--benchmarks cvbench` adds it).
   Third-party reproductions in the authors' issue tracker reach 1-3 points below the released weights and report
   intermediate steps that score higher than the last one.
 - **Data license.** The dataset card states Apache-2.0; the student images are SA-1B images, which Meta

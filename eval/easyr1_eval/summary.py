@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import csv
 import fcntl
+import json
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from .schemas import PRIMARY_NA_STATUS, MetricResult
 
@@ -29,6 +31,69 @@ AUXILIARY_COLUMNS = {
     "grit_gqa": ("grit_gqa_giou", "grounding/grit_iou"),
     "tallyqa_relabeled": ("tallyqa_relabeled_giou", "grounding/grit_iou"),
 }
+
+
+# The groups of the suites that define them (eval/config/suites.yaml `groups`), e.g.
+# {"comparison": (("Math reasoning", ("geo3k", ...)), ...)}.
+SuiteGroups = dict[str, tuple[tuple[str, tuple[str, ...]], ...]]
+# group header of a grouped suite's columns in the global summary
+SUITE_GROUP_PREFIX = "Suite "
+
+
+@dataclass(frozen=True)
+class SuiteGroupScore:
+    """One aggregate of a grouped suite: a group's mean, the mean of the group means, or the mean over all of the
+    suite's benchmarks. ``value`` is None while a benchmark it needs has no score (listed in ``missing``)."""
+
+    suite: str
+    name: str
+    kind: str  # "group", "group_mean" or "benchmark_mean"
+    value: Optional[float]
+    missing: tuple[str, ...]
+    num_examples: int
+
+    @property
+    def column(self) -> str:
+        return f"{self.suite}: {self.name}"
+
+
+def suite_group_scores(results: list[MetricResult], suite_groups: Optional[SuiteGroups]) -> list[SuiteGroupScore]:
+    """The aggregates of each grouped suite with at least one benchmark in ``results``. Benchmarks are equally
+    weighted within a group and groups within the group mean; an aggregate is only computed when every benchmark
+    it covers has a score."""
+    scored = {
+        result.benchmark: result
+        for result in results
+        if result.status == "ok" and isinstance(result.normalized_score_0_100, (int, float))
+    }
+    present = {result.benchmark for result in results}
+    scores: list[SuiteGroupScore] = []
+    for suite, groups in (suite_groups or {}).items():
+        keys = [key for _, members in groups for key in members]
+        if not present.intersection(keys):
+            continue
+
+        def aggregate(name: str, kind: str, members: tuple[str, ...], values: Optional[list[float]] = None):
+            missing = tuple(key for key in members if key not in scored)
+            if values is None:
+                values = [] if missing else [_require_score(scored[key]) for key in members]
+            value = _mean(values) if values and not missing else None
+            examples = sum(scored[key].num_examples for key in members if key in scored)
+            return SuiteGroupScore(suite, name, kind, value, missing, examples)
+
+        group_scores = [aggregate(name, "group", members) for name, members in groups]
+        scores.extend(group_scores)
+        complete = all(score.value is not None for score in group_scores)
+        scores.append(
+            aggregate(
+                "Group mean",
+                "group_mean",
+                tuple(keys),
+                [score.value for score in group_scores] if complete else None,
+            )
+        )
+        scores.append(aggregate("Benchmark mean", "benchmark_mean", tuple(keys)))
+    return scores
 
 
 # run options recorded only when set (the defaults leave them empty)
@@ -118,8 +183,9 @@ def write_summary_csv(
     results: list[MetricResult],
     *,
     run_metadata: dict[str, Any],
+    suite_groups: Optional[SuiteGroups] = None,
 ) -> None:
-    rows = build_summary_rows(results, run_metadata=run_metadata)
+    rows = build_summary_rows(results, run_metadata=run_metadata, suite_groups=suite_groups)
     _write_summary_rows(path, rows)
 
 
@@ -128,10 +194,13 @@ def update_global_summary_csv(
     results: list[MetricResult],
     *,
     run_metadata: dict[str, Any],
+    suite_groups: Optional[SuiteGroups] = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_suffix(path.suffix + ".lock")
-    new_row, group_header, fieldnames = build_global_summary_row(results, run_metadata=run_metadata)
+    new_row, group_header, fieldnames = build_global_summary_row(
+        results, run_metadata=run_metadata, suite_groups=suite_groups
+    )
     run_key = _run_key(run_metadata)
     with lock_path.open("w", encoding="utf-8") as lock_file:
         fcntl.flock(lock_file, fcntl.LOCK_EX)
@@ -157,7 +226,9 @@ def update_global_summary_csv(
         fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
-def build_summary_rows(results: list[MetricResult], *, run_metadata: dict[str, Any]) -> list[dict[str, Any]]:
+def build_summary_rows(
+    results: list[MetricResult], *, run_metadata: dict[str, Any], suite_groups: Optional[SuiteGroups] = None
+) -> list[dict[str, Any]]:
     rows = []
     for result in results:
         rows.append(_result_row(result, run_metadata, row_type="benchmark"))
@@ -198,6 +269,21 @@ def build_summary_rows(results: list[MetricResult], *, run_metadata: dict[str, A
                 "details_json": "",
             }
         )
+    for score in suite_group_scores(results, suite_groups):
+        rows.append(
+            {
+                **_base_metadata(run_metadata),
+                "row_type": f"suite_{score.kind}",
+                "group": f"suite:{score.suite}",
+                "benchmark": score.column,
+                "primary_metric": "normalized_score_0_100_mean",
+                "raw_score": "",
+                "normalized_score_0_100": "" if score.value is None else score.value,
+                "num_examples": score.num_examples,
+                "status": "ok" if score.value is not None else "incomplete",
+                "details_json": json.dumps({"missing": list(score.missing)}) if score.missing else "",
+            }
+        )
     return rows
 
 
@@ -205,6 +291,7 @@ def build_global_summary_row(
     results: list[MetricResult],
     *,
     run_metadata: dict[str, Any],
+    suite_groups: Optional[SuiteGroups] = None,
 ) -> tuple[dict[str, Any], list[str], list[str]]:
     row: dict[str, Any] = {
         "tag": run_metadata.get("run_id", ""),
@@ -263,6 +350,11 @@ def build_global_summary_row(
             fieldnames.append(avg_name)
             group_header.append(group)
             row[avg_name] = _format_global_score(_mean_result_scores(group_results))
+
+    for score in suite_group_scores(results, suite_groups):
+        fieldnames.append(score.column)
+        group_header.append(f"{SUITE_GROUP_PREFIX}{score.suite}")
+        row[score.column] = "" if score.value is None else _format_global_score(score.value)
 
     ok_results = [result for result in results if result.status == "ok"]
     if ok_results:
@@ -447,6 +539,7 @@ def _merge_global_headers(
         group_by_field[field] = new_group_header[index] if index < len(new_group_header) else ""
 
     ordinary_groups = []
+    suite_groups = []  # the grouped suites' means come after every benchmark group
     seen_groups = set()
     has_meta = False
     has_overall = False
@@ -457,10 +550,12 @@ def _merge_global_headers(
         elif group == "Overall":
             has_overall = True
         elif group not in seen_groups:
-            ordinary_groups.append(group)
+            (suite_groups if group.startswith(SUITE_GROUP_PREFIX) else ordinary_groups).append(group)
             seen_groups.add(group)
 
-    group_order = (["Meta"] if has_meta else []) + ordinary_groups + (["Overall"] if has_overall else [])
+    group_order = (
+        (["Meta"] if has_meta else []) + ordinary_groups + suite_groups + (["Overall"] if has_overall else [])
+    )
     fieldnames = []
     group_header = []
     for group in group_order:

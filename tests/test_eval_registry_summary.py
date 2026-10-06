@@ -59,6 +59,8 @@ def test_registry_groups_and_keys():
             "pope",
             "hallusionbench",
             "mme",
+            "mme_perception",
+            "mme_cognition",
             "gqa",
             "mm_vet",
             "seed_bench",
@@ -67,6 +69,7 @@ def test_registry_groups_and_keys():
             "textvqa",
             "mmstar",
             "blink",
+            "cvbench",
             "ai2d",
             "mmmu_val",
         ],
@@ -84,13 +87,17 @@ def test_registry_groups_and_keys():
     }
 
 
+# benchmarks scored on another benchmark's data
+SHARED_DATA = {"mme_perception": "mme", "mme_cognition": "mme"}
+
+
 def test_registry_paths_are_relative_to_the_data_root():
     specs = _specs()
     for spec in specs:
         paths = list(spec.paths or []) + ([spec.path] if isinstance(spec.path, str) else list(spec.path or []))
         for value in paths + ([spec.image_root] if spec.image_root else []):
             assert not Path(value).is_absolute(), (spec.key, value)
-            assert value.split("/")[0] in {spec.key, "refcoco"}, (spec.key, value)
+            assert value.split("/")[0] in {SHARED_DATA.get(spec.key, spec.key), "refcoco"}, (spec.key, value)
 
 
 def test_reasoning_benchmarks_use_papo_eval_protocol():

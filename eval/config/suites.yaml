@@ -6,6 +6,10 @@
 #   benchmarks: registry keys (eval/config/benchmarks.yaml), or `all` for every
 #               non-optional benchmark
 #   include:    other suites whose benchmarks are prepended (order preserved, no duplicates)
+#   groups:     optional {group name: [benchmarks]} splitting the suite's benchmarks (each in exactly one
+#               group); the summaries then report each group's mean, the mean of the group means and the
+#               mean over the suite's benchmarks (`<suite>: ...` columns). A suite that only includes
+#               another one keeps its groups.
 #   defaults:   runner options applied only when the flag is NOT given on the command line and the
 #               model has no training record (format_prompt, system_prompt, chat_template,
 #               plain_think_tokens, interaction_mode, agent_profile, min_pixels, max_pixels,
@@ -255,8 +259,8 @@ suites:
       gpt-oss-120b judge; we score with rules (ZoomBench: the `zoombench` scorer,
       eval/README.md) and 2048 new tokens. Vision-OPD sends the original images to a vLLM
       server; the suite uses the training range of 65,536-16,777,216 pixels. The paper uses the
-      full MME-RealWorld EN and CN sets; we have MME-RealWorld-Lite. MMVP and CV-Bench (holdout)
-      are not available. POPE's primary here is macro-F1 (accuracy in the details); the paper
+      full MME-RealWorld EN and CN sets; we have MME-RealWorld-Lite. MMVP (holdout) is not
+      available; CV-Bench (holdout) is not in the suite (add it with `--benchmarks cvbench`). POPE's primary here is macro-F1 (accuracy in the details); the paper
       does not say which POPE number it reports. The models are evaluated in non-thinking mode,
       as the paper does, with the template of the training scripts.
 
@@ -267,12 +271,26 @@ suites:
       format_prompt: examples/format_prompt/xml_grounded_reasoning.jinja
 
   comparison:
-    description: Union used by examples/comparison/ (PAPO + VPPO reasoning sets, POPE, HallusionBench)
-    include: [papo, vppo]
-    benchmarks: [pope, hallusionbench]
+    description: The benchmarks of examples/comparison/ in three groups (math, vision-dependent reasoning, perception)
+    benchmarks:
+      [geo3k, mathvista, wemath, mmk12, mathverse, mathvision, dynamath,
+       mathverse_v, mmmu_pro, logicvista, clevr_count, ai2d, mme_cognition,
+       pope, hallusionbench, mmstar, blink, mme_perception, cvbench]
+    groups:
+      Math reasoning: [geo3k, mathvista, wemath, mmk12, mathverse, mathvision, dynamath]
+      Vision-dependent reasoning: [mathverse_v, mmmu_pro, logicvista, clevr_count, ai2d, mme_cognition]
+      Perception and hallucination: [pope, hallusionbench, mmstar, blink, mme_perception, cvbench]
+    notes: >-
+      The PAPO and VPPO reasoning sets, POPE and HallusionBench, AI2D, MME and four perception-heavy sets. The math
+      group gives most of the information in the text; the vision-dependent group puts it in the image (MathVerse-V
+      is the vision-dependent part of MathVerse, MMMU-Pro shows the question and options only in the image, MME's
+      cognition subtasks show the numbers, code and text in the image); the perception group asks what the image
+      shows (MME's perception subtasks). The summaries report each group's mean and their mean (`comparison`
+      columns) next to the mean over all benchmarks. Math and vision-dependent reasoning sets (except AI2D and MME
+      cognition) use avg@8 at T=1.0; the others are greedy.
 
   opd:
-    description: Union used by examples/comparison/opd_qwen3_vl_2b (same as comparison)
+    description: The benchmarks of examples/comparison/opd_qwen3_vl_2b (the comparison suite and its groups)
     include: [comparison]
 
   perception:

@@ -52,6 +52,8 @@ class PrepareContext:
     skip_space_check: bool = False
     log: Callable[[str], None] = print
     _downloaded_raw: list[Path] = field(default_factory=list)
+    # benchmarks prepared by this invocation, so that data shared by several benchmarks is fetched once
+    prepared: set[str] = field(default_factory=set)
 
     @property
     def raw_root(self) -> Path:

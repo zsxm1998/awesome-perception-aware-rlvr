@@ -678,9 +678,31 @@ def mcq_row_score(row: dict[str, Any]) -> float:
     return sum(scores) / len(scores) if scores else 0.0
 
 
+CVBENCH_SOURCES_2D = ("ADE20K", "COCO")
+CVBENCH_SOURCES_3D = ("Omni3D",)
+
+
+def cvbench_accuracies(scores: list[float], categories: list[str]) -> dict[str, float]:
+    """CV-Bench's official combination (its dataset card): 2D = the mean of the ADE20K and COCO accuracies, 3D =
+    the Omni3D accuracy, overall = the mean of 2D and 3D. A part without any sample (``--limit``) is left out."""
+    by_source = _mean_by_group(scores, categories)
+    unknown = sorted(set(by_source) - set(CVBENCH_SOURCES_2D) - set(CVBENCH_SOURCES_3D))
+    if unknown:
+        raise ValueError(f"cvbench: unknown sources {unknown}")
+    parts = {}
+    for name, sources in (("2d", CVBENCH_SOURCES_2D), ("3d", CVBENCH_SOURCES_3D)):
+        present = [by_source[source] for source in sources if source in by_source]
+        if present:
+            parts[f"accuracy_{name}"] = sum(present) / len(present)
+    parts["overall"] = sum(parts.values()) / len(parts) if parts else 0.0
+    return parts
+
+
 def mcq_aggregate(scores: list[float], categories: list[str], mode: str) -> float:
     if not scores:
         return 0.0
+    if mode == "cvbench":
+        return cvbench_accuracies(scores, categories)["overall"]
     if mode == "category_mean":
         by_category: dict[str, list[float]] = {}
         for score, category in zip(scores, categories):
@@ -700,7 +722,7 @@ def score_mcq(
     spec: BenchmarkSpec, rows: PredictionRows, judge_config: JudgeConfig | None, output_dir: Path
 ) -> MetricResult:
     mode = str(spec.metadata.get("aggregate", "micro"))
-    if mode not in {"micro", "category_mean"}:
+    if mode not in {"micro", "category_mean", "cvbench"}:
         raise ValueError(f"{spec.key}: unsupported mcq aggregate {mode!r}")
     scores, categories, per_sample = [], [], []
     unparsed = 0
@@ -740,6 +762,11 @@ def score_mcq(
         details={
             "aggregate": mode,
             "micro_accuracy": sum(scores) / len(scores) if scores else 0.0,
+            **(
+                {key: value for key, value in cvbench_accuracies(scores, categories).items() if key != "overall"}
+                if mode == "cvbench" and scores
+                else {}
+            ),
             **({"accuracy_by_task": _mean_by_group(scores, tasks)} if any(tasks) else {}),
             "accuracy_by_category": accuracy_by_category,
             "unparsed_response_rate": unparsed / response_count if response_count else 0.0,
@@ -2037,13 +2064,23 @@ def mme_row(row: dict[str, Any]) -> tuple[str, str, bool, bool]:
     return str(metadata.get("category")), str(metadata.get("question_id")), correct, truncated
 
 
+def mme_max_score(spec: BenchmarkSpec) -> float:
+    """200 points per subtask: 2,800 for all 14, 2,000 for the 10 perception and 800 for the 4 cognition ones."""
+    categories = spec.metadata.get("categories")
+    return 200.0 * (len(categories) if categories is not None else 14)
+
+
 def score_mme(
     spec: BenchmarkSpec, rows: PredictionRows, judge_config: JudgeConfig | None, output_dir: Path
 ) -> MetricResult:
+    categories = spec.metadata.get("categories")
+    max_score = mme_max_score(spec)
     category_to_questions: dict[str, dict[str, list[float]]] = {}
     truncated_without_final_answer = 0
     for row in rows:
         category, question_id, correct, truncated = mme_row(row)
+        if categories is not None and category not in categories:
+            raise ValueError(f"{spec.key}: prediction of MME subtask {category!r} outside {categories}")
         truncated_without_final_answer += int(truncated)
         category_to_questions.setdefault(category, {}).setdefault(question_id, []).append(float(correct))
     category_scores = {}
@@ -2051,7 +2088,7 @@ def score_mme(
         total = sum(mme_question_contribution(scores) for scores in question_scores.values())
         category_scores[category] = total / len(question_scores) if question_scores else 0.0
     raw = sum(category_scores.values())
-    normalized = raw / 2800.0 * 100.0
+    normalized = raw / max_score * 100.0
     return MetricResult(
         spec.key,
         spec.group,

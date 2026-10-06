@@ -210,6 +210,34 @@ benchmarks:
     temperature: 0.0
     num_samples: 1
 
+  - key: mme_perception
+    label: MME (perception)
+    group: Perception
+    loader: mme
+    scorer: mme
+    primary_metric: perception_score
+    source: lmms-lab/MME (the 10 perception subtasks, 2,114 questions; out of 2,000)
+    path: mme/*.parquet
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+    metadata:
+      categories: [existence, count, position, color, posters, celebrity, scene, landmark, artwork, OCR]
+
+  - key: mme_cognition
+    label: MME (cognition)
+    group: Perception
+    loader: mme
+    scorer: mme
+    primary_metric: cognition_score
+    source: lmms-lab/MME (the 4 cognition subtasks, 260 questions; out of 800)
+    path: mme/*.parquet
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+    metadata:
+      categories: [commonsense_reasoning, numerical_calculation, text_translation, code_reasoning]
+
   - key: gqa
     label: GQA
     group: Perception
@@ -330,6 +358,20 @@ benchmarks:
     num_samples: 1
     metadata:
       aggregate: micro
+
+  - key: cvbench
+    label: CV-Bench
+    group: Perception
+    loader: cvbench
+    scorer: mcq
+    primary_metric: overall_accuracy
+    source: nyu-visionx/CV-Bench (test, 2D and 3D)
+    path: cvbench/*.parquet
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+    metadata:
+      aggregate: cvbench
 
   - key: ai2d
     label: AI2D

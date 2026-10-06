@@ -17,7 +17,7 @@ The Hub currently redirects ``lmms-lab/<name>`` to ``lmms-lab-encoder/<name>``; 
 are tried. Layouts::
 
     <data_root>/pope/{random,popular,adversarial}.parquet
-    <data_root>/mme/test-0000X-of-00004.parquet
+    <data_root>/mme/test-0000X-of-00004.parquet       (also read by mme_perception, mme_cognition)
     <data_root>/hallusionbench/{image,non_image}.parquet
     <data_root>/gqa/testdev_balanced_{instructions,images}.parquet
     <data_root>/mm_vet/test.parquet
@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import BenchmarkSource
-from .common import PrepareContext, PrepareError, hf_download, hf_snapshot, move_file
+from .common import PrepareContext, PrepareError, hf_download, hf_snapshot, is_prepared, move_file, write_marker
 
 
 def _repos(name: str) -> list[str]:
@@ -183,3 +183,35 @@ SOURCES = [
         },
     ),
 ]
+
+
+def prepare_shared(ctx: PrepareContext, spec: BenchmarkSource) -> dict[str, Any]:
+    """A benchmark that reads the files of another one (``options["shares"]``): prepare that one unless it is
+    prepared (with ``--force``: unless this invocation already prepared it, so that it is fetched once)."""
+    base: BenchmarkSource = spec.options["shares"]
+    target = base.target_dir(ctx.data_root)
+    if base.key not in ctx.prepared and (
+        ctx.force or not is_prepared(target, base.key, base.output_paths(ctx.data_root))
+    ):
+        info = base.prepare(ctx, base)
+        write_marker(target, base.key, {"source": base.source, **info})
+        ctx.prepared.add(base.key)
+    return {"shared_with": base.key}
+
+
+_MME = next(source for source in SOURCES if source.key == "mme")
+SOURCES.extend(
+    BenchmarkSource(
+        key=key,
+        target=_MME.target,
+        outputs=_MME.outputs,
+        source=f"{_MME.source} ({part})",
+        approx_size=f"{_MME.approx_size}, shared with mme",
+        prepare=prepare_shared,
+        options={"shares": _MME},
+    )
+    for key, part in (
+        ("mme_perception", "the 10 perception subtasks"),
+        ("mme_cognition", "the 4 cognition subtasks"),
+    )
+)

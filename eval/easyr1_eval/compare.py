@@ -36,6 +36,7 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Any, Callable
 
@@ -114,9 +115,25 @@ def _pope_aggregate(payload: dict[str, np.ndarray], idx_by_stratum: dict[int, np
     return np.mean(f1_by_stratum, axis=0) * 100.0
 
 
-def _mme_aggregate(payload: dict[str, np.ndarray], idx_by_stratum: dict[int, np.ndarray]) -> np.ndarray:
+def _mme_aggregate(
+    payload: dict[str, np.ndarray], idx_by_stratum: dict[int, np.ndarray], *, max_score: float
+) -> np.ndarray:
     category_means = [payload["value"][idx].mean(axis=1) for _, idx in sorted(idx_by_stratum.items())]
-    return np.sum(category_means, axis=0) / 2800.0 * 100.0
+    return np.sum(category_means, axis=0) / max_score * 100.0
+
+
+def _cvbench_aggregate(
+    payload: dict[str, np.ndarray], idx_by_stratum: dict[int, np.ndarray], *, sources: list[str]
+) -> np.ndarray:
+    """scorers.cvbench_accuracies on bootstrap draws: the mean of the 2D accuracy (mean of the ADE20K and COCO
+    accuracies) and the 3D accuracy; ``sources[stratum]`` names the source of a stratum."""
+    by_source = {sources[stratum]: payload["value"][idx].mean(axis=1) for stratum, idx in idx_by_stratum.items()}
+    parts = []
+    for group in (S.CVBENCH_SOURCES_2D, S.CVBENCH_SOURCES_3D):
+        present = [by_source[source] for source in group if source in by_source]
+        if present:
+            parts.append(np.mean(present, axis=0))
+    return np.mean(parts, axis=0) * 100.0
 
 
 def _category_mean_aggregate(payload: dict[str, np.ndarray], idx_by_stratum: dict[int, np.ndarray]) -> np.ndarray:
@@ -229,14 +246,20 @@ def _extract_hallusionbench(spec: BenchmarkSpec, rows: list[dict[str, Any]], res
 
 def _extract_mcq(spec: BenchmarkSpec, rows: list[dict[str, Any]], results_dir: Path) -> BenchmarkSamples:
     values = [S.mcq_row_score(row) for row in rows]
-    if spec.metadata.get("aggregate", "micro") != "category_mean":
+    mode = spec.metadata.get("aggregate", "micro")
+    if mode not in {"category_mean", "cvbench"}:
         return mean_samples(_row_ids(rows), values)
     categories = [str((row.get("metadata") or {}).get("category") or "all") for row in rows]
     array = np.asarray(values, dtype=np.float64)
+    if mode == "cvbench":
+        S.cvbench_accuracies(values, categories)  # rejects unknown sources, as the scorer does
+        aggregate = partial(_cvbench_aggregate, sources=sorted(set(categories)))
+    else:
+        aggregate = _category_mean_aggregate
     return BenchmarkSamples(
         unit_ids=_row_ids(rows),
         payload={"value": array},
-        aggregate=_category_mean_aggregate,
+        aggregate=aggregate,
         strata=_strata_ids(categories),
         binary=bool(np.isin(array, (0.0, 1.0)).all()),
     )
@@ -322,7 +345,7 @@ def _extract_mme(spec: BenchmarkSpec, rows: list[dict[str, Any]], results_dir: P
         payload={
             "value": np.asarray([S.mme_question_contribution(question_scores[key]) for key in keys], dtype=np.float64)
         },
-        aggregate=_mme_aggregate,
+        aggregate=partial(_mme_aggregate, max_score=S.mme_max_score(spec)),
         strata=_strata_ids([category for category, _ in keys]),
     )
 

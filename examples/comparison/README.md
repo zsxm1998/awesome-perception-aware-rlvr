@@ -81,9 +81,10 @@ the original image over several turns. It does not fit this setting:
   73,000 pixels; 72% are below the 200,704-pixel minimum, so the model already sees them enlarged,
   and only 3% exceed the 1,003,520-pixel maximum. A crop of the original image adds hardly any
   detail that the model does not already see.
-- **The evaluation would not show it.** The comparison suite measures reasoning and hallucination,
-  while the tool targets fine detail in high-resolution images, as measured by V* and HR-Bench
-  (not in the suite); evaluating DeepEyes also needs the multi-turn agent loop.
+- **The evaluation would not show it.** The comparison suite measures reasoning, perception and
+  hallucination at the training resolution, while the tool targets fine detail in high-resolution
+  images, as measured by V* and HR-Bench (not in the suite); evaluating DeepEyes also needs the
+  multi-turn agent loop.
 - **Cost.** The agentic rollout (several turns and up to six tool calls per trajectory) is much
   slower than the single-turn rollout of the other methods.
 
@@ -118,32 +119,117 @@ suite holds GRIT's own protocol for the reproduction models),
 
 ## Results
 
-Suite `comparison`. Reasoning benchmarks use the PAPO-Eval protocol (rule-based match on the last
-`\boxed{}`, avg@8 at T=1.0, top-p 1.0; DynaMath and MathVision from VPPO-Eval); POPE is greedy
-macro-F1 over the random / popular / adversarial splits; HallusionBench is greedy question accuracy.
-Avg is the unweighted mean of the 13 columns. MMK12 test is also the validation set monitored during
-training (as in PAPO and VPPO), so every method is evaluated at its last step, never at the step with
-the best validation reward.
+Suite `comparison`: 19 benchmarks in three groups.
 
-| Method | Geo3K | MathVista | We-Math | MMK12 | MathVerse | MathVerse-V | LogicVista | Counting | MMMU-Pro | DynaMath | MathVision | POPE | HallusionBench | Avg |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Qwen3-VL-4B-Instruct (no RL) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| GRPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| DAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| PAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VPPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| ToR | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| DVRP | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| PGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| PEPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| CFPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VEPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| NoisyRollout | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| GRIT | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| CGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| OPD from sampled tokens, 8B teacher (`opd_sampled.sh`) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+- **Math reasoning**: Geo3K, MathVista, We-Math, MMK12, MathVerse, MathVision, DynaMath. Most of the
+  information is in the text of the problem.
+- **Vision-dependent reasoning**: MathVerse-V (the vision-dependent subset of MathVerse, 1,308 of its
+  2,180 questions), MMMU-Pro (vision setting: the question and the options are only in the image),
+  LogicVista, Counting, AI2D, MME cognition (MME's 4 cognition subtasks: commonsense reasoning and
+  the numbers, code and text shown in the image).
+- **Perception and hallucination**: POPE, HallusionBench, MMStar, BLINK, MME perception (MME's other
+  10 subtasks), CV-Bench.
+
+The math and vision-dependent sets except AI2D and MME cognition use the PAPO-Eval protocol (rule-based match on the last `\boxed{}`,
+avg@8 at T=1.0, top-p 1.0; DynaMath and MathVision from VPPO-Eval); the others are greedy. POPE is
+macro-F1 over the random / popular / adversarial splits, HallusionBench question accuracy, MME
+cognition and perception the scores out of 800 and 2,000 on a 0-100 scale, and CV-Bench the overall score of its dataset card
+(the mean of the 2D and 3D accuracies). **Overall** is the mean of the three group means, so each group
+weighs the same whatever its number of benchmarks; **All** is the unweighted mean of the 19 benchmarks,
+given for reference. MMK12 test is also the validation set monitored during training (as in PAPO and
+VPPO), so every method is evaluated at its last step, never at the step with the best validation
+reward. `bash scripts/eval.sh <run> --suite comparison` writes these means as the `comparison: ...`
+columns of `eval/results/summary.csv` (see [eval/README.md](../../eval/README.md#suites)).
+
+| Method | Math reasoning | Vision-dependent reasoning | Perception and hallucination | Overall | All |
+| --- | --- | --- | --- | --- | --- |
+| Qwen3-VL-4B-Instruct (no RL) | TBD | TBD | TBD | TBD | TBD |
+| GRPO | TBD | TBD | TBD | TBD | TBD |
+| DAPO | TBD | TBD | TBD | TBD | TBD |
+| PAPO | TBD | TBD | TBD | TBD | TBD |
+| VPPO | TBD | TBD | TBD | TBD | TBD |
+| ToR | TBD | TBD | TBD | TBD | TBD |
+| DVRP | TBD | TBD | TBD | TBD | TBD |
+| PGPO | TBD | TBD | TBD | TBD | TBD |
+| PEPO | TBD | TBD | TBD | TBD | TBD |
+| CFPO | TBD | TBD | TBD | TBD | TBD |
+| VEPO | TBD | TBD | TBD | TBD | TBD |
+| NoisyRollout | TBD | TBD | TBD | TBD | TBD |
+| VGPO | TBD | TBD | TBD | TBD | TBD |
+| VAPO | TBD | TBD | TBD | TBD | TBD |
+| GRIT | TBD | TBD | TBD | TBD | TBD |
+| CGPO | TBD | TBD | TBD | TBD | TBD |
+| OPD from sampled tokens, 8B teacher (`opd_sampled.sh`) | TBD | TBD | TBD | TBD | TBD |
+
+### Math reasoning
+
+| Method | Geo3K | MathVista | We-Math | MMK12 | MathVerse | MathVision | DynaMath | Avg |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Qwen3-VL-4B-Instruct (no RL) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| GRPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| DAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| PAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VPPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| ToR | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| DVRP | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| PGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| PEPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| CFPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VEPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| NoisyRollout | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| GRIT | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| CGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| OPD from sampled tokens, 8B teacher (`opd_sampled.sh`) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+
+### Vision-dependent reasoning
+
+| Method | MathVerse-V | MMMU-Pro | LogicVista | Counting | AI2D | MME (cognition) | Avg |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Qwen3-VL-4B-Instruct (no RL) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| GRPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| DAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| PAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VPPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| ToR | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| DVRP | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| PGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| PEPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| CFPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VEPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| NoisyRollout | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| GRIT | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| CGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| OPD from sampled tokens, 8B teacher (`opd_sampled.sh`) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+
+### Perception and hallucination
+
+| Method | POPE | HallusionBench | MMStar | BLINK | MME (perception) | CV-Bench | Avg |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Qwen3-VL-4B-Instruct (no RL) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| GRPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| DAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| PAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VPPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| ToR | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| DVRP | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| PGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| PEPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| CFPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VEPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| NoisyRollout | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| GRIT | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| CGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| OPD from sampled tokens, 8B teacher (`opd_sampled.sh`) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+
+MME (cognition) and MME (perception) are MME's cognition score (commonsense reasoning, numerical calculation,
+text translation and code reasoning; 260 questions, out of 800) and its perception score (the other 10 subtasks;
+2,114 questions, out of 2,000), each on a 0-100 scale.
 
 The last row learns from Qwen3-VL-8B-Instruct on the OPD recipe of
 [opd_qwen3_vl_2b/common.sh](opd_qwen3_vl_2b/common.sh) (one update per step, no KL or entropy term), so it is

@@ -84,18 +84,63 @@ pixelated image) and about 4 GB of bf16 weights per GPU on 4 GPUs.
 
 ## Results
 
-Suite `opd` (the 13 benchmarks of the RL comparison, same protocol). Every method is evaluated at its last step.
+Suite `opd`: the 19 benchmarks of the RL comparison in the same three groups, with the same protocol and the
+same overall score (the mean of the three group means; All is the mean of the 19 benchmarks); see
+[the comparison README](../README.md#results). Every method is evaluated at its last step.
 
-| Method | Geo3K | MathVista | We-Math | MMK12 | MathVerse | MathVerse-V | LogicVista | Counting | MMMU-Pro | DynaMath | MathVision | POPE | HallusionBench | Avg |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Qwen3-VL-2B-Instruct (student, no training) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Qwen3-VL-8B-Instruct (teacher, no training) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| GRPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| OPD (sampled tokens) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| OPD (full distributions) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VA-OPD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VGS | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VCSD (no external teacher) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Method | Math reasoning | Vision-dependent reasoning | Perception and hallucination | Overall | All |
+| --- | --- | --- | --- | --- | --- |
+| Qwen3-VL-2B-Instruct (student, no training) | TBD | TBD | TBD | TBD | TBD |
+| Qwen3-VL-8B-Instruct (teacher, no training) | TBD | TBD | TBD | TBD | TBD |
+| GRPO | TBD | TBD | TBD | TBD | TBD |
+| OPD (sampled tokens) | TBD | TBD | TBD | TBD | TBD |
+| OPD (full distributions) | TBD | TBD | TBD | TBD | TBD |
+| VA-OPD | TBD | TBD | TBD | TBD | TBD |
+| VGS | TBD | TBD | TBD | TBD | TBD |
+| VCSD (no external teacher) | TBD | TBD | TBD | TBD | TBD |
+
+### Math reasoning
+
+| Method | Geo3K | MathVista | We-Math | MMK12 | MathVerse | MathVision | DynaMath | Avg |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Qwen3-VL-2B-Instruct (student, no training) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Qwen3-VL-8B-Instruct (teacher, no training) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| GRPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| OPD (sampled tokens) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| OPD (full distributions) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VA-OPD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VGS | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VCSD (no external teacher) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+
+### Vision-dependent reasoning
+
+| Method | MathVerse-V | MMMU-Pro | LogicVista | Counting | AI2D | MME (cognition) | Avg |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Qwen3-VL-2B-Instruct (student, no training) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Qwen3-VL-8B-Instruct (teacher, no training) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| GRPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| OPD (sampled tokens) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| OPD (full distributions) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VA-OPD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VGS | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VCSD (no external teacher) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+
+### Perception and hallucination
+
+| Method | POPE | HallusionBench | MMStar | BLINK | MME (perception) | CV-Bench | Avg |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Qwen3-VL-2B-Instruct (student, no training) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Qwen3-VL-8B-Instruct (teacher, no training) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| GRPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| OPD (sampled tokens) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| OPD (full distributions) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VA-OPD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VGS | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| VCSD (no external teacher) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+
+MME (cognition) and MME (perception) are MME's cognition score (commonsense reasoning, numerical calculation,
+text translation and code reasoning; 260 questions, out of 800) and its perception score (the other 10 subtasks;
+2,114 questions, out of 2,000), each on a 0-100 scale.
 
 Results will be added after the runs finish.
 

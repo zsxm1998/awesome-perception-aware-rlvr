@@ -263,21 +263,32 @@ distillation losses (`distillation.py`). See
 [`examples/comparison/qwen3_vl_4b`](examples/comparison/README.md) trains every method except DeepEyes
 ([why](examples/comparison/README.md#why-deepeyes-is-not-included)) on Qwen3-VL-4B-Instruct with
 the same data (ViRL39K / MMK12), the same GRPO hyper-parameters and the same evaluation; only the
-method-specific arguments differ, and each method keeps the image perturbation of its paper. Results
-will be added here.
+method-specific arguments differ, and each method keeps the image perturbation of its paper. The
+`comparison` suite has 19 benchmarks in three groups (listed in the
+[comparison README](examples/comparison/README.md#results)); the overall score is the mean of the three
+group means. Results will be added here.
 
 | Method | GRPO | DAPO | PAPO | VPPO | ToR | DVRP | PGPO | PEPO | CFPO | VEPO | NoisyRollout | VGPO | VAPO | GRIT | CGPO |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Avg. (comparison suite) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Math reasoning (7) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Vision-dependent reasoning (6) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Perception and hallucination (6) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| **Overall** (mean of the three groups) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| All (mean of the 19 benchmarks) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 
 [`examples/comparison/opd_qwen3_vl_2b`](examples/comparison/opd_qwen3_vl_2b/README.md) compares on-policy
 distillation on a Qwen3-VL-2B student with Qwen3-VL-8B-Instruct as the teacher, on the same data, budget and
 evaluation, with one update per rollout batch and no KL or entropy term. VCSD distills from an EMA of the
-student and uses no external teacher; GRPO on the same student is the RL reference.
+student and uses no external teacher; GRPO on the same student is the RL reference. The `opd` suite is the
+`comparison` suite.
 
 | Method | GRPO | OPD (sampled tokens) | OPD (full distributions) | VA-OPD | VGS | VCSD |
 | --- | --- | --- | --- | --- | --- | --- |
-| Avg. (`opd` suite) | TBD | TBD | TBD | TBD | TBD | TBD |
+| Math reasoning (7) | TBD | TBD | TBD | TBD | TBD | TBD |
+| Vision-dependent reasoning (6) | TBD | TBD | TBD | TBD | TBD | TBD |
+| Perception and hallucination (6) | TBD | TBD | TBD | TBD | TBD | TBD |
+| **Overall** (mean of the three groups) | TBD | TBD | TBD | TBD | TBD | TBD |
+| All (mean of the 19 benchmarks) | TBD | TBD | TBD | TBD | TBD | TBD |
 
 ### 📌 About the results
 

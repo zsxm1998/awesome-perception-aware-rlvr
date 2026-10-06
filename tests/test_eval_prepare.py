@@ -87,20 +87,20 @@ def test_prepare_one_is_idempotent_and_force_redoes(tmp_path, monkeypatch):
         prepare=fake_prepare,
     )
     monkeypatch.setitem(cli.SOURCES, "fake", source)
-    ctx = PrepareContext(data_root=tmp_path, log=lambda message: None)
 
-    assert cli.prepare_one(ctx, "fake")[0] == "prepared"
+    def run(force=False):  # one CLI invocation
+        return cli.prepare_one(PrepareContext(data_root=tmp_path, force=force, log=lambda message: None), "fake")[0]
+
+    assert run() == "prepared"
     assert is_prepared(tmp_path / "fake", "fake", [tmp_path / "fake/data.jsonl"])
     marker = json.loads((tmp_path / "fake" / ".prepared-fake.json").read_text())
     assert marker["rows"] == 1 and marker["source"] == "unit test"
-    assert cli.prepare_one(ctx, "fake")[0] == "skipped"
-    ctx.force = True
-    assert cli.prepare_one(ctx, "fake")[0] == "prepared"
+    assert run() == "skipped"
+    assert run(force=True) == "prepared"
     assert calls == ["fake", "fake"]
     # A removed output invalidates the marker.
-    ctx.force = False
     (tmp_path / "fake" / "data.jsonl").unlink()
-    assert cli.prepare_one(ctx, "fake")[0] == "prepared"
+    assert run() == "prepared"
 
 
 def test_cli_main_continues_after_a_failure_and_returns_nonzero(tmp_path, monkeypatch, capsys):

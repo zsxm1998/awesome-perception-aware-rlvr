@@ -91,6 +91,8 @@ def prepare_one(ctx: PrepareContext, key: str) -> tuple[str, str]:
     source = SOURCES[key]
     target_dir = source.target_dir(ctx.data_root)
     outputs = source.output_paths(ctx.data_root)
+    if key in ctx.prepared:
+        return "skipped", "prepared by this run"
     if not ctx.force and is_prepared(target_dir, key, outputs):
         return "skipped", "already prepared"
     ctx.log(f"[prepare] {key} <- {source.source} (about {source.approx_size})")
@@ -111,6 +113,7 @@ def prepare_one(ctx: PrepareContext, key: str) -> tuple[str, str]:
     if missing:
         raise RuntimeError(f"preparation finished but expected outputs are missing: {missing}")
     write_marker(target_dir, key, {"source": source.source, **info})
+    ctx.prepared.add(key)
     elapsed = time.time() - started
     rows = info.get("rows", "?")
     return "prepared", f"{rows} rows in {elapsed:.0f}s"

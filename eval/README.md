@@ -109,13 +109,22 @@ repository is prompted as it was trained, and explicit flags always win (see [Pr
 | `va_opd` | wemath, mathvista, mathverse, hallusionbench, ai2d, mmmu_val, mmstar | VA-OPD Table 1 without OCRBench (not available); the paper reports avg@8 at T=1.0 with official scoring and a GPT-4o judge where applicable, for the best checkpoint; our math sets are avg@8, the other four greedy by default (`--temperature 1.0 --num-samples 8` for avg@8; HallusionBench scores the first sample only); our MathVerse holds the 2,180 multiple-choice testmini questions with an image; defaults: the training prompt (`math.jinja`) and image size |
 | `vgs` | mathvision, mathverse_v, logicvista, mmmu_pro | VGS Table 1, the 4 of 7 benchmarks available (no VisualPuzzles, VlmsAreBlind); the paper reports Acc@1 (greedy) and Acc@16 (T=1); our MathVerse-V and MMMU-Pro come from PAPO-Eval and differ from the subsets the VGS authors use (MathVerse VD / VO multiple choice, 4-option MMMU-Pro); defaults: the training prompt (VGS' system prompt), image size and answer reading (`--answer-protocol vgs`) |
 | `vcsd` | blink, mmstar, vstar, mathvista, hrbench_4k, hrbench_8k, hallusionbench | VCSD Table 1; the paper's HallusionBench score is (aAcc+fAcc+qAcc)/3 (`aqf_mean` in the details) and its Acc. the mean of the seven scores; decoding and scoring are not given in the paper (we use greedy rule-based scoring, MathVista avg@8); defaults: the training prompt (the bare problem), chat template, tokenizer and image size |
-| `vision_opd` | vstar, zoombench, hrbench_4k, hrbench_8k, mme_realworld_lite, mmstar, pope | Vision-OPD Table 1 + holdout set of Table 2; the paper uses the full MME-RealWorld EN/CN (we have the lite version) and a gpt-oss-120b judge; MMVP and CV-Bench are not available; defaults: the training prompt (the dataset prompt, no system prompt), the non-thinking chat template and the image size (65,536-16,777,216 pixels) |
+| `vision_opd` | vstar, zoombench, hrbench_4k, hrbench_8k, mme_realworld_lite, mmstar, pope | Vision-OPD Table 1 + holdout set of Table 2; the paper uses the full MME-RealWorld EN/CN (we have the lite version) and a gpt-oss-120b judge; MMVP is not available and CV-Bench is not in the suite (`--benchmarks cvbench` adds it); defaults: the training prompt (the dataset prompt, no system prompt), the non-thinking chat template and the image size (65,536-16,777,216 pixels) |
 | `cgpo` | = `papo` | CGPO natural-image reproduction (trained on ViRL39K); default prompt `xml_grounded_reasoning.jinja` |
-| `comparison` | `papo` + `vppo` + pope, hallusionbench | the benchmark set used by `examples/comparison/` |
-| `opd` | = `comparison` | the benchmark set used by `examples/comparison/opd_qwen3_vl_2b` |
+| `comparison` | math reasoning: geo3k, mathvista, wemath, mmk12, mathverse, mathvision, dynamath; vision-dependent reasoning: mathverse_v, mmmu_pro, logicvista, clevr_count, ai2d, mme_cognition; perception and hallucination: pope, hallusionbench, mmstar, blink, mme_perception, cvbench | the benchmark set used by `examples/comparison/`, in three groups (see below) |
+| `opd` | = `comparison` (same groups) | the benchmark set used by `examples/comparison/opd_qwen3_vl_2b` |
 | `perception` | pope, hallusionbench, mme, gqa, mm_vet | general perception / hallucination |
 | `refcoco` | refcoco_val, refcoco_plus_val, refcocog_val | optional (COCO images) |
 | `all` | every non-optional benchmark | |
+
+A suite can split its benchmarks into groups (`groups:` in `eval/config/suites.yaml`, each benchmark
+in exactly one group). The summaries then add, for every grouped suite with a scored benchmark in the
+run, each group's mean, the mean of the group means and the mean over all of the suite's benchmarks
+(columns `comparison: Math reasoning`, ..., `comparison: Group mean`, `comparison: Benchmark mean`).
+Benchmarks weigh equally inside a group and groups weigh equally in the group mean, so the 7 math
+sets of `comparison` count as much as its 6 perception sets. A mean is written only once every
+benchmark it covers is scored. These columns do not depend on `--suite`: a run evaluated in several
+invocations gets them as soon as its results are complete.
 
 The reasoning columns of all papers are scored with one protocol (PAPO-Eval, below), which
 is what PAPO, VPPO, DVRP, PGPO, PEPO (Table 5) and CFPO use. Where a paper used another
@@ -156,6 +165,8 @@ temperature 1.0, top_p 1.0 and 2048 new tokens; "greedy" = 1 sample at temperatu
 | `pope` | POPE random/popular/adversarial | `lmms-lab/POPE` | 9000 | macro F1 over the 3 splits (accuracy in details) | greedy | CFPO, DeepEyes, Vision-OPD |
 | `hallusionbench` | HallusionBench (image questions) | `lmms-lab/HallusionBench` | 951 | question accuracy aAcc (fAcc, qAcc and their mean `aqf_mean` in details) | greedy | VEPO, NoisyRollout, ToR, VA-OPD, VCSD |
 | `mme` | MME | `lmms-lab/MME` | 2374 | total score (acc + acc+); /2800 in averages | greedy (PGPO averages 8 samples) | PGPO |
+| `mme_perception` | MME perception (the 10 perception subtasks; reads the `mme` data) | `lmms-lab/MME` | 2114 | perception score (acc + acc+); /2000 in averages | greedy | comparison suite |
+| `mme_cognition` | MME cognition (the 4 cognition subtasks; reads the `mme` data) | `lmms-lab/MME` | 260 | cognition score (acc + acc+); /800 in averages | greedy | comparison suite |
 | `gqa` | GQA testdev-balanced | `lmms-lab/GQA` | 12578 | exact match (EM→judge cascade with a judge) | greedy | general |
 | `mm_vet` | MM-Vet | `lmms-lab/MMVet` | 218 | LLM-judge score; **skipped without a judge** | greedy | general |
 | `cvqa_real` | C-VQA-Real (counterfactual VQA on COCO) | `RavenInJuly/CFPO_Datasets` + COCO val2014 | 6288 | CFPO match, mean acc@k | avg@8 | CFPO |
@@ -164,6 +175,7 @@ temperature 1.0, top_p 1.0 and 2048 new tokens; "greedy" = 1 sample at temperatu
 | `seed_bench` | SEED-Bench (optional, ~27 GB) | `lmms-lab/SEED-Bench` | 17990 | option accuracy (image / video split in details) | greedy | general |
 | `mmstar` | MMStar | `Lin-Chen/MMStar` | 1500 | accuracy over all questions (per category in details) | greedy | VA-OPD, VCSD, Vision-OPD |
 | `blink` | BLINK val (14 subtasks, 1-4 images) | `BLINK-Benchmark/BLINK` | 1901 | accuracy over all questions (per subtask in details) | greedy | VCSD |
+| `cvbench` | CV-Bench (2D: ADE20K and COCO count and relation; 3D: Omni3D depth and distance) | `nyu-visionx/CV-Bench` | 2638 | the dataset card's overall score: mean of the 2D accuracy (mean of ADE20K and COCO) and the 3D accuracy | greedy | Vision-OPD (holdout) |
 | `ai2d` | AI2D test | `lmms-lab/ai2d` | 3088 | accuracy | greedy | VA-OPD |
 | `mmmu_val` | MMMU validation (847 multiple-choice, 53 open) | `lmms-lab/MMMU` | 900 | accuracy over all questions (by question type, discipline and subject in details) | greedy | VA-OPD |
 | `vstar` | V* Bench | `craigwu/vstar_bench` | 191 | accuracy over all questions | greedy | DeepEyes, VCSD, Vision-OPD |
@@ -182,7 +194,7 @@ temperature 1.0, top_p 1.0 and 2048 new tokens; "greedy" = 1 sample at temperatu
 
 Not included: the medical benchmarks of DVRP, LISA grounding and the few-shot / puzzle tasks
 of PEPO, GRIT's GPT-judged MathVista/MME subsets, OCRBench (VA-OPD), VisualPuzzles and
-VlmsAreBlind (VGS), MMVP, CV-Bench and the full MME-RealWorld EN/CN sets (Vision-OPD).
+VlmsAreBlind (VGS), MMVP and the full MME-RealWorld EN/CN sets (Vision-OPD).
 
 ### Scoring protocols
 
@@ -196,7 +208,13 @@ VlmsAreBlind (VGS), MMVP, CV-Bench and the full MME-RealWorld EN/CN sets (Vision
   response that has a box. The PAPO-Eval MathVista split keeps some free-form answers that
   exact match cannot always credit; like PAPO and VPPO we still use exact match.
 - **POPE / MME / HallusionBench** parse yes/no from the final answer (`\boxed{}`,
-  `<answer>`, "answer is ..." or the first yes/no word). HallusionBench reports question
+  `<answer>`, "answer is ..." or the first yes/no word). MME scores each subtask out of 200
+  (accuracy over questions plus accuracy+ over images with both questions right); `mme` sums the
+  14 subtasks (out of 2,800) and `mme_perception` the 10 perception subtasks (existence, count,
+  position, color, posters, celebrity, scene, landmark, artwork, OCR; out of 2,000), MME's
+  perception score; `mme_cognition` the 4 cognition subtasks (commonsense reasoning, numerical
+  calculation, text translation, code reasoning; out of 800), its cognition score. HallusionBench
+  reports question
   accuracy (aAcc, primary), figure accuracy (fAcc: every question about a figure correct) and
   question-pair accuracy (qAcc) as defined by the official evaluation (questions grouped by
   category, subcategory and set; VS questions without a figure are left out of fAcc), and
@@ -226,6 +244,11 @@ VlmsAreBlind (VGS), MMVP, CV-Bench and the full MME-RealWorld EN/CN sets (Vision
   metric is the accuracy over all questions; `accuracy_by_category` holds MMStar's six
   categories (250 questions each, so their mean equals the overall accuracy) and BLINK's 14
   subtasks.
+- **CV-Bench (`mcq`)** asks the dataset's `prompt` (the question and `(A)` option lines) with the
+  same letter instruction and letter extraction. The primary metric is the overall score of the
+  dataset card: the 2D accuracy is the mean of the ADE20K and COCO accuracies, the 3D accuracy is
+  the Omni3D accuracy, and the overall score is their mean (`accuracy_2d`, `accuracy_3d`,
+  `accuracy_by_category` per source and `accuracy_by_task` in the details).
 - **MMMU validation (`mmmu`)** asks the multiple-choice questions with `(A)` option lines and
   the letter instruction, and the open questions with "Answer the question using a single word
   or phrase." (lmms-eval's instruction). As in lmms-eval, the images are those that the question
@@ -496,11 +519,13 @@ same for both conventions, used by the grounding scorers) next to the model's ra
 ```
 eval/results/<run_name>/<step>/
 ├── summary.csv                                  # one row per benchmark + group averages + overall
+│                                                #   + the means of grouped suites (row_type suite_*)
 ├── predictions/<benchmark>/predictions.jsonl    # prompt, messages, image paths, responses, metadata
 ├── metrics/<benchmark>.json                     # primary score, details, generation diagnostics
 ├── metrics/<benchmark>_per_sample*.jsonl        # per-sample scores / extracted answers
 └── state/                                       # resume fingerprints
-eval/results/summary.csv                         # one row per run, one column per benchmark
+eval/results/summary.csv                         # one row per run, one column per benchmark,
+                                                 #   group averages, grouped-suite means, Overall Avg
 ```
 
 A resumed run reuses predictions and scores whose fingerprint is unchanged. The score fingerprint holds
@@ -508,7 +533,8 @@ the scorer version (`SCORER_VERSION`, all benchmarks) and, for a scorer that cha
 revision (`SCORER_REVISIONS`, its benchmarks only), so a change of the scoring rescores the
 predictions without generating them again.
 
-`normalized_score_0_100` is the primary metric on a 0-100 scale (MME total / 2800 * 100);
+`normalized_score_0_100` is the primary metric on a 0-100 scale (MME total / 2800 * 100, MME
+perception / 2000 * 100, MME cognition / 800 * 100);
 group and overall averages use it. Benchmarks that were skipped (no judge), or whose primary
 metric does not apply, are listed
 but left out of the averages. For the GRIT sets the global summary also has a `<key>_giou`
