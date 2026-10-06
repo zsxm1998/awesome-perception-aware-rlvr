@@ -202,6 +202,22 @@ class ImageCache:
         return self._entries[key]
 
 
+def check_visual_claims(values: Sequence[Any], count: int) -> int:
+    """Check the training column before training: every row has no claim or at least ``count``, and some row has
+    claims. Returns the number of rows with claims."""
+    sizes = [len(parse_visual_claims(value)) for value in values]
+    short = [row for row, size in enumerate(sizes) if 0 < size < count]
+    if short:
+        raise ValueError(
+            f"{len(short)} training rows (e.g. rows {short[:5]}) have fewer {VISUAL_CLAIMS_KEY} than "
+            f"algorithm.claim_probe_count={count} (the fewest: {min(sizes[row] for row in short)}); lower the count"
+        )
+    with_claims = sum(size > 0 for size in sizes)
+    if with_claims == 0:
+        raise ValueError(f"no training row has {VISUAL_CLAIMS_KEY}; the claim probes would never run")
+    return with_claims
+
+
 def claim_probe_rows(batch: DataProto, accuracy: Sequence[float], count: int) -> list[int]:
     """Rows to probe: accuracy 1 and at least one claim. Fails on a row with 1 to count - 1 claims."""
     rows = []

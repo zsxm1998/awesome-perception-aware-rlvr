@@ -54,6 +54,7 @@ from .claim_probes import (
     VISUAL_CLAIMS_KEY,
     attach_perception_scores,
     build_claim_probe_batch,
+    check_visual_claims,
     claim_probe_answer_ids,
     claim_probe_rows,
 )
@@ -344,6 +345,10 @@ class RayPPOTrainer:
                     f"algorithm.claim_probe_count > 0 needs the training data column {VISUAL_CLAIMS_KEY!r} "
                     "(e.g. data/vapo or data/virl39k_claims from scripts/prepare_data.sh)."
                 )
+            rows_with_claims = check_visual_claims(
+                train_dataloader.dataset.dataset[VISUAL_CLAIMS_KEY], config.algorithm.claim_probe_count
+            )
+            print(f"Claim probes: {rows_with_claims} training rows have visual claims.")
 
         self._latest_vision_metrics: dict[str, float] = {}
         self.visual_token_ids: list[int] = []

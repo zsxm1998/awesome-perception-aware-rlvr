@@ -729,3 +729,13 @@ def test_math_reward_reports_the_perception_metrics_the_trainer_rescores():
         perception_weight=0.1,
     )
     assert set(cp.PERCEPTION_REWARD_METRICS) == set(scores[0]) - {"overall", "format", "accuracy"}
+
+
+def test_visual_claims_are_checked_before_training():
+    assert cp.check_visual_claims([_claims(), "[]", _claims(K)], K) == 2
+    with pytest.raises(ValueError, match=r"1 training rows \(e.g. rows \[2\]\).*the fewest: 3"):
+        cp.check_visual_claims([_claims(), "[]", _claims(K - 1)], K)
+    with pytest.raises(ValueError, match="no training row"):
+        cp.check_visual_claims(["[]", "[]"], K)
+    with pytest.raises(ValueError, match="JSON list"):
+        cp.check_visual_claims(['{"claim": "x"}'], K)

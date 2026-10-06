@@ -141,7 +141,8 @@ Used by VAPO. Off by default (`0`); the step then has no extra pass, column or r
   grounding consistency reward. With online filtering, `filter_key` must be `accuracy` or `format`: the probes run
   on the kept groups, before the perception score exists (see the
   [VAPO README](../examples/reproduction/vapo/README.md#dynamic-sampling)). The probes are seeded by `data.seed`,
-  the step and the response's row; validation runs no probes (its perception metrics stay 0). Implementation:
+  the step and the response's row; validation runs no probes (its perception metrics stay 0). The training data
+  is checked at start-up: a row with 1 to K − 1 claims, or no row with claims, is refused. Implementation:
   `verl/trainer/claim_probes.py`.
 - `algorithm.claim_probe_late_emphasis` (β, default 1.5): weight of later cuts in R_perc.
 - `algorithm.claim_probe_question` (default: the released `"\n<anchor>{claim} Is this claim correct? Answer (Yes/No): "`):
