@@ -126,6 +126,22 @@ def test_requests_equal_generate_sequences_and_images_are_processed_once(monkeyp
     assert output.batch["response_lengths"].tolist() == [2, 2, 2]
 
 
+def test_max_tokens_override_caps_the_answers():
+    rollout = _rollout()
+    prompts = DataProto.from_dict(
+        tensors={"request_index": torch.arange(1)},
+        non_tensors={
+            "raw_prompt_ids": np.array([[4, 5], None], dtype=object)[:-1],
+            "multi_modal_data": np.array([None]),
+        },
+        meta_info={**META, "max_tokens": 3},
+    )
+    output = rollout.generate_from_raw_prompts(prompts)
+    (_, params) = rollout.inference_engine.calls[0]
+    assert params.max_tokens == 3 and output.batch["responses"].shape == (1, 3)
+    assert rollout.sampling_params.max_tokens == MAX_TOKENS
+
+
 def test_one_completion_per_prompt():
     rollout = _rollout()
     prompts = DataProto.from_dict(

@@ -115,6 +115,11 @@ _GROUNDING_CONSISTENCY_DETECTORS = {"self", "grounding-dino"}
 _GROUNDING_DINO_MODEL_ID = "IDEA-Research/grounding-dino-base"
 _GROUNDING_DINO_BOX_THRESHOLD = 0.4
 _GROUNDING_DINO_TEXT_THRESHOLD = 0.3
+_SELF_DETECTION_MAX_TOKENS = 512
+"""cap of a self-detection answer. With a trained CGPO policy (Qwen3-VL-4B, comparison setting, 3,934 detections)
+the answers have a median of 21 tokens and 99.5% end within 512; the rest repeat or enumerate boxes up to the
+rollout's response length without closing the list (no box parsed) or list dozens of boxes. One such answer holds
+up the whole detection batch."""
 
 
 def _normalize_grounding_dino_query(region_name: str) -> str:
@@ -745,7 +750,7 @@ class GroundingConsistencyRewardScorer:
                 "n": 1,
                 "temperature": 0.0,
                 "top_p": 1.0,
-                "response_length": min(max(int(rollout_config.get("response_length", 128)), 1), 128),
+                "max_tokens": _SELF_DETECTION_MAX_TOKENS,
                 "min_pixels": self.min_pixels,
                 "max_pixels": self.max_pixels,
                 "video_fps": self.video_fps,

@@ -3803,6 +3803,7 @@ def test_grounding_consistency_reward_uses_weighted_rollout_group_scoring(respon
         def generate_from_raw_prompts(self, prompts):
             assert all(len(item["images"]) == 1 for item in prompts.non_tensor_batch["multi_modal_data"])
             assert prompts.meta_info["temperature"] == 0.0 and prompts.meta_info["n"] == 1
+            assert prompts.meta_info["max_tokens"] == 512
             outputs = [
                 "[[10, 10, 20, 20]]",
                 "[[30, 30, 40, 40]]",
