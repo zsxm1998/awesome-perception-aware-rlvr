@@ -694,3 +694,38 @@ def test_disabled_probes_keep_the_batch_unchanged(monkeypatch):
     batch = trainer._make_batch_data({})
     assert "raw_prompt_ids" not in batch.non_tensor_batch
     assert trainer.reward_fn.calls == 0 and trainer.actor_rollout_ref_wg.probe_calls == []
+
+
+def test_filtered_runs_log_the_perception_of_the_final_rescoring():
+    """Online filtering logs the reward metrics of every candidate before the probes; the perception metrics of
+    that pass are placeholders (0), so they come from the rescoring after the probes, as reward/overall does."""
+    config = _config(online_filtering=True, filter_key="accuracy")
+    trainer = RayPPOTrainer.__new__(RayPPOTrainer)
+    trainer.config = config
+    metrics = {
+        "reward/overall": 0.4,
+        "reward/accuracy": 0.5,
+        "reward/perception": 0.0,
+        "reward/perception_scored": 0.0,
+    }
+    rescored = {"overall": [0.95], "accuracy": [1.0], "perception": [0.8], "perception_scored": [1.0]}
+    trainer._log_reward_metrics(metrics, rescored)
+    assert metrics == {
+        "reward/overall": 0.95,
+        "reward/accuracy": 0.5,  # every candidate, as logged by online filtering
+        "reward/perception": 0.8,
+        "reward/perception_scored": 1.0,
+    }
+
+    unfiltered = {}
+    trainer.config = _config()
+    trainer._log_reward_metrics(unfiltered, rescored)
+    assert unfiltered == {f"reward/{k}": v[0] for k, v in rescored.items()}
+
+
+def test_math_reward_reports_the_perception_metrics_the_trainer_rescores():
+    scores = _math_reward().compute_score(
+        [{"response": "<think>x</think> \\boxed{2}", "ground_truth": "2", "perception_score": 0.5}],
+        perception_weight=0.1,
+    )
+    assert set(cp.PERCEPTION_REWARD_METRICS) == set(scores[0]) - {"overall", "format", "accuracy"}

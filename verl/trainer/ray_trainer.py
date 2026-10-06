@@ -50,6 +50,7 @@ from ..utils.tokenizer import check_teacher_compatibility
 from ..workers.fsdp_workers import FSDPWorker
 from ..workers.reward import AutoRewardManager
 from .claim_probes import (
+    PERCEPTION_REWARD_METRICS,
     VISUAL_CLAIMS_KEY,
     attach_perception_scores,
     build_claim_probe_batch,
@@ -736,6 +737,17 @@ class RayPPOTrainer:
         return self._attach_grounding_consistency_reward_inputs(
             batch, rollout_config, eligible_sample_mask, cache_token
         )
+
+    def _log_reward_metrics(self, metrics: dict[str, Any], reward_metrics: dict[str, list[Any]]) -> None:
+        """Log the reward metrics of the training batch. With online filtering this is the rescoring after the
+        claim probes: as on the other filtered paths, reward/overall describes the kept batch and the metrics online
+        filtering logged describe every candidate, except the probe-dependent ones, whose filtering-pass values are
+        placeholders."""
+        values = {f"reward/{k}": v for k, v in reduce_metrics(reward_metrics).items()}
+        if self.config.algorithm.online_filtering:
+            rescored = {"reward/overall", *(f"reward/{k}" for k in PERCEPTION_REWARD_METRICS)}
+            values = {k: v for k, v in values.items() if k in rescored or k not in metrics}
+        metrics.update(values)
 
     def _attach_claim_probe_scores(self, batch: DataProto, metrics: dict[str, Any]) -> None:
         """Probe the responses with accuracy 1 and write their perception scores (see claim_probes.py).
@@ -1621,17 +1633,7 @@ class RayPPOTrainer:
                         # get token level scores asynchronously
                         reward_tensor, reward_metrics = ray.get(reward_ref)
                         train_reward_metrics = reward_metrics
-                        reward_metric_values = {f"reward/{k}": v for k, v in reduce_metrics(reward_metrics).items()}
-                        if self.config.algorithm.online_filtering:
-                            # rescored after the claim probes: as on the other filtered paths, reward/overall
-                            # describes the kept batch and the metrics online filtering logged describe every
-                            # candidate
-                            reward_metric_values = {
-                                k: v
-                                for k, v in reward_metric_values.items()
-                                if k == "reward/overall" or k not in metrics
-                            }
-                        metrics.update(reward_metric_values)
+                        self._log_reward_metrics(metrics, reward_metrics)
                         if grounding_reward_result is not None:
                             metrics.update(grounding_reward_result.metrics)
                         batch.batch["token_level_scores"] = reward_tensor

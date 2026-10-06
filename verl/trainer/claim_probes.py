@@ -46,6 +46,9 @@ VISUAL_CLAIMS_KEY = "visual_claims"
 """dataset column: JSON list of {"claim": str, "correct": bool}; "[]" for rows without claims."""
 PERCEPTION_SCORE_KEY = "perception_score"
 """float column of the training batch: R_perc of a probed response, NaN for responses that were not probed."""
+PERCEPTION_REWARD_METRICS = ("perception", "perception_scored")
+"""reward metrics of examples/reward_function/math.py that depend on the probes; with online filtering, their values
+from the filtering pass (before the probes) are placeholders and the rescoring after the probes replaces them"""
 
 CLAIM_PROBE_SEPARATORS = frozenset({",", ".", "\n", "!", "?", ";", ":"})
 """characters after which a response can be cut"""

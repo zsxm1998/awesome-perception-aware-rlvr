@@ -59,7 +59,8 @@ claim choices, perception scores and rewards equal those of the released functio
 Training logs `claim_probe/score` (mean R_perc of the probed responses), `claim_probe/accuracy` (and
 `accuracy_early` / `accuracy_late` for cuts before / after the middle of the response), `yes_rate`,
 `fallback_rate` (responses without a cut), `probed_fraction`, `max_prompt_tokens`, the time
-`timing_s/claim_probe`, and `reward/perception` (0 for responses that were not probed).
+`timing_s/claim_probe`, and `reward/perception` (0 for responses that were not probed). Validation runs no
+probes, so `val/perception_reward` and `val/perception_scored_reward` stay 0.
 
 ## Scripts
 
