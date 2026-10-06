@@ -34,6 +34,7 @@ from easyr1_eval.scorers import (  # noqa: E402
     _request_text_judge,
     _sample_score_and_correct,
     _threshold_prf,
+    extract_choice_letter,
     extract_final_response_text,
     extract_normalized_boxes,
     generation_diagnostics,
@@ -612,6 +613,20 @@ def test_extract_final_response_text_prefers_answer_wrappers():
     assert extract_final_response_text(r"<think>yes appears here</think>\boxed{no}") == "no"
     assert extract_final_response_text(r"<think>x</think>\boxed{\text{hot dogs}}") == "hot dogs"
     assert extract_final_response_text(r"<think>x</think>Final Answer: \boxed{-1} and \boxed{-5}") == "-1 and -5"
+    # the answer boxed at the end of the reasoning and again after it: the boxes after the reasoning
+    repeated = "<think>So (C) fits.\n\nFinal Answer: \\boxed{C}\n</think>\n\\boxed{C}"
+    assert extract_final_response_text(repeated) == "C"
+    assert extract_choice_letter(repeated, ["one", "two", "three", "four"]) == "C"
+    assert extract_final_response_text(r"Final Answer: \boxed{yes}</think>\boxed{yes}") == "yes"
+    assert extract_final_response_text(r"<reason>Final Answer: \boxed{B}</reason>\boxed{C}") == "C"
+    assert extract_final_response_text(r"Final Answer: \boxed{3}</think>\boxed{3} and \boxed{4}") == "3 and 4"
+    # equal parts of one answer stay a multi-part answer
+    assert extract_final_response_text(r"Final Answer: \boxed{2} and \boxed{2}") == "2 and 2"
+    assert (
+        extract_final_response_text(r"<think>x</think>Final Answer: \boxed{2}, \boxed{3}, \boxed{2}")
+        == "2 and 3 and 2"
+    )
+    assert extract_choice_letter(r"Final Answer: \boxed{2} and \boxed{2}", ["2", "2 and 2"]) == "B"
     assert extract_final_response_text("<answer>red cube</answer>") == "red cube"
     assert extract_final_response_text("After reasoning, final answer: B.") == "B"
 

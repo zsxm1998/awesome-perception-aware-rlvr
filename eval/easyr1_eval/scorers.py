@@ -47,7 +47,7 @@ from .schemas import (
 
 
 DEFAULT_DEEPSEEK_JUDGE_MODEL = "deepseek-v4-flash"
-SCORER_VERSION = 22
+SCORER_VERSION = 23
 # revisions of single scorers, in the score fingerprint of their benchmarks only, so that a change of one scorer
 # rescores its benchmarks and keeps the other scores (and all predictions)
 SCORER_REVISIONS = {
@@ -2588,12 +2588,23 @@ def _response_scores_with_truncation(
     return scores, truncated_count
 
 
+# end of the reasoning block of the think / reason formats
+_REASONING_END_RE = re.compile(r"</(?:think|reason)>", flags=re.IGNORECASE)
+
+
 def extract_final_response_text(text: str) -> str:
     tagged_answers: list[tuple[int, str]] = []
     boxed_answers = _extract_boxed_answers(text)
     final_marker_position = _last_final_answer_marker_position(text)
     if final_marker_position >= 0:
         final_boxes = [(position, answer) for position, answer in boxed_answers if position >= final_marker_position]
+        # Several answers after the marker form one ("\boxed{-1} and \boxed{-5}"). When the marker is inside the
+        # reasoning and the answer is boxed again after it ("Final Answer: \boxed{C}</think>\boxed{C}"), only the
+        # boxes after the reasoning are the answer.
+        reasoning_end = max((match.end() for match in _REASONING_END_RE.finditer(text)), default=-1)
+        after_reasoning = [(position, answer) for position, answer in final_boxes if position >= reasoning_end]
+        if reasoning_end >= 0 and 0 < len(after_reasoning) < len(final_boxes):
+            final_boxes = after_reasoning
         if len(final_boxes) > 1:
             tagged_answers.append((final_boxes[-1][0], " and ".join(answer for _, answer in final_boxes)))
         else:
