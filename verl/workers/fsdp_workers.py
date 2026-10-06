@@ -901,10 +901,7 @@ class FSDPWorker(Worker):
             )
         return self._grounding_dino_processor, self._grounding_dino_model, self._grounding_dino_device
 
-    @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
-    def generate_sequences(self, prompts: DataProto):
-        assert self._has_rollout
-
+    def _generation_meta_info(self) -> dict[str, Any]:
         eos_token_id = self.tokenizer.eos_token_id
         pad_token_id = self.tokenizer.pad_token_id
         if self.generation_config is not None:
@@ -913,11 +910,16 @@ class FSDPWorker(Worker):
             if self.generation_config.pad_token_id is not None:
                 pad_token_id = self.generation_config.pad_token_id
 
-        meta_info = {
+        return {
             "eos_token_id": eos_token_id,
             "pad_token_id": pad_token_id,
         }
-        prompts.meta_info.update(meta_info)
+
+    @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
+    def generate_sequences(self, prompts: DataProto):
+        assert self._has_rollout
+
+        prompts.meta_info.update(self._generation_meta_info())
 
         prompts = self.rollout_sharding_manager.preprocess_data(prompts)
         output = self.rollout.generate_sequences(prompts=prompts)
@@ -925,6 +927,16 @@ class FSDPWorker(Worker):
 
         output = output.to("cpu")
         return output
+
+    @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
+    def generate_from_raw_prompts(self, prompts: DataProto):
+        assert self._has_rollout
+
+        prompts.meta_info.update(self._generation_meta_info())
+        prompts = self.rollout_sharding_manager.preprocess_data(prompts)
+        output = self.rollout.generate_from_raw_prompts(prompts=prompts)
+        output = self.rollout_sharding_manager.postprocess_data(output)
+        return output.to("cpu")
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def answer_claim_probes(self, probes: DataProto):

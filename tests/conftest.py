@@ -28,4 +28,5 @@ if importlib.util.find_spec("vllm") is None:
         "test_eval_agentic_pixel.py",
         "test_eval_batching_and_images.py",
         "test_rollout_lora_requests.py",
+        "test_rollout_raw_prompts.py",
     ]

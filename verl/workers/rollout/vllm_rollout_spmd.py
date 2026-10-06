@@ -30,7 +30,7 @@ from vllm.lora.request import LoRARequest
 from ...models.transformers.qwen3_5 import register_qwen3_5
 from ...protocol import DataProto
 from ...utils import torch_functional as VF
-from ...utils.dataset import process_image, process_video
+from ...utils.dataset import ImageCache, process_image, process_video
 from ...utils.py_functional import get_package_version
 from ...utils.torch_dtypes import PrecisionType
 from ...utils.vllm_utils import VLLMHijack
@@ -373,6 +373,48 @@ class vLLMRollout(BaseRollout):
             non_tensor_batch = {}
 
         return DataProto(batch=batch, non_tensor_batch=non_tensor_batch, meta_info=prompts.meta_info)
+
+    @torch.no_grad()
+    def generate_from_raw_prompts(self, prompts: DataProto) -> DataProto:
+        """Completions of prompts given as raw token ids and images (`raw_prompt_ids`, `multi_modal_data`), with
+        the sampling parameters of `prompts.meta_info`; the vLLM requests equal those of generate_sequences, but
+        the caller needs no padded input tensors and each distinct image is processed once per call. Returns the
+        generated ids (`responses`, padded) and their counts (`response_lengths`)."""
+        meta = prompts.meta_info
+        images = ImageCache(process_image)
+        vllm_inputs = []
+        for raw_prompt_ids, multi_modal_data in zip(
+            prompts.non_tensor_batch["raw_prompt_ids"], prompts.non_tensor_batch["multi_modal_data"]
+        ):
+            if multi_modal_data is not None and multi_modal_data.get("videos"):
+                raise NotImplementedError("generate_from_raw_prompts supports image inputs only")
+            request = {"prompt_token_ids": list(raw_prompt_ids)}
+            row_images = [
+                images.get(image, meta["min_pixels"], meta["max_pixels"])
+                for image in (multi_modal_data or {}).get("images", [])
+            ]
+            if row_images:
+                request["multi_modal_data"] = {"image": row_images}
+            vllm_inputs.append(request)
+
+        lora_requests = self._lora_requests(len(vllm_inputs))
+        with self.update_sampling_params(**meta):
+            if self.sampling_params.n != 1:
+                raise ValueError("generate_from_raw_prompts returns one completion per prompt (n=1)")
+            completions: list[RequestOutput] = self.inference_engine.generate(
+                prompts=vllm_inputs,
+                sampling_params=self.sampling_params,
+                lora_request=lora_requests,
+                use_tqdm=self.use_tqdm,
+            )
+            max_tokens = self.sampling_params.max_tokens
+        response_ids = [list(completion.outputs[0].token_ids) for completion in completions]
+        return DataProto.from_dict(
+            tensors={
+                "responses": VF.pad_2d_list_to_length(response_ids, self.pad_token_id, max_length=max_tokens),
+                "response_lengths": torch.tensor([len(ids) for ids in response_ids], dtype=torch.long),
+            }
+        )
 
     @torch.no_grad()
     def answer_claim_probes(self, probes: DataProto) -> DataProto:

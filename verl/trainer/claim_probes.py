@@ -40,6 +40,7 @@ import numpy as np
 import torch
 
 from ..protocol import DataProto
+from ..utils.dataset import ImageCache
 
 
 VISUAL_CLAIMS_KEY = "visual_claims"
@@ -163,43 +164,6 @@ def claim_probe_seed(data_seed: int, global_step: int, row: int) -> int:
     batch, so it does not depend on which other responses are probed."""
     payload = f"claim_probe_v1:{data_seed}:{global_step}:{row}"
     return int.from_bytes(hashlib.sha256(payload.encode("utf-8")).digest()[:8], "little", signed=False)
-
-
-class ImageCache:
-    """Processed images of one probe call, keyed by the image's content and the pixel bounds.
-
-    A response's image reaches up to ``count`` probes and a prompt's ``n`` responses share it; decoding and
-    resizing it once per call is enough. Only encoded images (bytes or a path) are cached, by the sha1 of their
-    bytes or their path; other inputs are processed every time. The cache lives for one call and never writes to
-    the batch, so the images the batch carries are not changed.
-    """
-
-    def __init__(self, process_fn: Any):
-        self._process_fn = process_fn
-        self._entries: dict[tuple, Any] = {}
-        self.misses = 0
-
-    @staticmethod
-    def _key(image: Any, min_pixels: Optional[int], max_pixels: Optional[int]) -> Optional[tuple]:
-        if isinstance(image, dict) and image.get("bytes") is not None:
-            return ("bytes", hashlib.sha1(image["bytes"]).hexdigest(), min_pixels, max_pixels)
-        if isinstance(image, dict) and image.get("path") is not None:
-            return ("path", str(image["path"]), min_pixels, max_pixels)
-        if isinstance(image, bytes):
-            return ("bytes", hashlib.sha1(image).hexdigest(), min_pixels, max_pixels)
-        if isinstance(image, str):
-            return ("path", image, min_pixels, max_pixels)
-        return None
-
-    def get(self, image: Any, min_pixels: Optional[int], max_pixels: Optional[int]) -> Any:
-        key = self._key(image, min_pixels, max_pixels)
-        if key is None:
-            self.misses += 1
-            return self._process_fn(image, min_pixels, max_pixels)
-        if key not in self._entries:
-            self.misses += 1
-            self._entries[key] = self._process_fn(image, min_pixels, max_pixels)
-        return self._entries[key]
 
 
 def check_visual_claims(values: Sequence[Any], count: int) -> int:

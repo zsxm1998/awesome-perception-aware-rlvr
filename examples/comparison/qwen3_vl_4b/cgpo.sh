@@ -21,6 +21,7 @@ ALGO_ARGS=(
     "algorithm.cgpo_response_scaling_coef=0.1"
     "algorithm.use_grounding_consistency_reward=true"
     "algorithm.grounding_consistency_reward_weight=0.1"
+    "worker.rollout.mm_processor_cache_gb=4"  # GCR detects several regions per image: process each image once
     "algorithm.include_region_tokens_in_perception_mask=true"
 )
 EXTRA_ARGS=()

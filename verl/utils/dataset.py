@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import hashlib
 import math
 import os
 from collections import defaultdict
@@ -96,6 +97,42 @@ def process_image(
         image = image.convert("RGB")
 
     return image
+
+
+class ImageCache:
+    """Processed images of one call that submits the same images many times (claim probes, grounding
+    consistency detection), keyed by the image's content and the pixel bounds; decoding and resizing an image
+    once per call is enough. Only encoded images (bytes or a path) are cached, by the sha1 of their
+    bytes or their path; other inputs are processed every time. The cache lives for one call and never writes to
+    the batch, so the images the batch carries are not changed.
+    """
+
+    def __init__(self, process_fn: Any):
+        self._process_fn = process_fn
+        self._entries: dict[tuple, Any] = {}
+        self.misses = 0
+
+    @staticmethod
+    def _key(image: Any, min_pixels: Optional[int], max_pixels: Optional[int]) -> Optional[tuple]:
+        if isinstance(image, dict) and image.get("bytes") is not None:
+            return ("bytes", hashlib.sha1(image["bytes"]).hexdigest(), min_pixels, max_pixels)
+        if isinstance(image, dict) and image.get("path") is not None:
+            return ("path", str(image["path"]), min_pixels, max_pixels)
+        if isinstance(image, bytes):
+            return ("bytes", hashlib.sha1(image).hexdigest(), min_pixels, max_pixels)
+        if isinstance(image, str):
+            return ("path", image, min_pixels, max_pixels)
+        return None
+
+    def get(self, image: Any, min_pixels: Optional[int], max_pixels: Optional[int]) -> Any:
+        key = self._key(image, min_pixels, max_pixels)
+        if key is None:
+            self.misses += 1
+            return self._process_fn(image, min_pixels, max_pixels)
+        if key not in self._entries:
+            self.misses += 1
+            self._entries[key] = self._process_fn(image, min_pixels, max_pixels)
+        return self._entries[key]
 
 
 def process_video(

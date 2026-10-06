@@ -26,9 +26,7 @@ import torch
 from scipy.optimize import linear_sum_assignment
 from transformers import PreTrainedTokenizer, ProcessorMixin
 
-from ..models.transformers.position_ids import build_multimodal_position_ids
 from ..protocol import DataProto, pad_dataproto_to_divisor, unpad_dataproto
-from ..utils import torch_functional as VF
 from ..utils.dataset import process_image
 from .perception_reasoning_data import (
     ParsedResponseRegion,
@@ -603,12 +601,13 @@ class GroundingConsistencyRewardScorer:
     ) -> list[list[tuple[int, int, int, int]]]:
         infer_batch = self._build_prompt_batch(infer_requests, rollout_config)
         infer_batch, pad_size = pad_dataproto_to_divisor(infer_batch, rollout_worker_group.world_size)
-        infer_output = rollout_worker_group.generate_sequences(infer_batch)
+        infer_output = rollout_worker_group.generate_from_raw_prompts(infer_batch)
         infer_output = unpad_dataproto(infer_output, pad_size)
 
-        infer_response_lengths = torch.sum(infer_output.batch["response_mask"], dim=-1)
         infer_response_texts = []
-        for response_ids, response_length in zip(infer_output.batch["responses"], infer_response_lengths):
+        for response_ids, response_length in zip(
+            infer_output.batch["responses"], infer_output.batch["response_lengths"]
+        ):
             valid_ids = response_ids[: int(response_length.item())]
             infer_response_texts.append(
                 self.tokenizer.decode(
@@ -738,14 +737,8 @@ class GroundingConsistencyRewardScorer:
         return device
 
     def _build_prompt_batch(self, requests: list[dict[str, Any]], rollout_config: dict[str, Any]) -> DataProto:
-        encoded_samples = [self._encode_prompt(request["region_name"], request["image"]) for request in requests]
-
-        input_ids = torch.stack([sample["input_ids"] for sample in encoded_samples], dim=0)
-        attention_mask = torch.stack([sample["attention_mask"] for sample in encoded_samples], dim=0)
-        position_ids = torch.stack([sample["position_ids"] for sample in encoded_samples], dim=0)
-        raw_prompt_ids = np.array([sample["raw_prompt_ids"] for sample in encoded_samples], dtype=object)
-        multi_modal_data = np.array([sample["multi_modal_data"] for sample in encoded_samples], dtype=object)
-
+        """The detection requests as raw prompt ids and images; the rollout worker processes each image (once per
+        call) and builds the vLLM inputs, as for the policy's own rollout."""
         meta_info = dict(rollout_config)
         meta_info.update(
             {
@@ -759,19 +752,19 @@ class GroundingConsistencyRewardScorer:
             }
         )
         return DataProto.from_dict(
-            tensors={
-                "input_ids": input_ids,
-                "attention_mask": attention_mask,
-                "position_ids": position_ids,
-            },
+            # one tensor, so that the rollout's tensor-parallel all-gather has a batch to gather
+            tensors={"request_index": torch.arange(len(requests))},
             non_tensors={
-                "raw_prompt_ids": raw_prompt_ids,
-                "multi_modal_data": multi_modal_data,
+                "raw_prompt_ids": np.array(
+                    [self._raw_prompt_ids(request["region_name"]) for request in requests] + [None], dtype=object
+                )[:-1],
+                "multi_modal_data": np.array([{"images": [request["image"]]} for request in requests], dtype=object),
             },
             meta_info=meta_info,
         )
 
-    def _encode_prompt(self, region_name: str, image: Any) -> dict[str, Any]:
+    def _raw_prompt_ids(self, region_name: str) -> list[int]:
+        """Token ids of the detection prompt (one image placeholder, as the rollout's raw prompts)."""
         prompt_text = self._build_prompt(region_name)
         messages = [
             {
@@ -786,46 +779,13 @@ class GroundingConsistencyRewardScorer:
         if self.processor is None:
             raise ValueError("Grounding consistency reward requires a multimodal processor.")
         prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
-        processed_images = [process_image(image, self.min_pixels, self.max_pixels)]
-        model_inputs = self.processor(
-            images=processed_images,
-            text=[prompt],
-            add_special_tokens=False,
-            return_tensors="pt",
-        )
-        input_ids = model_inputs.pop("input_ids")[0]
-        attention_mask = model_inputs.pop("attention_mask")[0]
-
-        position_ids = build_multimodal_position_ids(
-            self.processor,
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            multi_modal_inputs=model_inputs,
-        )
-
-        input_ids, attention_mask, position_ids = VF.postprocess_data(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            max_length=self.max_prompt_length,
-            pad_token_id=self.tokenizer.pad_token_id,
-            left_pad=True,
-            truncation="error",
-        )
-        if self.processor is not None and hasattr(self.processor, "get_raw_prompt_ids"):
+        if hasattr(self.processor, "get_raw_prompt_ids"):
             raw_prompt_ids = self.processor.get_raw_prompt_ids(prompt)
         else:
             raw_prompt_ids = self.tokenizer.encode(prompt, add_special_tokens=False)
         if len(raw_prompt_ids) > self.max_prompt_length:
             raw_prompt_ids = raw_prompt_ids[-self.max_prompt_length :]
-
-        return {
-            "input_ids": input_ids,
-            "attention_mask": attention_mask,
-            "position_ids": position_ids,
-            "raw_prompt_ids": raw_prompt_ids,
-            "multi_modal_data": {"images": [image]},
-        }
+        return list(raw_prompt_ids)
 
     def _build_prompt(self, region_name: str) -> str:
         template = self.prompt_template if _contains_chinese(region_name) else self.prompt_template_en

@@ -3800,33 +3800,24 @@ def test_grounding_consistency_reward_uses_weighted_rollout_group_scoring(respon
     class _FakeRolloutWG:
         world_size = 1
 
-        def generate_sequences(self, prompts):
+        def generate_from_raw_prompts(self, prompts):
             assert all(len(item["images"]) == 1 for item in prompts.non_tensor_batch["multi_modal_data"])
+            assert prompts.meta_info["temperature"] == 0.0 and prompts.meta_info["n"] == 1
             outputs = [
                 "[[10, 10, 20, 20]]",
                 "[[30, 30, 40, 40]]",
             ]
             max_len = max(len(tokenizer.encode(text)) for text in outputs)
             response_rows = []
-            response_masks = []
-            input_rows = []
-            attention_rows = []
-            position_rows = []
+            lengths = []
             for text in outputs:
                 ids = tokenizer.encode(text)
-                pad = [tokenizer.pad_token_id] * (max_len - len(ids))
-                response_rows.append(ids + pad)
-                response_masks.append([1] * len(ids) + [0] * len(pad))
-                input_rows.append(ids + pad)
-                attention_rows.append([1] * len(ids) + [0] * len(pad))
-                position_rows.append(list(range(max_len)))
+                response_rows.append(ids + [tokenizer.pad_token_id] * (max_len - len(ids)))
+                lengths.append(len(ids))
             return DataProto.from_dict(
                 tensors={
                     "responses": torch.tensor(response_rows, dtype=torch.long),
-                    "response_mask": torch.tensor(response_masks, dtype=torch.long),
-                    "input_ids": torch.tensor(input_rows, dtype=torch.long),
-                    "attention_mask": torch.tensor(attention_rows, dtype=torch.long),
-                    "position_ids": torch.tensor(position_rows, dtype=torch.long),
+                    "response_lengths": torch.tensor(lengths, dtype=torch.long),
                 }
             )
 
@@ -4238,6 +4229,8 @@ def test_grounding_consistency_reward_grounding_dino_uses_external_detector(monk
         def generate_sequences(self, prompts):
             raise AssertionError("grounding-dino detector must not call the rollout worker")
 
+        generate_from_raw_prompts = generate_sequences
+
     result = scorer.score_batch(batch, _FailingRolloutWG(), {"n": 1})
 
     assert result.weighted_scores == pytest.approx([0.5])
@@ -4276,6 +4269,8 @@ def test_grounding_consistency_reward_grounding_dino_empty_detection_is_fail_clo
 
         def generate_sequences(self, prompts):
             raise AssertionError("grounding-dino detector must not call the rollout worker")
+
+        generate_from_raw_prompts = generate_sequences
 
     result = scorer.score_batch(batch, _FailingRolloutWG(), {"n": 1})
 
@@ -4382,20 +4377,13 @@ class _CountingFakeRolloutWG:
         self.detection_text = detection_text
         self.request_counts = []
 
-    def generate_sequences(self, prompts):
+    def generate_from_raw_prompts(self, prompts):
         num_prompts = len(prompts.non_tensor_batch["multi_modal_data"])
         self.request_counts.append(num_prompts)
         ids = self.tokenizer.encode(self.detection_text)
         rows = torch.tensor([ids] * num_prompts, dtype=torch.long)
-        ones = torch.ones_like(rows)
         return DataProto.from_dict(
-            tensors={
-                "responses": rows,
-                "response_mask": ones,
-                "input_ids": rows,
-                "attention_mask": ones,
-                "position_ids": torch.arange(rows.shape[1]).unsqueeze(0).repeat(num_prompts, 1),
-            }
+            tensors={"responses": rows, "response_lengths": torch.full((num_prompts,), len(ids), dtype=torch.long)}
         )
 
 
