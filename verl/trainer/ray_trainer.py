@@ -1438,6 +1438,7 @@ class RayPPOTrainer:
             val_metrics = self._validate()
             self.logger.log(data=val_metrics, step=self.global_step)
             if self.config.trainer.val_only:
+                self.logger.finish()
                 return
 
         self.data_iterator = iter(self.train_dataloader)
@@ -1697,3 +1698,5 @@ class RayPPOTrainer:
 
         if self.config.trainer.save_freq <= 0 or self.global_step % self.config.trainer.save_freq != 0:
             self._save_checkpoint()
+
+        self.logger.finish()

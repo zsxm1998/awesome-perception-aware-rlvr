@@ -213,6 +213,7 @@ class Tracker:
             loggers = [loggers]
 
         self.loggers: list[Logger] = []
+        self._finished = False
         for logger in loggers:
             if logger not in LOGGERS:
                 raise ValueError(f"{logger} is not supported.")
@@ -233,6 +234,16 @@ class Tracker:
     ) -> None:
         self.gen_logger.log(samples, step, split=split)
 
-    def __del__(self):
+    def finish(self) -> None:
+        """Close every logger once. Called at the end of training, while the process still runs: SwanLab's finish
+        waits for its upload thread, which an exiting Ray actor would otherwise stop before the last metrics (the
+        final validation) are sent."""
+        if self._finished:
+            return
+        self._finished = True
         for logger in self.loggers:
             logger.finish()
+
+    def __del__(self):
+        if not getattr(self, "_finished", True):  # a run that ended without finish(), e.g. by an exception
+            self.finish()
