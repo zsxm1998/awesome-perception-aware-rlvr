@@ -14,7 +14,7 @@
 # limitations under the License.
 """Finalize training runs: keep the chosen steps as Hugging Face weights and free the disk space.
 
-    python3 scripts/finalize_run.py checkpoints/<project>/<experiment> [more runs] [--keep last|best|both]
+    python3 scripts/finalize_run.py checkpoints/<project>/<experiment> [more runs] [--keep last,best]
     python3 scripts/finalize_run.py checkpoints/<project>/<experiment>/global_step_N   # one step only
     (both take --dry-run and --yes)
 
@@ -42,13 +42,19 @@ Nothing changes before the plan is printed and confirmed (``--yes`` skips the qu
 An interrupted run continues where it stopped when started again. Run it only after training has
 finished. A 4B run shrinks from 34 GiB per saved step to about 9 GiB.
 
-``--keep`` (run directories):
-  last  (default) the final step: every method is compared after the same training budget, and the
-        choice does not look at validation data.
+``--keep`` (run directories) is a comma-separated set, in any order; the default is ``last,best``:
+  last  the final step: every method is compared after the same training budget, and the choice does
+        not look at validation data.
   best  the step with the highest validation reward (``val/reward_score``) among the saved steps. The
         validation set is often also an evaluated benchmark (MMK12 test in the controlled comparison),
         so results on it are optimistically biased.
-  both  both of them.
+  all   every saved step, e.g. to study the training dynamics; the trainer only leaves the steps that
+        ``trainer.save_limit`` allows (-1: all of them).
+  N     global_step_N, e.g. ``--keep last,50,100``.
+  both  the same as ``last,best``.
+Keeping only one step takes ``--keep last`` or ``--keep best``. When the best step is unknown (validation
+never ran) or gone (an earlier ``--keep last``), asking for it alone is an error; with other steps it is a
+note.
 """
 
 from __future__ import annotations
@@ -71,7 +77,8 @@ from safetensors import safe_open
 
 TRACKER = "checkpoint_tracker.json"  # verl.utils.checkpoint.CHECKPOINT_TRACKER
 STEP_DIR_RE = re.compile(r"^global_step_(\d+)$")
-KEEP_CHOICES = ("last", "best", "both")
+KEEP_WORDS = ("all", "last", "best")
+DEFAULT_KEEP = "last,best"
 RECENT_SECONDS = 30 * 60
 MODEL_RANK_ZERO_RE = re.compile(r"model_world_size_\d+_rank_0\.pt")
 MODEL_INDEX = "model.safetensors.index.json"
@@ -441,11 +448,44 @@ class PlanError(RuntimeError):
     """The target cannot be finalized as asked; nothing has been changed."""
 
 
+@dataclass(frozen=True)
+class KeepSpec:
+    """The steps ``--keep`` asks for: ``words`` from KEEP_WORDS and explicit step numbers."""
+
+    words: frozenset[str]
+    steps: frozenset[int]
+
+    @property
+    def text(self) -> str:
+        return ",".join(
+            [word for word in KEEP_WORDS if word in self.words] + [str(step) for step in sorted(self.steps)]
+        )
+
+
+def parse_keep(text: str) -> KeepSpec:
+    """``last,best`` / ``best,last`` / ``both`` / ``all`` / ``last,50,100`` -> KeepSpec (order does not matter)."""
+    words: set[str] = set()
+    steps: set[int] = set()
+    for item in text.split(","):
+        item = item.strip().lower()
+        if item == "both":
+            words |= {"last", "best"}
+        elif item in KEEP_WORDS:
+            words.add(item)
+        elif item.isdigit():
+            steps.add(int(item))
+        else:
+            raise argparse.ArgumentTypeError(
+                f"--keep takes a comma-separated list of last, best, all, both and step numbers, got {text!r}"
+            )
+    return KeepSpec(frozenset(words), frozenset(steps))
+
+
 @dataclass
 class Plan:
     target: Path  # a run directory, or the step directory that was passed
     run_dir: Path
-    keep: dict[int, list[str]]  # step -> ["last"] / ["best"] / ["last", "best"] / ["given"]
+    keep: dict[int, list[str]]  # step -> its reasons: "last", "best", "saved" (--keep all), "given"
     delete: list[Path] = field(default_factory=list)
     tracker: dict | None = None  # run directories only: marked as finalized
     keep_policy: str | None = None
@@ -497,7 +537,7 @@ def recent_activity_note(run_dir: Path) -> list[str]:
     return [f"{newest.name} was written {int(age // 60)} min ago: make sure that training has finished"]
 
 
-def plan_step(step_dir: Path, keep: str | None) -> Plan:
+def plan_step(step_dir: Path, keep: KeepSpec | None) -> Plan:
     """A single step (``global_step_N`` or ``global_step_N/actor``): other steps and the tracker are left alone."""
     if keep is not None:
         raise PlanError(f"--keep applies to run directories, not to the single step {step_dir}")
@@ -510,9 +550,9 @@ def plan_step(step_dir: Path, keep: str | None) -> Plan:
     return plan
 
 
-def plan_run(run_dir: Path, keep: str | None) -> Plan:
-    """A run directory: keep the last / best step, delete the others, mark the tracker."""
-    keep = keep or "last"
+def plan_run(run_dir: Path, keep: KeepSpec | None) -> Plan:
+    """A run directory: keep the asked steps (default: the last and the best), delete the others, mark the tracker."""
+    keep = keep or parse_keep(DEFAULT_KEEP)
     tracker_path = run_dir / TRACKER
     steps = step_dirs(run_dir)
     if not tracker_path.is_file():
@@ -541,20 +581,42 @@ def plan_run(run_dir: Path, keep: str | None) -> Plan:
 
     wanted: dict[int, list[str]] = {}
     notes = []
-    if keep in ("last", "both"):
+    if "all" in keep.words:
+        for step in steps:
+            wanted.setdefault(step, []).append("saved")
+    if "last" in keep.words:
+        if last not in steps:
+            raise PlanError(f"global_step_{last} (last step) does not exist in {run_dir}")
         wanted.setdefault(last, []).append("last")
-    if keep in ("best", "both"):
-        if isinstance(best, int):
-            wanted.setdefault(best, []).append("best")
-        elif keep == "best":
-            raise PlanError(f"{tracker_path} records no best step (validation never ran); use --keep last")
+    if "best" in keep.words:
+        others = bool(wanted) or bool(keep.steps)
+        if not isinstance(best, int):
+            problem = f"{tracker_path} records no best step (validation never ran)"
+        elif best not in steps:
+            earlier = (tracker.get("finalized") or {}).get("keep")
+            problem = f"the best step global_step_{best} no longer exists" + (
+                f" (finalized earlier with --keep {earlier})" if earlier else ""
+            )
         else:
-            notes.append("no best step recorded (validation never ran): keeping the last step only")
-    for step, reasons in wanted.items():
+            problem = None
+            wanted.setdefault(best, []).append("best")
+        if problem and not others:
+            raise PlanError(f"{problem}; keep another step (e.g. --keep last)")
+        if problem:
+            notes.append(f"{problem}: not kept")
+    for step in sorted(keep.steps):
         if step not in steps:
-            raise PlanError(f"global_step_{step} ({'/'.join(reasons)} step) does not exist in {run_dir}")
+            raise PlanError(f"global_step_{step} does not exist in {run_dir}")
+        wanted.setdefault(step, []).append("given")
+    for step, reasons in wanted.items():
         if not (steps[step] / "actor").is_dir():
             raise PlanError(f"{steps[step]} has no actor/ directory")
+    earlier_steps = (tracker.get("finalized") or {}).get("steps") or []
+    dropped = [step for step in earlier_steps if step in steps and step not in wanted]
+    if dropped:
+        notes.append(
+            "deletes step(s) kept by the earlier finalization: " + ", ".join(f"global_step_{step}" for step in dropped)
+        )
 
     plan = Plan(
         target=run_dir,
@@ -562,7 +624,7 @@ def plan_run(run_dir: Path, keep: str | None) -> Plan:
         keep=dict(sorted(wanted.items())),
         delete=[path for step, path in steps.items() if step not in wanted],
         tracker=tracker,
-        keep_policy=keep,
+        keep_policy=keep.text,
         notes=notes,
     )
     plan.delete_bytes = sum(tree_bytes(path) for path in plan.delete)
@@ -571,7 +633,9 @@ def plan_run(run_dir: Path, keep: str | None) -> Plan:
     return plan
 
 
-def make_plan(path: Path, keep: str | None) -> Plan:
+def make_plan(path: Path, keep: KeepSpec | str | None) -> Plan:
+    if isinstance(keep, str):
+        keep = parse_keep(keep)
     path = path.expanduser().resolve()
     if not path.is_dir():
         raise PlanError(f"{path} is not a directory")
@@ -642,10 +706,10 @@ def confirm(question: str) -> bool:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Keep the last (or best) step of finished runs as Hugging Face weights in global_step_N/actor and "
-            "delete the optimizer states and the other steps; or finalize single steps."
+            "Keep the last and the best step (or the steps of --keep) of finished runs as Hugging Face weights in "
+            "global_step_N/actor and delete the optimizer states and the other steps; or finalize single steps."
         ),
-        epilog="See the docstring of this script for the reasons behind the default --keep last.",
+        epilog="See the docstring of this script for the choices of --keep.",
     )
     parser.add_argument(
         "paths",
@@ -655,9 +719,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--keep",
-        choices=KEEP_CHOICES,
+        type=parse_keep,
         default=None,
-        help="for run directories. last: the final step (default); best: the highest validation reward; both",
+        metavar="last,best",
+        help=(
+            "for run directories, a comma-separated set (any order) of: last (the final step), best (the highest "
+            "validation reward), all (every saved step), step numbers; default last,best; both = last,best"
+        ),
     )
     parser.add_argument("--dry-run", action="store_true", help="print the plan and change nothing")
     parser.add_argument("--yes", "-y", action="store_true", help="do not ask for confirmation")

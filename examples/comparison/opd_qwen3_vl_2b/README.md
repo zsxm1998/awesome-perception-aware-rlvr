@@ -74,7 +74,7 @@ for m in grpo opd_sampled opd_full va_opd vgs vcsd; do
 done
 bash scripts/prepare_eval_data.sh opd
 bash scripts/eval.sh checkpoints/Comparison-OPD-Qwen3-VL-2B/va_opd --suite opd
-python3 scripts/finalize_run.py checkpoints/Comparison-OPD-Qwen3-VL-2B/*   # after training: keep the last steps only
+python3 scripts/finalize_run.py checkpoints/Comparison-OPD-Qwen3-VL-2B/*   # after training: keep the last and the best step
 ```
 
 Checkpoints go to `checkpoints/Comparison-OPD-Qwen3-VL-2B/<method>`. `MODEL_PATH` and `TEACHER_PATH` set the

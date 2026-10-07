@@ -11,7 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""scripts/finalize_run.py: keep the last / best step as Hugging Face weights, delete the rest; or one step."""
+"""scripts/finalize_run.py: keep the asked steps (default: the last and the best) as Hugging Face weights, delete the
+rest; or one step."""
 
 import io
 import json
@@ -68,31 +69,83 @@ def _assert_finalized_step(step_dir: Path) -> None:
     assert not (step_dir / "dataloader.pt").exists()
 
 
-def test_keep_last_by_default(tmp_path):
+def test_keep_last_and_best_by_default(tmp_path):
     run = _run(tmp_path)
     assert finalize_run.main([str(run), "--yes"]) == 0
 
-    assert _steps(run) == ["global_step_15"]
+    assert _steps(run) == ["global_step_10", "global_step_15"]
+    _assert_finalized_step(run / "global_step_10")
     _assert_finalized_step(run / "global_step_15")
     assert (run / "completions.jsonl").is_file()
     tracker = json.loads((run / CHECKPOINT_TRACKER).read_text())
-    assert tracker["finalized"] == {"keep": "last", "steps": [15]} and tracker["best_global_step"] == 10
+    assert tracker["finalized"] == {"keep": "last,best", "steps": [10, 15]} and tracker["best_global_step"] == 10
     with pytest.raises(RuntimeError, match="finalized"):
         find_latest_ckpt(str(run))
     (target,) = resolve_eval_targets(str(run))
     assert (target.model, target.label) == (str(run / "global_step_15" / "actor"), "grpo/global_step_15")
 
     assert finalize_run.main([str(run), "--yes"]) == 0  # running it again changes nothing
-    assert _steps(run) == ["global_step_15"]
+    assert _steps(run) == ["global_step_10", "global_step_15"]
 
 
-@pytest.mark.parametrize("keep,kept", [("best", ["global_step_10"]), ("both", ["global_step_10", "global_step_15"])])
-def test_keep_best_or_both(tmp_path, keep, kept):
+@pytest.mark.parametrize(
+    "keep,kept",
+    [
+        ("last", ["global_step_15"]),
+        ("best", ["global_step_10"]),
+        ("both", ["global_step_10", "global_step_15"]),
+        ("best,last", ["global_step_10", "global_step_15"]),
+        ("all", ["global_step_10", "global_step_15", "global_step_5"]),
+        ("last,5", ["global_step_15", "global_step_5"]),
+    ],
+)
+def test_keep_choices(tmp_path, keep, kept):
     run = _run(tmp_path)
     assert finalize_run.main([str(run), "--keep", keep, "--yes"]) == 0
     assert _steps(run) == kept
     for name in kept:
         _assert_finalized_step(run / name)
+
+
+def test_keep_is_an_unordered_set():
+    assert (
+        finalize_run.parse_keep("best,last") == finalize_run.parse_keep("last,best") == finalize_run.parse_keep("both")
+    )
+    assert finalize_run.parse_keep(" Last , 100,50 ").text == "last,50,100"
+    assert finalize_run.parse_keep("all,last").text == "all,last"
+
+
+@pytest.mark.parametrize("keep", ["first", "last,", "last;best", "-5"])
+def test_rejects_unknown_keep(tmp_path, keep):
+    with pytest.raises(SystemExit):
+        finalize_run.parse_args([str(tmp_path), "--keep", keep])
+
+
+def test_an_absent_step_is_an_error(tmp_path):
+    run = _run(tmp_path)
+    assert finalize_run.main([str(run), "--keep", "last,7", "--yes"]) == 1
+    assert _steps(run) == ["global_step_10", "global_step_15", "global_step_5"]
+
+
+def test_best_gone_after_keeping_only_the_last(tmp_path):
+    run = _run(tmp_path)
+    assert finalize_run.main([str(run), "--keep", "last", "--yes"]) == 0
+    assert _steps(run) == ["global_step_15"]
+
+    plan = finalize_run.make_plan(run, None)  # the default asks for the best step too: a note, nothing deleted
+    assert plan.keep == {15: ["last"]} and not plan.delete
+    assert "global_step_10 no longer exists (finalized earlier with --keep last)" in plan.notes[0]
+    assert finalize_run.main([str(run), "--yes"]) == 0
+    assert finalize_run.main([str(run), "--keep", "best", "--yes"]) == 1  # the best step alone: an error
+    assert _steps(run) == ["global_step_15"]
+
+
+def test_narrowing_an_earlier_finalization_says_what_it_deletes(tmp_path):
+    run = _run(tmp_path)
+    assert finalize_run.main([str(run), "--yes"]) == 0
+    plan = finalize_run.make_plan(run, "last")
+    assert [path.name for path in plan.delete] == ["global_step_10"]
+    assert any("kept by the earlier finalization: global_step_10" in note for note in plan.notes)
 
 
 def test_best_equal_to_last_is_kept_once(tmp_path):
@@ -106,7 +159,7 @@ def test_without_validation(tmp_path):
     run = _run(tmp_path, best=None)
     assert finalize_run.main([str(run), "--keep", "best", "--yes"]) == 1
     assert _steps(run) == ["global_step_10", "global_step_15", "global_step_5"]
-    plan = finalize_run.make_plan(run, "both")
+    plan = finalize_run.make_plan(run, None)
     assert plan.keep == {15: ["last"]} and "no best step" in plan.notes[0]
 
 
@@ -145,7 +198,8 @@ def test_merges_fsdp_shards_first(tmp_path, monkeypatch):
 
     monkeypatch.setattr(finalize_run, "run_merger", fake_merger)
     assert finalize_run.main([str(run), "--yes"]) == 0
-    assert merged == ["global_step_15"]
+    assert merged == ["global_step_10", "global_step_15"]
+    _assert_finalized_step(run / "global_step_10")
     _assert_finalized_step(run / "global_step_15")
 
 
@@ -183,4 +237,4 @@ def test_project_directories_and_runs_without_checkpoints(tmp_path):
     assert finalize_run.main([str(run.parent), "--yes"]) == 1  # the project directory holds several runs
     assert finalize_run.main([str(run.parent / "crashed_before_saving"), "--yes"]) == 0  # nothing to do
     assert finalize_run.main([*map(str, run.parent.iterdir()), "--yes"]) == 0  # shell glob over the project
-    assert _steps(run) == ["global_step_15"]
+    assert _steps(run) == ["global_step_10", "global_step_15"]

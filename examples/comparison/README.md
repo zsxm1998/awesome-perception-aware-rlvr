@@ -104,7 +104,7 @@ for m in grpo papo vppo tor dvrp pgpo pepo cfpo vepo noisyrollout vgpo vapo grit
 done
 bash scripts/prepare_eval_data.sh comparison
 bash scripts/eval.sh checkpoints/Comparison-Qwen3-VL-4B/papo --suite comparison
-python3 scripts/finalize_run.py checkpoints/Comparison-Qwen3-VL-4B/*   # after training: keep the last steps only
+python3 scripts/finalize_run.py checkpoints/Comparison-Qwen3-VL-4B/*   # after training: keep the last and the best step
 ```
 
 Checkpoints go to `checkpoints/Comparison-Qwen3-VL-4B/<method>`. Any `key=value` appended to a

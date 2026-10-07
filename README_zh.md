@@ -195,14 +195,15 @@ bash scripts/eval.sh Qwen/Qwen2.5-VL-7B-Instruct --suite papo         # 基座�
 **5. 释放磁盘空间**（训练结束后）：
 
 ```bash
-python3 scripts/finalize_run.py checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_papo   # --keep best|both，--dry-run
+python3 scripts/finalize_run.py checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_papo   # --keep last|best|all|N,...，--dry-run
 ```
 
-每个保存的 step 都带优化器状态，大小是模型本身的 3 到 4 倍（4B 模型为 34 GB）。该脚本把最后一步保留为
-`global_step_N/actor` 中的 Hugging Face 权重，删除优化器状态和其余 step，此后该实验无法再续训。
-`--keep best` 改为保留验证奖励最高的一步，`--keep both` 两者都保留。默认保留最后一步，因为验证集往往
-同时也是评测基准，而且这样所有方法都在相同训练步数下比较。传入单个 `.../global_step_N` 时只处理这一步，
-不动其他 step。`scripts/eval.sh` 可以直接评测收尾后的实验。
+每个保存的 step 都带优化器状态，大小是模型本身的 3 到 4 倍（4B 模型为 34 GB）。该脚本默认把最后一步和验证奖励
+最高的一步保留为 `global_step_N/actor` 中的 Hugging Face 权重（4B 模型每步约 9 GB），删除优化器状态和其余 step，
+此后该实验无法再续训。`--keep` 接受逗号分隔的集合：单独的 `last` 或 `best`、`all`（保留所有已保存的 step，
+例如分析训练动态，训练时需设 `trainer.save_limit=-1` 才会全部保存）或具体步数（`--keep last,50,100`）。
+统一对比评测最后一步；验证最优步也保留，是因为验证集往往同时是评测基准、在其上挑选会带来偏差，但它可用作教师或做分析。
+传入单个 `.../global_step_N` 时只处理这一步，不动其他 step。`scripts/eval.sh` 可以直接评测收尾后的实验。
 
 ## 📁 仓库结构
 
