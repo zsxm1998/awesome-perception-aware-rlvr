@@ -44,7 +44,7 @@ This repository provides
   Vision-OPD);
 - **Controlled comparisons** under one setting each: [the RLVR methods](examples/comparison/README.md)
   except DeepEyes on Qwen3-VL-4B, and [on-policy distillation](examples/comparison/opd_qwen3_vl_2b/README.md)
-  on a Qwen3-VL-2B student with a Qwen3-VL-8B teacher;
+  on a Qwen3-VL-2B student with the comparison's GRPO-trained Qwen3-VL-4B as the teacher;
 - **[One-click evaluation](eval/README.md)** on the union of the benchmarks used by these papers,
   with per-benchmark download scripts and per-paper suites.
 
@@ -280,8 +280,8 @@ group means. Results will be added here.
 | All (mean of the 19 benchmarks) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 
 [`examples/comparison/opd_qwen3_vl_2b`](examples/comparison/opd_qwen3_vl_2b/README.md) compares on-policy
-distillation on a Qwen3-VL-2B student with Qwen3-VL-8B-Instruct as the teacher, on the same data, budget and
-evaluation, with one update per rollout batch and no KL or entropy term. VCSD distills from an EMA of the
+distillation on a Qwen3-VL-2B student with the GRPO run of the RL comparison (Qwen3-VL-4B-Instruct, best
+validation step) as the teacher, on the same data, budget and evaluation, with one update per rollout batch and no KL or entropy term. VCSD distills from an EMA of the
 student and uses no external teacher; GRPO on the same student is the RL reference. The `opd` suite is the
 `comparison` suite.
 

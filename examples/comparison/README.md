@@ -9,8 +9,7 @@ Each script only sets `ALGO_ARGS`, the switches that define the method; everythi
 [qwen3_vl_4b/common.sh](qwen3_vl_4b/common.sh).
 
 On-policy distillation (VA-OPD, VGS, VCSD and the two base OPD objectives) is compared separately, on a 2B
-student with an 8B teacher: see [opd_qwen3_vl_2b/README.md](opd_qwen3_vl_2b/README.md). Its OPD-from-sampled-tokens
-run on the 4B student, `qwen3_vl_4b/opd_sampled.sh`, appears in the table below.
+student distilled from this comparison's GRPO run: see [opd_qwen3_vl_2b/README.md](opd_qwen3_vl_2b/README.md).
 
 ## Shared setting
 
@@ -105,6 +104,7 @@ done
 bash scripts/prepare_eval_data.sh comparison
 bash scripts/eval.sh checkpoints/Comparison-Qwen3-VL-4B/papo --suite comparison
 python3 scripts/finalize_run.py checkpoints/Comparison-Qwen3-VL-4B/*   # after training: keep the last and the best step
+                                                                   # (GRPO's best step is the teacher of the OPD comparison)
 ```
 
 Checkpoints go to `checkpoints/Comparison-Qwen3-VL-4B/<method>`. Any `key=value` appended to a
@@ -159,7 +159,6 @@ columns of `eval/results/summary.csv` (see [eval/README.md](../../eval/README.md
 | VAPO | TBD | TBD | TBD | TBD | TBD |
 | GRIT | TBD | TBD | TBD | TBD | TBD |
 | CGPO | TBD | TBD | TBD | TBD | TBD |
-| OPD from sampled tokens, 8B teacher (`opd_sampled.sh`) | TBD | TBD | TBD | TBD | TBD |
 
 ### Math reasoning
 
@@ -181,7 +180,6 @@ columns of `eval/results/summary.csv` (see [eval/README.md](../../eval/README.md
 | VAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | GRIT | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | CGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| OPD from sampled tokens, 8B teacher (`opd_sampled.sh`) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 
 ### Vision-dependent reasoning
 
@@ -203,7 +201,6 @@ columns of `eval/results/summary.csv` (see [eval/README.md](../../eval/README.md
 | VAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | GRIT | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | CGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| OPD from sampled tokens, 8B teacher (`opd_sampled.sh`) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 
 ### Perception and hallucination
 
@@ -225,15 +222,10 @@ columns of `eval/results/summary.csv` (see [eval/README.md](../../eval/README.md
 | VAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | GRIT | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | CGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| OPD from sampled tokens, 8B teacher (`opd_sampled.sh`) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 
 MME (cognition) and MME (perception) are MME's cognition score (commonsense reasoning, numerical calculation,
 text translation and code reasoning; 260 questions, out of 800) and its perception score (the other 10 subtasks;
 2,114 questions, out of 2,000), each on a 0-100 scale.
-
-The last row learns from Qwen3-VL-8B-Instruct on the OPD recipe of
-[opd_qwen3_vl_2b/common.sh](opd_qwen3_vl_2b/common.sh) (one update per step, no KL or entropy term), so it is
-not an RL method under the shared setting; it links this table to the OPD comparison.
 
 Results will be added after the runs finish.
 

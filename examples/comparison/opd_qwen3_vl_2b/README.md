@@ -5,15 +5,15 @@ distributions. The four OPD papers reproduced in this repository ([VA-OPD](../..
 [VGS](../../reproduction/vgs/README.md), [VCSD](../../reproduction/vcsd/README.md),
 [Vision-OPD](../../reproduction/vision_opd/README.md)) use different students, teachers, data and evaluations.
 This directory trains the three that do not need region annotations, the two base OPD objectives and a GRPO
-reference under **one** setting, the RL comparison's ([../README.md](../README.md)) with a 2B student and the 8B
-model of the same family as the teacher. Each script only sets `ALGO_ARGS`; everything else comes from
-[common.sh](common.sh).
+reference under **one** setting, the RL comparison's ([../README.md](../README.md)) with a 2B student and a teacher
+trained in that comparison: Qwen3-VL-4B-Instruct after GRPO, at its best validation step (see [Teacher](#teacher)).
+Each script only sets `ALGO_ARGS`; everything else comes from [common.sh](common.sh).
 
 ## Shared setting
 
 | | `examples/comparison/opd_qwen3_vl_2b/common.sh` | RL comparison (`../qwen3_vl_4b/common.sh`) |
 | --- | --- | --- |
-| Student / teacher | Qwen3-VL-2B-Instruct / Qwen3-VL-8B-Instruct (VCSD: an EMA of the student) | Qwen3-VL-4B-Instruct / – |
+| Student / teacher | Qwen3-VL-2B-Instruct / the RL comparison's GRPO run (Qwen3-VL-4B-Instruct) at its best validation step (VCSD: an EMA of the student) | Qwen3-VL-4B-Instruct / – |
 | Data, validation, prompt | ViRL39K; MMK12 test every 15 steps; `math_perception.jinja` with `<think>` as plain text | same; every 5 steps |
 | Rollout | 128 prompts x 8 per step, **one update per step**, T=1.0, **top-p 1.0** | 384 x 8 per step, update batch 128 (3 updates per step), top-p 0.99 |
 | Loss | the method's objective, token-level averaging | GRPO, token-level, clip 0.2 / 0.2 |
@@ -28,6 +28,34 @@ so that every update is on the current policy: the distribution-level losses the
 and the OPD papers do the same. The rollout is not truncated (top-p 1.0) because the objectives are
 expectations under the student's own distribution; with a teacher the trainer requires it. The teacher
 reads the student's token ids and pixel values; the trainer checks at startup that the two models share them.
+
+## Teacher
+
+The teacher is `../qwen3_vl_4b/grpo.sh` at the step with the highest validation reward
+(`best_global_step` of its `checkpoint_tracker.json`; step 175 of 202 in our run), not an Instruct model:
+
+- **Length.** Under this prompt and the 2,048-token cap, the Instruct models write past the cap on many
+  questions: on 128 MMK12 test questions with 4 samples each at T=1.0, Qwen3-VL-8B-Instruct exceeds 2,048
+  tokens in 43% of its answers (accuracy 0.676 without a cap, 0.469 within it), Qwen3-VL-2B-Instruct in 44%,
+  and a non-thinking chat template does not shorten them. An OPD student keeps its teacher's verbose reasoning
+  ([COPD](https://arxiv.org/abs/2607.19046), Table 1: 2.23K tokens after standard OPD from Qwen3-VL-8B against
+  2.12K for the 2B base model), while the GRPO reference learns to finish within the cap. The GRPO run
+  truncates about 1-2% of its validation answers. [VGS](../../reproduction/vgs/README.md), with the same model
+  family and cap, also trains its teacher with GRPO before distilling.
+- **Size.** Qwen3-VL-8B-Instruct scores only 1-3.5 points above the 4B on most reasoning benchmarks of the
+  Qwen3-VL technical report (Table 4), and in VA-OPD's Table 2 standard OPD brings the same 2B student to
+  almost the same scores from a 4B and an 8B teacher (math average 45.3 and 45.4); the 4B GRPO run needs no
+  extra training and halves the teacher's cost.
+- **Step.** GRPO's entropy and KL drift over its last steps (from about step 188 in our run). The best
+  validation step also scores above the last step on the comparison suite without MMK12 (in our run 72.1
+  against 70.5, mostly on the math group). MMK12 test is the validation set, so the students' MMK12 scores
+  may be slightly favored by this choice.
+
+Run `../qwen3_vl_4b/grpo.sh` first and keep its best step (`python3 scripts/finalize_run.py
+checkpoints/Comparison-Qwen3-VL-4B/grpo` keeps the last and the best step, or merge it with
+`scripts/model_merger.py`); the scripts read it from there and stop before training when that step has no complete
+weights. `TEACHER_PATH` or `worker.teacher.model.model_path=...` on the command line sets another teacher, and
+`GRPO_TEACHER_RUN` another GRPO run.
 
 ## Methods
 
@@ -45,9 +73,9 @@ Settings of each paper that belong to its own recipe rather than to its method (
 lengths, its data and prompt) are replaced by the shared setting; the method's own components and constants
 are kept. Notes:
 
-- **Not an equal comparison with GRPO.** The OPD methods learn from an 8B model, which GRPO does not see;
-  `grpo.sh` places them next to RL on the same student, data and budget. VCSD needs no external teacher (it
-  distills from an EMA of the student), so it is the only OPD row without the 8B model.
+- **Not an equal comparison with GRPO.** The OPD methods learn from the teacher (the 4B GRPO run), which the
+  GRPO row does not see; `grpo.sh` places them next to RL on the same student, data and budget. VCSD needs no
+  external teacher (it distills from an EMA of the student), so it is the only OPD row without the teacher.
 - **Loss averaging.** Every method averages over the response tokens of the batch, as the released OPD code
   (VCSD, Vision-OPD) and verl, TRL and NeMo-RL do; the papers write their losses as means over each response,
   then over responses. VA-OPD normalizes its weights per prompt by definition (its weights of a prompt sum to
@@ -59,16 +87,15 @@ are kept. Notes:
   applies only the T² factor; see the VCSD README).
 - **Vision-OPD** is not included: it needs a region annotation per question for the teacher's crop, which
   ViRL39K does not have.
-- The 4B table of the RL comparison has a bridge, [`../qwen3_vl_4b/opd_sampled.sh`](../qwen3_vl_4b/opd_sampled.sh):
-  `opd_sampled.sh` with the 4B student and the same teacher on this recipe, logged with the RL runs. In the
-  Qwen3-VL technical report (Table 4) the 8B Instruct model scores only 2-3.5 points above the 4B on most math
-  and reasoning benchmarks (MMMU, MathVista, MathVision, DynaMath, LogicVista), against 10-22 points above the
-  2B, so the main OPD comparison uses the 2B student.
+- The student is the 2B model: Qwen3-VL-2B-Instruct scores 10-22 points below the 4B and 8B on most math and
+  reasoning benchmarks of the Qwen3-VL technical report (Table 4), so it has room to learn from the teacher.
 
 ## Running
 
 ```bash
 bash scripts/prepare_data.sh opd_comparison
+bash examples/comparison/qwen3_vl_4b/grpo.sh                    # the teacher, if the RL comparison has not run it
+python3 scripts/finalize_run.py checkpoints/Comparison-Qwen3-VL-4B/grpo   # keeps its last and best step
 for m in grpo opd_sampled opd_full va_opd vgs vcsd; do
     bash examples/comparison/opd_qwen3_vl_2b/$m.sh
 done
@@ -80,7 +107,7 @@ python3 scripts/finalize_run.py checkpoints/Comparison-OPD-Qwen3-VL-2B/*   # aft
 Checkpoints go to `checkpoints/Comparison-OPD-Qwen3-VL-2B/<method>`. `MODEL_PATH` and `TEACHER_PATH` set the
 student and the teacher; any `key=value` appended to a script overrides the shared setting. The teacher adds
 its forward passes to the update (one per micro-batch; two for VGS, VCSD and VA-OPD's scoring of the
-pixelated image) and about 4 GB of bf16 weights per GPU on 4 GPUs.
+pixelated image) and about 2 GB of bf16 weights per GPU on 4 GPUs.
 
 ## Results
 
@@ -91,7 +118,7 @@ same overall score (the mean of the three group means; All is the mean of the 19
 | Method | Math reasoning | Vision-dependent reasoning | Perception and hallucination | Overall | All |
 | --- | --- | --- | --- | --- | --- |
 | Qwen3-VL-2B-Instruct (student, no training) | TBD | TBD | TBD | TBD | TBD |
-| Qwen3-VL-8B-Instruct (teacher, no training) | TBD | TBD | TBD | TBD | TBD |
+| Teacher: GRPO on Qwen3-VL-4B-Instruct, best validation step | TBD | TBD | TBD | TBD | TBD |
 | GRPO | TBD | TBD | TBD | TBD | TBD |
 | OPD (sampled tokens) | TBD | TBD | TBD | TBD | TBD |
 | OPD (full distributions) | TBD | TBD | TBD | TBD | TBD |
@@ -104,7 +131,7 @@ same overall score (the mean of the three group means; All is the mean of the 19
 | Method | Geo3K | MathVista | We-Math | MMK12 | MathVerse | MathVision | DynaMath | Avg |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Qwen3-VL-2B-Instruct (student, no training) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Qwen3-VL-8B-Instruct (teacher, no training) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Teacher: GRPO on Qwen3-VL-4B-Instruct, best validation step | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | GRPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | OPD (sampled tokens) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | OPD (full distributions) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
@@ -117,7 +144,7 @@ same overall score (the mean of the three group means; All is the mean of the 19
 | Method | MathVerse-V | MMMU-Pro | LogicVista | Counting | AI2D | MME (cognition) | Avg |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Qwen3-VL-2B-Instruct (student, no training) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Qwen3-VL-8B-Instruct (teacher, no training) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Teacher: GRPO on Qwen3-VL-4B-Instruct, best validation step | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | GRPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | OPD (sampled tokens) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | OPD (full distributions) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
@@ -130,7 +157,7 @@ same overall score (the mean of the three group means; All is the mean of the 19
 | Method | POPE | HallusionBench | MMStar | BLINK | MME (perception) | CV-Bench | Avg |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Qwen3-VL-2B-Instruct (student, no training) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Qwen3-VL-8B-Instruct (teacher, no training) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Teacher: GRPO on Qwen3-VL-4B-Instruct, best validation step | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | GRPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | OPD (sampled tokens) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 | OPD (full distributions) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |

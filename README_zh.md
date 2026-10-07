@@ -39,7 +39,7 @@ PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · NoisyRollout · V
   13 个 RLVR 方法（PAPO、VPPO、DVRP、ToR、PGPO、PEPO、CFPO、VEPO、NoisyRollout、VGPO、VAPO、GRIT、DeepEyes）和 4 个在线策略蒸馏方法
   （VA-OPD、VGS、VCSD、Vision-OPD）；
 - **统一设定下的公平对比**：[RLVR 方法](examples/comparison/README.md)（除 DeepEyes 外）在 Qwen3-VL-4B 上对比，
-  [在线策略蒸馏](examples/comparison/opd_qwen3_vl_2b/README.md)以 Qwen3-VL-2B 为学生、Qwen3-VL-8B 为教师对比；
+  [在线策略蒸馏](examples/comparison/opd_qwen3_vl_2b/README.md)以 Qwen3-VL-2B 为学生、上述对比中经 GRPO 训练的 Qwen3-VL-4B 为教师对比；
 - **[一键评测](eval/README.md)**：覆盖这些论文所用评测基准的并集，每个基准都有下载处理脚本，
   每篇论文都有对应的评测套件。
 
@@ -246,7 +246,7 @@ GRPO 超参数和相同的评测，只有方法相关的参数不同，各方法
 | 全部（19 项基准的平均） | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
 
 [`examples/comparison/opd_qwen3_vl_2b`](examples/comparison/opd_qwen3_vl_2b/README.md) 以 Qwen3-VL-2B 为学生、
-Qwen3-VL-8B-Instruct 为教师对比在线策略蒸馏，使用相同的数据、训练量和评测，每批采样只更新一次，不加 KL 和熵项。
+RL 对比中的 GRPO 运行（Qwen3-VL-4B-Instruct，取验证最优步）为教师对比在线策略蒸馏，使用相同的数据、训练量和评测，每批采样只更新一次，不加 KL 和熵项。
 VCSD 从学生自身的 EMA 蒸馏，不使用外部教师；同一学生上的 GRPO 作为强化学习参照。`opd` 套件即 `comparison` 套件。
 
 | 方法 | GRPO | OPD（采样 token） | OPD（完整分布） | VA-OPD | VGS | VCSD |
