@@ -202,7 +202,7 @@ python3 scripts/finalize_run.py checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_pa
 最高的一步保留为 `global_step_N/actor` 中的 Hugging Face 权重（4B 模型每步约 9 GB），删除优化器状态和其余 step，
 此后该实验无法再续训。`--keep` 接受逗号分隔的集合：单独的 `last` 或 `best`、`all`（保留所有已保存的 step，
 例如分析训练动态，训练时需设 `trainer.save_limit=-1` 才会全部保存）或具体步数（`--keep last,50,100`）。
-统一对比评测最后一步；验证最优步也保留，是因为验证集往往同时是评测基准、在其上挑选会带来偏差，但它可用作教师或做分析。
+统一对比的主表取最后一步，验证最优步另列一张表并去掉验证集对应的基准（验证集往往同时是评测基准，按它挑步会使该基准偏高）；验证最优步也可用作教师。
 传入单个 `.../global_step_N` 时只处理这一步，不动其他 step。`scripts/eval.sh` 可以直接评测收尾后的实验。
 
 ## 📁 仓库结构

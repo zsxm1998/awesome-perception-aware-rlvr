@@ -24,7 +24,7 @@ student distilled from this comparison's GRPO run: see [opd_qwen3_vl_2b/README.m
 | Regularization | low-var KL loss to the reference model, 0.01; entropy penalty 0.005 on the full-vocabulary entropy (`algorithm.invariant_entropy_coef=0.005`, `algorithm.entropy_loss_type=full`) |
 | Optimization | AdamW (bf16), lr 1e-6 constant, vision tower trainable, 2 epochs |
 | Lengths / pixels | max prompt 4,096, max response 2,048; 200,704-1,003,520 pixels |
-| GPUs | 4 |
+| GPUs | 4 (A800 80GB) |
 
 ## Methods
 
@@ -136,29 +136,37 @@ macro-F1 over the random / popular / adversarial splits, HallusionBench question
 cognition and perception the scores out of 800 and 2,000 on a 0-100 scale, and CV-Bench the overall score of its dataset card
 (the mean of the 2D and 3D accuracies). **Overall** is the mean of the three group means, so each group
 weighs the same whatever its number of benchmarks; **All** is the unweighted mean of the 19 benchmarks,
-given for reference. MMK12 test is also the validation set monitored during training (as in PAPO and
-VPPO), so every method is evaluated at its last step, never at the step with the best validation
-reward. `bash scripts/eval.sh <run> --suite comparison` writes these means as the `comparison: ...`
-columns of `eval/results/summary.csv` (see [eval/README.md](../../eval/README.md#suites)).
+given for reference. `bash scripts/eval.sh <run> --suite comparison` writes these means as the
+`comparison: ...` columns of `eval/results/summary.csv` (see [eval/README.md](../../eval/README.md#suites)).
 
-| Method | Math reasoning | Vision-dependent reasoning | Perception and hallucination | Overall | All |
-| --- | --- | --- | --- | --- | --- |
-| Qwen3-VL-4B-Instruct (no RL) | TBD | TBD | TBD | TBD | TBD |
-| GRPO | TBD | TBD | TBD | TBD | TBD |
-| DAPO | TBD | TBD | TBD | TBD | TBD |
-| PAPO | TBD | TBD | TBD | TBD | TBD |
-| VPPO | TBD | TBD | TBD | TBD | TBD |
-| ToR | TBD | TBD | TBD | TBD | TBD |
-| DVRP | TBD | TBD | TBD | TBD | TBD |
-| PGPO | TBD | TBD | TBD | TBD | TBD |
-| PEPO | TBD | TBD | TBD | TBD | TBD |
-| CFPO | TBD | TBD | TBD | TBD | TBD |
-| VEPO | TBD | TBD | TBD | TBD | TBD |
-| NoisyRollout | TBD | TBD | TBD | TBD | TBD |
-| VGPO | TBD | TBD | TBD | TBD | TBD |
-| VAPO | TBD | TBD | TBD | TBD | TBD |
-| GRIT | TBD | TBD | TBD | TBD | TBD |
-| CGPO | TBD | TBD | TBD | TBD | TBD |
+The summary table and the three group tables evaluate every method at its last step (step 202), so they
+compare what the same training budget ends with, late drift included. MMK12 test is also the validation set monitored during
+training (as in PAPO and VPPO); [Best validation step](#best-validation-step) gives the second view, each
+method at the step with the best validation reward, on the other 18 benchmarks.
+
+| Method | Math reasoning | Vision-dependent reasoning | Perception and hallucination | Overall | All | Training hours |
+| --- | --- | --- | --- | --- | --- | --- |
+| Qwen3-VL-4B-Instruct (no RL) | TBD | TBD | TBD | TBD | TBD | – |
+| GRPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| DAPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| PAPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| VPPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| ToR | TBD | TBD | TBD | TBD | TBD | TBD |
+| DVRP | TBD | TBD | TBD | TBD | TBD | TBD |
+| PGPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| PEPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| CFPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| VEPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| NoisyRollout | TBD | TBD | TBD | TBD | TBD | TBD |
+| VGPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| VAPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| GRIT | TBD | TBD | TBD | TBD | TBD | TBD |
+| CGPO | TBD | TBD | TBD | TBD | TBD | TBD |
+
+**Training hours** is the wall-clock time of the 202 training steps on 4 A800 80GB GPUs (rollout, reward,
+the auxiliary views and the updates), without the validation runs and checkpoint saves, which are the same
+for every method; in parentheses, the ratio to GRPO. The runs shared 8-GPU nodes two at a time, so
+differences of a few percent can come from the node load.
 
 ### Math reasoning
 
@@ -226,6 +234,36 @@ columns of `eval/results/summary.csv` (see [eval/README.md](../../eval/README.md
 MME (cognition) and MME (perception) are MME's cognition score (commonsense reasoning, numerical calculation,
 text translation and code reasoning; 260 questions, out of 800) and its perception score (the other 10 subtasks;
 2,114 questions, out of 2,000), each on a 0-100 scale.
+
+### Best validation step
+
+Each method at the step with the best validation reward (`best_global_step` in the run's
+`checkpoint_tracker.json`; `scripts/finalize_run.py` keeps this step), evaluated with
+`bash scripts/eval.sh checkpoints/Comparison-Qwen3-VL-4B/<method>/global_step_<best> --suite comparison`.
+MMK12 is left out, since the step is chosen on it, so math reasoning holds 6 benchmarks like the other two
+groups and **Overall** is also the mean of the 18 benchmarks. The `comparison: ...` columns of that evaluation
+still cover the 19 benchmarks; compute these means from the per-benchmark scores without MMK12. The other math sets are close to MMK12, so
+the math reasoning of a method whose best step comes well before its last may still be slightly optimistic.
+**Last step** is the same mean of 18 at step 202.
+
+| Method | Best step | Math reasoning (without MMK12) | Vision-dependent reasoning | Perception and hallucination | Overall | Last step |
+| --- | --- | --- | --- | --- | --- | --- |
+| Qwen3-VL-4B-Instruct (no RL) | – | TBD | TBD | TBD | TBD | – |
+| GRPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| DAPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| PAPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| VPPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| ToR | TBD | TBD | TBD | TBD | TBD | TBD |
+| DVRP | TBD | TBD | TBD | TBD | TBD | TBD |
+| PGPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| PEPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| CFPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| VEPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| NoisyRollout | TBD | TBD | TBD | TBD | TBD | TBD |
+| VGPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| VAPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| GRIT | TBD | TBD | TBD | TBD | TBD | TBD |
+| CGPO | TBD | TBD | TBD | TBD | TBD | TBD |
 
 Results will be added after the runs finish.
 

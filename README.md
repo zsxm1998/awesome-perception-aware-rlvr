@@ -228,8 +228,9 @@ weights in `global_step_N/actor` (about 9 GB each for a 4B model) and deletes th
 the other steps; the run can no longer be resumed. `--keep` takes a comma-separated set instead:
 `last` or `best` alone, `all` (every saved step, e.g. for the training dynamics; train with
 `trainer.save_limit=-1` to save them) or step numbers (`--keep last,50,100`). The controlled
-comparisons evaluate the last step; the best step is kept because the validation set is often also an
-evaluated benchmark, which biases it, but it is useful as a teacher or for analysis. A single
+comparisons report the last step, and the best step in a second table without the validation benchmark
+(the validation set is often also an evaluated benchmark, and choosing the step on it biases that
+score); the best step also serves as a teacher. A single
 `.../global_step_N` is finalized alone, without touching the other steps. `scripts/eval.sh` accepts
 finalized runs.
 
