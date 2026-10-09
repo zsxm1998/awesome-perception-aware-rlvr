@@ -662,6 +662,61 @@ def test_distillation_metrics_do_not_depend_on_the_split(monkeypatch, mode, worl
         assert "distill/entropy" not in metrics
 
 
+@pytest.mark.parametrize("policy_loss_coef", [0.0, 1.0])
+def test_unused_sampled_log_probs_keep_no_graph(monkeypatch, policy_loss_coef):
+    """In pure distillation no loss term uses the sampled tokens' log-probs: the update drops their graph (inside
+    the distillation's activation checkpoint it holds recomputed [rows, V] logits until the update ends) and the
+    gradient is unchanged; with a policy-gradient term they keep it."""
+    import weakref
+
+    from verl.workers.actor import dp_actor
+
+    config = ActorConfig(
+        global_batch_size=len(LENGTHS),
+        micro_batch_size_per_device_for_update=2,
+        micro_batch_size_per_device_for_experience=2,
+        loss_avg_mode="token",
+        padding_free=True,
+        dynamic_batching=False,
+        use_torch_compile=False,
+    )
+    config.global_batch_size_per_device = len(LENGTHS)
+    actor = DataParallelPPOActor(config=config, actor_module=nn.Linear(1, 1))
+    actor.world_size = 1
+    params = nn.Parameter(torch.zeros(len(LENGTHS), RESPONSE_LENGTH))
+    returned, alive_at_step, pg_inputs = [], [], []
+
+    def forward(model_inputs, distill_config):
+        values = params[model_inputs["input_ids"][:, 0]]
+        log_probs = values * 1.0  # with a graph, as the chunked distillation returns them
+        returned.append(weakref.ref(log_probs))
+        return log_probs, -values, torch.zeros(*values.shape, 3)
+
+    def optimizer_step():
+        alive_at_step.append(sum(ref() is not None for ref in returned))
+        return torch.tensor(0.0)
+
+    original_policy_loss = dp_actor.compute_policy_loss
+
+    def policy_loss(**kwargs):
+        pg_inputs.append(kwargs["log_probs"].requires_grad)
+        return original_policy_loss(**kwargs)
+
+    data = _update_data(list(range(len(LENGTHS))), LENGTHS)
+    data.meta_info["distillation_config"]["policy_loss_coef"] = policy_loss_coef
+    monkeypatch.setattr(actor, "_forward_micro_batch_distill", forward)
+    monkeypatch.setattr(actor, "_optimizer_step", optimizer_step)
+    monkeypatch.setattr(dp_actor, "compute_policy_loss", policy_loss)
+    monkeypatch.setattr(torch.distributed, "all_reduce", lambda tensor, op=None: None)
+    actor.update_policy(data)
+
+    if policy_loss_coef == 0.0:
+        assert alive_at_step == [0] and pg_inputs == []
+        torch.testing.assert_close(params.grad, _expected_distill_grad("token"))
+    else:
+        assert alive_at_step == [1] and pg_inputs and all(pg_inputs)
+
+
 # ---------------------------------------------------------------------------------------------------------------
 # the EMA teacher
 

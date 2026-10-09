@@ -1400,6 +1400,15 @@ class DataParallelPPOActor(BasePPOActor):
                         log_probs, distill_per_token, distill_stats = self._forward_micro_batch_distill(
                             model_inputs, distill_config
                         )
+                        if distill_config["policy_loss_coef"] == 0.0 and not (
+                            self.config.use_kl_loss and "ref_log_probs" in model_inputs
+                        ):
+                            # no loss term uses the sampled tokens' log-probs (the importance weights detach them):
+                            # drop their graph now. Its part inside the distillation's activation checkpoint is never
+                            # backpropagated, so the backward's recomputation would keep that part's [rows, V] logits
+                            # alive until the update ends, and the optimizer states allocated meanwhile would pin
+                            # their memory for the rest of training (about 23 GB per GPU in the 2B OPD comparison).
+                            log_probs = log_probs.detach()
                         names = stat_names(DistillationSpec.from_config(distill_config))
                         entropy = distill_stats[..., names.index("entropy")] if need_entropy else None
                     else:
