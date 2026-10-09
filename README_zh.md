@@ -301,6 +301,7 @@ SEED-Bench 等），基于定位的推理（GRIT 的 VSR / TallyQA / GQA / OVDEv
 | `TEACHER_PATH` | 由脚本指定 | 在线策略蒸馏脚本的教师模型 |
 | `DATA_ROOT` | `./data` | 训练数据目录 |
 | `LOGGER` | `["console","file"]` | 可加入 `"wandb"`、`"swanlab"`、`"tensorboard"`、`"mlflow"` |
+| `LOGGER_FINISH_TIMEOUT` | `300` | 训练结束时最多等待 SwanLab 收尾的秒数；超时后实验照常结束，尚未上传的 SwanLab 数据可能在线上缺失（可用 `swanlab sync` 上传本地备份） |
 | `N_GPUS_PER_NODE` | 由脚本指定 | 每个节点的 GPU 数 |
 | `NNODES` | `1` | 节点数（多机训练需先启动 Ray 集群） |
 | `EXPERIMENT_NAME` | 脚本名 | 实验名；checkpoint 保存在 `checkpoints/<project>/<experiment>` |

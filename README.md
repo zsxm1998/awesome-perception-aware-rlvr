@@ -347,6 +347,7 @@ Environment variables understood by every training script:
 | `TEACHER_PATH` | per script | teacher of the on-policy distillation scripts |
 | `DATA_ROOT` | `./data` | prepared training data |
 | `LOGGER` | `["console","file"]` | add `"wandb"`, `"swanlab"`, `"tensorboard"` or `"mlflow"` |
+| `LOGGER_FINISH_TIMEOUT` | `300` | seconds SwanLab may take to close when training ends; after that the run ends anyway, and SwanLab data not yet uploaded may be missing online (`swanlab sync` uploads the local backup) |
 | `N_GPUS_PER_NODE` | per script | GPUs per node |
 | `NNODES` | `1` | number of nodes (start a Ray cluster first for multi-node runs) |
 | `EXPERIMENT_NAME` | script name | run name; checkpoints in `checkpoints/<project>/<experiment>` |

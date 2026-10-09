@@ -17,6 +17,8 @@ A unified tracking interface that supports logging data to different backend
 
 import json
 import os
+import sys
+import threading
 from abc import ABC, abstractmethod
 from typing import Any, Optional, Union
 
@@ -40,6 +42,22 @@ if is_package_available("wandb"):
 
 if is_package_available("swanlab"):
     import swanlab  # type: ignore
+
+
+def logger_finish_timeout() -> float:
+    """LOGGER_FINISH_TIMEOUT: seconds SwanLab may take to close when training ends (default 300), checked when the
+    logger starts rather than at the end of training."""
+    value = os.getenv("LOGGER_FINISH_TIMEOUT", "300")
+    try:
+        timeout = float(value)
+    except ValueError:
+        timeout = float("nan")
+    if not 0 < timeout <= threading.TIMEOUT_MAX:  # also rejects nan
+        raise ValueError(
+            f"LOGGER_FINISH_TIMEOUT must be a positive number of seconds up to {threading.TIMEOUT_MAX:.0f}, "
+            f"but got {value!r}."
+        )
+    return timeout
 
 
 class Logger(ABC):
@@ -95,6 +113,7 @@ class MlflowLogger(Logger):
 
 class SwanlabLogger(Logger):
     def __init__(self, config: dict[str, Any]) -> None:
+        self.finish_timeout = logger_finish_timeout()
         swanlab_key = os.getenv("SWANLAB_API_KEY")
         swanlab_dir = os.getenv("SWANLAB_DIR", "swanlab_log")
         swanlab_mode = os.getenv("SWANLAB_MODE", "cloud")
@@ -153,7 +172,29 @@ class SwanlabLogger(Logger):
         swanlab.log(data=data, step=step)
 
     def finish(self) -> None:
-        swanlab.finish()
+        """swanlab.finish() joins SwanLab's upload thread without a timeout, so an upload that stopped during the run
+        (e.g. a dropped connection) would never let the run end, and the run would hold its GPUs. It runs in a
+        daemon thread here and is waited for at most `finish_timeout` seconds; a normal finish takes seconds."""
+        errors: list[Exception] = []
+
+        def close() -> None:
+            try:
+                swanlab.finish()
+            except Exception as error:  # raised again in the calling thread
+                errors.append(error)
+
+        thread = threading.Thread(target=close, name="swanlab.finish", daemon=True)
+        thread.start()
+        thread.join(self.finish_timeout)
+        if thread.is_alive():
+            print(
+                f"[logger] swanlab.finish() did not return within {self.finish_timeout:g} s; stopped waiting. SwanLab "
+                "data it had not uploaded or written to its local backup yet may be missing; `swanlab sync <run dir>` "
+                "uploads the local backup.",
+                file=sys.stderr,
+            )
+        elif errors:
+            raise errors[0]
 
 
 class TensorBoardLogger(Logger):
@@ -237,13 +278,21 @@ class Tracker:
     def finish(self) -> None:
         """Close every logger once. Called at the end of training, while the process still runs: SwanLab's finish
         waits for its upload thread, which an exiting Ray actor would otherwise stop before the last metrics (the
-        final validation) are sent."""
+        final validation) are sent. Each logger closes in the calling thread (W&B restores signal handlers there);
+        SwanLab bounds its own wait (SwanlabLogger.finish). A logger that fails is reported and the others are still
+        closed: the training itself has ended by then."""
         if self._finished:
             return
         self._finished = True
         for logger in self.loggers:
-            logger.finish()
+            try:
+                logger.finish()
+            except Exception as error:
+                print(f"[logger] {type(logger).__name__}.finish() failed: {error!r}", file=sys.stderr)
 
-    def __del__(self):
-        if not getattr(self, "_finished", True):  # a run that ended without finish(), e.g. by an exception
+    def __del__(self, _is_finalizing=sys.is_finalizing):
+        # a run that ended without finish(), e.g. by an exception. Not while the interpreter shuts down: new threads
+        # cannot start then and module globals may be gone; SwanLab and W&B close their runs in their own atexit
+        # hooks, which run before.
+        if not getattr(self, "_finished", True) and not _is_finalizing():
             self.finish()

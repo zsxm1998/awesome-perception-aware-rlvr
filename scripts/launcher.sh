@@ -10,6 +10,7 @@
 #   MODEL_PATH       HF id or local path of the policy model
 #   DATA_ROOT        root of the prepared data (default: <repo>/data, see scripts/prepare_data.sh)
 #   LOGGER           trainer loggers, e.g. '["console","wandb"]' (default: '["console","file"]')
+#   LOGGER_FINISH_TIMEOUT  seconds SwanLab may take to close when training ends (default: 300)
 #   N_GPUS_PER_NODE  GPUs per node (default: the paper setting of each method)
 #   NNODES           number of nodes (default: 1)
 #   EXPERIMENT_NAME  run name; checkpoints go to <repo>/checkpoints/<project>/<experiment>
