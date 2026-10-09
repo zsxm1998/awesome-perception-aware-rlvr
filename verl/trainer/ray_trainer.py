@@ -396,6 +396,7 @@ class RayPPOTrainer:
                 detector=config.algorithm.grounding_consistency_detector,
                 grounding_dino_device=config.algorithm.grounding_dino_device,
                 grounding_dino_batch_size=config.algorithm.grounding_dino_batch_size,
+                aggregation=config.algorithm.grounding_consistency_aggregation,
             )
 
     def _build_perception_reasoning_loss_config(self) -> dict[str, Any]:

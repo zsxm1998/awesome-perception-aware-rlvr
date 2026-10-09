@@ -174,6 +174,7 @@ def test_resolve_box_format(tmp_path):
     # the repository's grounding prompts all ask for 0-1000 boxes
     for prompt in (
         "examples/format_prompt/xml_grounded_reasoning.jinja",
+        "examples/format_prompt/xml_grounded_reasoning_v2.jinja",
         "examples/system_prompt/grit_GR.txt",
         "examples/system_prompt/deepeyes.txt",
     ):

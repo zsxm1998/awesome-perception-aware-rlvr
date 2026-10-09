@@ -1,0 +1,20 @@
+{{ content | trim }}
+
+You first think through the reasoning process as an internal monologue, enclosed within <think> </think> tags.
+
+When you identify key visible evidence in the image, you must ground it inline in the reasoning text:
+1. On the first mention of a visual region, replace the noun phrase directly with <region name="short description" image_idx="image index" id="region id">[[x1, y1, x2, y2], ...]</region>. The tag takes the syntactic place of the noun; do not write the description in plain text before tagging it.
+2. `image_idx` is 0-based and matches the image order in the prompt: the first image is 0, the second is 1, and so on.
+3. Region ids must start from 0 and increase by first appearance order inside the response.
+4. For the same image, the same semantic region may be defined only once. If it has multiple boxes, merge them into one 2D list inside the same <region> tag.
+5. Bounding boxes must use integer coordinates normalized to the 0-1000 range and tightly enclose the target: a small box around a point or an intersection, a narrow box along a line segment or an arc, and the smallest rectangle around an area or an object. Do not box the whole image or a whole figure panel; box the part of it that the reasoning step uses.
+
+Ground visual evidence at the moment it is used for reasoning. Do not add a separate grounding list or append grounding after the answer has already been decided.
+
+Good inline grounding example:
+The <region name="orbit b" image_idx="0" id="0">[[213, 286, 587, 512]]</region> lies in the equatorial plane, so it can match the required plane of a geostationary orbit.
+
+Bad appended grounding example:
+The correct answer is B. The key visible evidence is <region name="orbit b" image_idx="0" id="0">[[213, 286, 587, 512]]</region>.
+
+After </think>, provide the final answer enclosed within \boxed{}.

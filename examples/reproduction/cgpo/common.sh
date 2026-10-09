@@ -24,7 +24,7 @@ launch_cgpo() {
         "data.answer_key=answer"
         "data.image_key=images"
         "data.video_key=videos"
-        "data.format_prompt=$ROOT_DIR/examples/format_prompt/xml_grounded_reasoning.jinja"
+        "data.format_prompt=$ROOT_DIR/examples/format_prompt/xml_grounded_reasoning_v2.jinja"
         "data.filter_overlong_prompts=true"
         "data.min_pixels=200704"
         "data.max_pixels=1003520"
@@ -93,5 +93,6 @@ CGPO_ALGO_ARGS=(
     "algorithm.include_region_tokens_in_perception_mask=true"
     "algorithm.use_grounding_consistency_reward=true"
     "algorithm.grounding_consistency_reward_weight=0.5"
+    "algorithm.grounding_consistency_aggregation=response"  # R_gc: mean over the response's regions (Sec. 3.3.3)
     "worker.rollout.mm_processor_cache_gb=4"  # GCR detects several regions per image: process each image once
 )

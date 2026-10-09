@@ -14,6 +14,7 @@
 
 import importlib.util
 import math
+import re
 from types import SimpleNamespace
 
 import numpy as np
@@ -4439,6 +4440,117 @@ def test_grounding_consistency_scorer_eligibility_mask_skips_ineligible_groups()
 
     with pytest.raises(ValueError, match="eligible_sample_mask"):
         scorer.score_batch(batch, wg, _GCR_TEST_ROLLOUT_CONFIG, eligible_sample_mask=[True])
+
+
+class _NamedFakeRolloutWG:
+    """Answers each detection prompt with the boxes given for the region name it asks for ("[]" if not listed)."""
+
+    world_size = 1
+
+    def __init__(self, tokenizer, detections):
+        self.tokenizer = tokenizer
+        self.detections = detections
+
+    def generate_from_raw_prompts(self, prompts):
+        rows = []
+        for raw_prompt_ids in prompts.non_tensor_batch["raw_prompt_ids"]:
+            prompt = self.tokenizer.decode(raw_prompt_ids)
+            name = re.search(r"Detect the (.+?) in the image", prompt).group(1)
+            rows.append(self.tokenizer.encode(self.detections.get(name, "[]")))
+        max_len = max(len(ids) for ids in rows)
+        return DataProto.from_dict(
+            tensors={
+                "responses": torch.tensor(
+                    [ids + [self.tokenizer.pad_token_id] * (max_len - len(ids)) for ids in rows], dtype=torch.long
+                ),
+                "response_lengths": torch.tensor([len(ids) for ids in rows], dtype=torch.long),
+            }
+        )
+
+
+_GCR_THREE_REGIONS = (
+    '<think>the <region name="cat" image_idx="0" id="0">[[10, 10, 20, 20]]</region> sits by the '
+    '<region name="dog" image_idx="0" id="1">[[30, 30, 40, 40]]</region> under the '
+    '<region name="ghost" image_idx="0" id="2">[[50, 50, 60, 60]]</region></think>\\boxed{A}'
+)
+_GCR_ONE_REGION = (
+    '<think>the <region name="cat" image_idx="0" id="0">[[10, 10, 20, 20]]</region> sits</think>\\boxed{A}'
+)
+_GCR_NO_REGION = "<think>a cat sits</think>\\boxed{A}"
+# cat matches exactly (1.0); dog's re-detection covers half of it (IoU 0.5, F1-weighted 0.5); ghost is not found
+_GCR_NAMED_DETECTIONS = {"cat": "[[10, 10, 20, 20]]", "dog": "[[30, 30, 35, 40]]"}
+
+
+@pytest.mark.parametrize(
+    ("aggregation", "expected"),
+    [
+        # group: w = share of the 3 responses naming the region (cat 2/3, dog 1/3, ghost 1/3 but not found, left out);
+        # (w_cat * match_cat + w_dog * match_dog) / (w_cat + w_dog)
+        ("group", [(2 / 3 * 1.0 + 1 / 3 * 0.5) / (2 / 3 + 1 / 3), (2 / 3 * 1.0) / (2 / 3 + 1 / 3), 0.0]),
+        # response: mean over the response's own regions, ghost (not re-detected) scores 0
+        ("response", [(1.0 + 0.5 + 0.0) / 3, 1.0, 0.0]),
+    ],
+)
+def test_grounding_consistency_aggregation(aggregation, expected):
+    tokenizer = _CharTokenizer()
+    scorer = GroundingConsistencyRewardScorer(
+        tokenizer=tokenizer,
+        processor=_CharProcessor(),
+        max_prompt_length=256,
+        min_pixels=None,
+        max_pixels=None,
+        video_fps=2.0,
+        reward_weight=0.5,
+        aggregation=aggregation,
+    )
+    batch = _make_grounding_batch(tokenizer, [_GCR_THREE_REGIONS, _GCR_ONE_REGION, _GCR_NO_REGION], uids=["g"] * 3)
+    result = scorer.score_batch(batch, _NamedFakeRolloutWG(tokenizer, _GCR_NAMED_DETECTIONS), _GCR_TEST_ROLLOUT_CONFIG)
+
+    assert result.raw_scores == pytest.approx(expected)
+    assert result.weighted_scores == pytest.approx([0.5 * score for score in expected])
+    assert result.metrics["algo/gcr/scored_sample_fraction"] == pytest.approx(1.0)
+    # the group rewards the response that names more of the group's regions; the paper's mean does not
+    if aggregation == "group":
+        assert result.raw_scores[0] > result.raw_scores[1]
+    else:
+        assert result.raw_scores[0] < result.raw_scores[1]
+
+
+@pytest.mark.parametrize(("aggregation", "scored_fraction"), [("group", 0.0), ("response", 1.0)])
+def test_grounding_consistency_aggregation_when_nothing_is_detected(aggregation, scored_fraction):
+    tokenizer = _CharTokenizer()
+    scorer = _make_gcr_scorer(tokenizer)
+    scorer.aggregation = aggregation
+    batch = _make_grounding_batch(tokenizer, [_GCR_THREE_REGIONS, _GCR_ONE_REGION], uids=["g", "g"])
+    result = scorer.score_batch(batch, _NamedFakeRolloutWG(tokenizer, {}), _GCR_TEST_ROLLOUT_CONFIG)
+
+    # no region is confirmed: `group` leaves the group unscored, `response` scores its responses 0
+    assert result.raw_scores == [0.0, 0.0]
+    assert result.metrics["algo/gcr/scored_sample_fraction"] == pytest.approx(scored_fraction)
+
+
+def test_grounding_consistency_aggregation_is_validated():
+    config = AlgorithmConfig()
+    config.post_init()
+    assert config.grounding_consistency_aggregation == "group"
+    assert _make_gcr_scorer(_CharTokenizer()).aggregation == AlgorithmConfig.grounding_consistency_aggregation
+
+    config = AlgorithmConfig(grounding_consistency_aggregation="response")
+    config.post_init()
+    assert config.grounding_consistency_aggregation == "response"
+
+    with pytest.raises(ValueError, match="grounding_consistency_aggregation"):
+        AlgorithmConfig(grounding_consistency_aggregation="mean").post_init()
+    with pytest.raises(ValueError, match="aggregation"):
+        GroundingConsistencyRewardScorer(
+            tokenizer=_CharTokenizer(),
+            processor=_CharProcessor(),
+            max_prompt_length=256,
+            min_pixels=None,
+            max_pixels=None,
+            video_fps=2.0,
+            aggregation="mean",
+        )
 
 
 def test_grounding_consistency_scorer_deduplicates_identical_requests_across_groups():

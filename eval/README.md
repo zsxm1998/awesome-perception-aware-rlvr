@@ -110,7 +110,7 @@ repository is prompted as it was trained, and explicit flags always win (see [Pr
 | `vgs` | mathvision, mathverse_v, logicvista, mmmu_pro | VGS Table 1, the 4 of 7 benchmarks available (no VisualPuzzles, VlmsAreBlind); the paper reports Acc@1 (greedy) and Acc@16 (T=1); our MathVerse-V and MMMU-Pro come from PAPO-Eval and differ from the subsets the VGS authors use (MathVerse VD / VO multiple choice, 4-option MMMU-Pro); defaults: the training prompt (VGS' system prompt), image size and answer reading (`--answer-protocol vgs`) |
 | `vcsd` | blink, mmstar, vstar, mathvista, hrbench_4k, hrbench_8k, hallusionbench | VCSD Table 1; the paper's HallusionBench score is (aAcc+fAcc+qAcc)/3 (`aqf_mean` in the details) and its Acc. the mean of the seven scores; decoding and scoring are not given in the paper (we use greedy rule-based scoring, MathVista avg@8); defaults: the training prompt (the bare problem), chat template, tokenizer and image size |
 | `vision_opd` | vstar, zoombench, hrbench_4k, hrbench_8k, mme_realworld_lite, mmstar, pope | Vision-OPD Table 1 + holdout set of Table 2; the paper uses the full MME-RealWorld EN/CN (we have the lite version) and a gpt-oss-120b judge; MMVP is not available and CV-Bench is not in the suite (`--benchmarks cvbench` adds it); defaults: the training prompt (the dataset prompt, no system prompt), the non-thinking chat template and the image size (65,536-16,777,216 pixels) |
-| `cgpo` | = `papo` | CGPO natural-image reproduction (trained on ViRL39K); default prompt `xml_grounded_reasoning.jinja` |
+| `cgpo` | = `papo` | CGPO natural-image reproduction (trained on ViRL39K); default prompt `xml_grounded_reasoning_v2.jinja` |
 | `comparison` | math reasoning: geo3k, mathvista, wemath, mmk12, mathverse, mathvision, dynamath; vision-dependent reasoning: mathverse_v, mmmu_pro, logicvista, clevr_count, ai2d, mme_cognition; perception and hallucination: pope, hallusionbench, mmstar, blink, mme_perception, cvbench | the benchmark set used by `examples/comparison/`, in three groups (see below) |
 | `opd` | = `comparison` (same groups) | the benchmark set used by `examples/comparison/opd_qwen3_vl_2b` |
 | `perception` | pope, hallusionbench, mme, gqa, mm_vet | general perception / hallucination |
@@ -400,7 +400,7 @@ method's training from these flags or suite defaults:
 | VGPO | default prompt, `--min-pixels 262144 --max-pixels 4194304` (suite `vgpo`) |
 | VAPO | default prompt, `--min-pixels 262144 --max-pixels 4194304` (suite `vapo`) |
 | PEPO (Geometry3K setting) | `--format-prompt examples/format_prompt/pepo.jinja` (suite `pepo_geometry`) |
-| CGPO | `--format-prompt examples/format_prompt/xml_grounded_reasoning.jinja` (suite `cgpo`) |
+| CGPO | `--format-prompt examples/format_prompt/xml_grounded_reasoning_v2.jinja` (suite `cgpo`) |
 | GRIT (`examples/reproduction/grit`) | `--format-prompt examples/format_prompt/grit.jinja --system-prompt none --min-pixels 3136 --max-pixels 200704` (suite `grit`) |
 | GRIT in the comparison (`examples/comparison/qwen3_vl_4b/grit.sh`) | `--format-prompt none --system-prompt examples/system_prompt/grit_GR.txt`; on the GRIT sets with `--benchmarks grit_vsr,grit_tallyqa,grit_gqa,ovdeval_position`, not `--suite grit` |
 | DeepEyes, Qwen2.5-VL (`qwen2_5_vl_7b_grpo_deepeyes.sh`, DeepEyes' own prompts) | `--interaction-mode agentic --agent-prompt-style official` (suite `deepeyes` plus `--agent-prompt-style official`) |

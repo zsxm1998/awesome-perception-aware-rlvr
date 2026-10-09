@@ -626,7 +626,7 @@ def test_suite_defaults_apply_only_when_flags_are_not_given(monkeypatch):
     assert Path(args.format_prompt) == ROOT / "examples/format_prompt/math.jinja"
 
     args = _parse(monkeypatch, "--suite", "cgpo")
-    assert Path(args.format_prompt) == ROOT / "examples/format_prompt/xml_grounded_reasoning.jinja"
+    assert Path(args.format_prompt) == ROOT / "examples/format_prompt/xml_grounded_reasoning_v2.jinja"
 
     args = _parse(monkeypatch, "--suite", "deepeyes")
     assert args.interaction_mode == "agentic"

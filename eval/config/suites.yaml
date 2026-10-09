@@ -268,7 +268,7 @@ suites:
     description: CGPO (natural-image reproduction trained on ViRL39K) = the PAPO suite
     include: [papo]
     defaults:
-      format_prompt: examples/format_prompt/xml_grounded_reasoning.jinja
+      format_prompt: examples/format_prompt/xml_grounded_reasoning_v2.jinja
 
   comparison:
     description: The benchmarks of examples/comparison/ in three groups (math, vision-dependent reasoning, perception)

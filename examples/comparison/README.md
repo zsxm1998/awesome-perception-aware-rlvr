@@ -51,7 +51,7 @@ perturbation; patch masking uses Qwen3-VL's 16-px patches. Parameter names are l
 | `vgpo.sh` | [VGPO](../reproduction/vgpo/README.md) | none (single forward) | `visual_sensitivity_metric=hidden_state_similarity` on the last layer against the mean image-token state (`visual_sensitivity_hidden_layers=last`, `visual_sensitivity_hidden_pooling=prototype`), scored before the update (`visual_sensitivity_reference=old`); `advantage_scaling_method=vgpo` with β=0.3, γ=0.5, κ=0.2; factors per prompt group |
 | `vapo.sh` | [VAPO](../reproduction/vapo/README.md) | – (no image perturbation) | `claim_probe_count=20` probes per correct response, each asking whether one of the image's GPT-5 visual claims is correct after a random cut of the reasoning, `claim_probe_late_emphasis=1.5`; the probe question without the released trailing space, after which Qwen3-VL-4B answers the probes with "1" or "0" (see the [VAPO README](../reproduction/vapo/README.md#probe-question)); reward 0.8 accuracy + 0.1 format + 0.1 perception (`perception_weight=0.1`); trained on `virl39k_claims` (ViRL39K with the claims; the 2,289 multi-image problems have none and get the GRPO reward) |
 | `grit.sh` | [GRIT](../reproduction/grit/README.md) | – | think / rethink / answer format with inline JSON evidence boxes (`examples/system_prompt/grit_GR.txt`, no format prompt) and `grit.py:compute_score` (format, box format, rule-based answer, 0.1·BLEU-1); trained on ViRL39K instead of GRIT's 20 samples |
-| `cgpo.sh` | CGPO ([examples/reproduction/cgpo](../reproduction/cgpo/README.md)) | evidence regions flattened to their local mean (`cgpo_flat`, one per response) | `<region>` evidence format (`xml_grounded_reasoning.jinja` and reward, format weight 0.1); `top_entropy_quantile=0.3`, `top_perception_quantile=0.3` (within each update micro-batch, `*_thr_granularity=micro_batch`, as in the CGPO paper), `include_region_tokens_in_perception_mask=true`; `advantage_scaling_method=cgpo`, `cgpo_response_scaling_coef=0.1`; grounding-consistency reward weight 0.1; `visual_sensitivity_reference=old` |
+| `cgpo.sh` | CGPO ([examples/reproduction/cgpo](../reproduction/cgpo/README.md)) | evidence regions flattened to their local mean (`cgpo_flat`, one per response) | `<region>` evidence format (`xml_grounded_reasoning_v2.jinja` and reward, format weight 0.1); `top_entropy_quantile=0.3`, `top_perception_quantile=0.3` (within each update micro-batch, `*_thr_granularity=micro_batch`, as in the CGPO paper), `include_region_tokens_in_perception_mask=true`; `advantage_scaling_method=cgpo`, `cgpo_response_scaling_coef=0.1`; grounding-consistency reward weight 0.1, averaged over each response's regions (`grounding_consistency_aggregation=response`); `visual_sensitivity_reference=old` |
 
 Settings that belong to a paper's base recipe rather than to its method are replaced by the shared
 recipe. The methods that their papers run on DAPO (VPPO, PGPO and VGPO; PAPO, ToR and DVRP report both
@@ -114,7 +114,8 @@ environment. `grit` and `cgpo` answer in their own formats, so evaluate them wit
 prompt: `--format-prompt none --system-prompt examples/system_prompt/grit_GR.txt` for `grit` (on the
 GRIT sets, `--benchmarks grit_vsr,grit_tallyqa,grit_gqa,ovdeval_position` with these flags; the `grit`
 suite holds GRIT's own protocol for the reproduction models),
-`--format-prompt examples/format_prompt/xml_grounded_reasoning.jinja` for `cgpo`. See
+`--format-prompt examples/format_prompt/xml_grounded_reasoning_v2.jinja` for `cgpo` (runs with a training record
+get their training prompt by default). See
 [eval/README.md](../../eval/README.md).
 
 ## Results

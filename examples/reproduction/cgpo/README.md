@@ -27,20 +27,22 @@ evidence is removed. It needs only answer-level supervision:
 5. **Grounding consistency regularization (GCR).** For every grounded entity the same policy
    re-detects the entity on the original image; an F1-weighted overlap between the matched
    predicted and re-detected boxes is added to the reward (`R + gamma * R_gc`, only for correct
-   answers). This prevents the policy from inflating the evidence boxes to increase *S*. (The paper
-   describes greedy CIoU matching; this release uses optimal one-to-one IoU matching, see
-   `compute_detection_reward` in `verl/trainer/grounding_consistency.py`.)
+   answers). `R_gc` is the mean of this score over the response's own entities, an entity that the
+   re-detection does not find scoring 0 (`grounding_consistency_aggregation=response`). This prevents
+   the policy from inflating the evidence boxes to increase *S*. (The paper describes greedy CIoU
+   matching; this release uses optimal one-to-one IoU matching, see `compute_detection_reward` in
+   `verl/trainer/grounding_consistency.py`.)
 
 ### Where it lives in the code
 
 | Component | Config | Code |
 | --- | --- | --- |
-| Inline evidence format | `data.format_prompt=examples/format_prompt/xml_grounded_reasoning.jinja` | `<region name=".." image_idx=".." id="..">[[x1,y1,x2,y2],...]</region>` tags inside `<think>` (the paper calls them entity tags), boxes in the 0-1000 range |
+| Inline evidence format | `data.format_prompt=examples/format_prompt/xml_grounded_reasoning_v2.jinja` | `<region name=".." image_idx=".." id="..">[[x1,y1,x2,y2],...]</region>` tags inside `<think>` (the paper calls them entity tags), boxes in the 0-1000 range |
 | Counterfactual image | `algorithm.corrupt_image=cgpo_flat`, `corrupt_image_kwargs={"fill_type":"local_mean"}`, `corrupt_image_position=response` | `verl/trainer/perception_reasoning_data.py::cgpo_flat` |
 | Evidence dependence *S_t* | `algorithm.visual_sensitivity_reference=old` (sampled KL estimator) | `verl/trainer/visual_sensitivity.py` |
 | Response scaling (`lambda`) | `algorithm.advantage_scaling_method=cgpo`, `cgpo_response_scaling_coef` | `perception_reasoning_loss.py::_compute_cgpo_response_scaling` |
 | Token selection (`rho_r`, `rho_p`, Span_E) | `top_entropy_quantile`, `top_perception_quantile`, `*_thr_granularity=micro_batch` (thresholds within each update micro-batch, as in the paper experiments), `include_region_tokens_in_perception_mask=true` | `perception_reasoning_loss.py` |
-| GCR (`gamma`) | `use_grounding_consistency_reward=true`, `grounding_consistency_reward_weight` (`grounding_consistency_detector=self`; `grounding-dino` is available as an external detector) | `verl/trainer/grounding_consistency.py`, `examples/reward_function/xml_grounded_reasoning.py` |
+| GCR (`gamma`) | `use_grounding_consistency_reward=true`, `grounding_consistency_reward_weight`, `grounding_consistency_aggregation=response` (`grounding_consistency_detector=self`; `grounding-dino` is available as an external detector) | `verl/trainer/grounding_consistency.py`, `examples/reward_function/xml_grounded_reasoning.py` |
 
 ## Reproduction in this repository (natural images)
 
@@ -85,6 +87,16 @@ Notes:
   The paper starts from an SFT model that already produces ESR-style responses.
 - GCR re-runs the policy as a referring detector inside the rollout engine; its cost is reported
   as `algo/gcr/detection_time_s`. Detection is skipped for groups without a correct answer.
+- Earlier versions of these scripts scored GCR per group (`grounding_consistency_aggregation=group`,
+  still the default of the option): the frequency-weighted share of the group's re-detected regions
+  that a response grounds consistently. Naming more regions raises that score; in the Qwen3-VL-4B
+  comparison run the policy went from 1.4 regions per response at step 10 to 23 at step 200, mostly
+  coarse, repeated boxes listed after the reasoning. The scripts now use the paper's per-response
+  mean (`response`).
+- `xml_grounded_reasoning_v2.jinja` replaces `xml_grounded_reasoning.jinja` (kept for runs trained
+  with it): its example box no longer has round coordinates, and rule 5 asks for tight boxes and no
+  whole-image boxes. Qwen3-VL-4B-Instruct copies the example: on MMK12 test (512 prompts x 8
+  samples), 80% of its box coordinates are multiples of 100 with the earlier prompt and 40% with v2.
 
 ## Results
 

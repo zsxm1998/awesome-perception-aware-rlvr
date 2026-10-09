@@ -335,6 +335,12 @@ class AlgorithmConfig:
     """enable trainer-side grounding consistency reward via second-pass detection prompting. Used by CGPO only."""
     grounding_consistency_reward_weight: float = 0.1
     """multiplier applied to the grounding consistency reward before it is added to the training reward. Used by CGPO."""
+    grounding_consistency_aggregation: str = "group"
+    """how a response's per-region match scores become its grounding consistency reward. `group` (the default, the
+    earlier behavior): sum over its regions of w_r * match_r over the sum of w_r over all regions of the group that the
+    detector finds, w_r = fraction of the group's responses naming r, so naming more of the group's regions scores
+    higher; `response`: mean match over the response's own regions, a region the detector does not find scoring 0
+    (the CGPO paper and its released code). See GROUNDING_CONSISTENCY_AGGREGATIONS in grounding_consistency.py."""
     grounding_consistency_detector: str = "self"
     """detector backend for grounding consistency reward. `self` preserves the existing rollout-model detector; `grounding-dino` uses IDEA-Research/grounding-dino-base."""
     grounding_dino_device: str = "worker"
@@ -431,6 +437,9 @@ class AlgorithmConfig:
         )
         _validate_choice(
             "grounding_consistency_detector", self.grounding_consistency_detector, {"self", "grounding-dino"}
+        )
+        _validate_choice(
+            "grounding_consistency_aggregation", self.grounding_consistency_aggregation, {"group", "response"}
         )
         if not 0.0 < self.noise_t_max <= 1000.0:
             raise ValueError(f"noise_t_max must be in (0, 1000], but got {self.noise_t_max}.")
