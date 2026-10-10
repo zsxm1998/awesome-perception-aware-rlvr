@@ -54,7 +54,13 @@ _ACTIVE_ATTENTION_INTERVENTION: ContextVar[Optional[_AttentionInterventionState]
     "active_attention_intervention",
     default=None,
 )
-_CROSS_MODAL_QUERY_CHUNK_SIZE = 64
+# Query positions per chunk of hand-computed attention: a chunk holds [heads, chunk, sequence] probabilities in
+# fp32 (about 0.4 GB for 32 heads, 512 positions and 6,144 keys); smaller chunks launch many more small kernels.
+_CROSS_MODAL_QUERY_CHUNK_SIZE = 512
+# The text-to-image probabilities of one image ([heads, queries, image tokens], model dtype) are kept between the
+# passes of the correction up to this size, and computed again above it (same operations, same values): 0.37 GiB for
+# 32 heads, 4,800 queries and 1,280 image tokens; 2 GiB for 8,192 queries and 4,096 image tokens.
+_CROSS_MODAL_KEPT_PROBABILITY_BYTES = 512 * 1024**2
 # The official CFPO call path explicitly passes ``attention > 1e-8`` as its
 # validity mask. Its standalone GMM helper's 1e-6 fallback is not used there.
 _CROSS_MODAL_VALID_ATTENTION_EPS = 1e-8
@@ -166,29 +172,123 @@ def _attention_probabilities(
     return torch.softmax(logits, dim=-1, dtype=torch.float32).to(query.dtype)
 
 
-def _merge_moments(
-    count: int,
-    mean: Optional[torch.Tensor],
-    squared_deviation_sum: Optional[torch.Tensor],
-    values: torch.Tensor,
-) -> tuple[int, Optional[torch.Tensor], Optional[torch.Tensor]]:
-    values = values[values > _CROSS_MODAL_VALID_ATTENTION_EPS].float()
-    chunk_count = values.numel()
-    if chunk_count == 0:
-        return count, mean, squared_deviation_sum
+def _attention_probabilities_from_lse(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    *,
+    softmax_lse: torch.Tensor,
+    valid_key_mask: torch.Tensor,
+    scaling: float,
+) -> torch.Tensor:
+    """Causal attention probabilities [heads, queries, keys] of keys that precede every query, from the softmax
+    normalizer of the full attention row (``softmax_lse``, [heads, queries]): exp(scaling * q.k - lse), with the
+    scores in FP32 as flash attention computes them, cast to the model dtype like ``_attention_probabilities``."""
+    probabilities = torch.einsum("qhd,khd->hqk", query.float(), key.float())  # in place below: one FP32 buffer
+    probabilities.mul_(scaling).sub_(softmax_lse.unsqueeze(-1)).exp_()
+    return probabilities.masked_fill_(~valid_key_mask.view(1, 1, -1), 0.0).to(query.dtype)
 
-    chunk_mean = values.mean()
-    chunk_squared_deviation_sum = torch.sum((values - chunk_mean) ** 2)
-    if count == 0:
-        return chunk_count, chunk_mean, chunk_squared_deviation_sum
 
-    total_count = count + chunk_count
-    delta = chunk_mean - mean
-    merged_mean = mean + delta * (chunk_count / total_count)
-    merged_squared_deviation_sum = (
-        squared_deviation_sum + chunk_squared_deviation_sum + delta.square() * (count * chunk_count / total_count)
+def flash_attention_softmax_lse(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attention_mask: torch.Tensor,
+    scaling: float,
+) -> torch.Tensor:
+    """Flash attention's softmax normalizer of causal attention over the valid tokens of each row: [batch, heads,
+    seq], FP32, log of the sum over the valid keys at or before each valid query of exp(scaling * q.k); padded
+    positions hold 0. Inputs are [batch, seq, heads, dim] in fp16 or bf16 (flash attention takes no FP32). Unpadding
+    synchronizes with the host twice (``nonzero`` and the longest row)."""
+    batch_size, seq_len = attention_mask.shape
+    valid = attention_mask.to(torch.bool)
+    indices = valid.flatten().nonzero(as_tuple=True)[0]
+    lengths = valid.sum(dim=1, dtype=torch.int32)
+    cu_seqlens = torch.nn.functional.pad(lengths.cumsum(0, dtype=torch.int32), (1, 0))
+    max_seqlen = int(lengths.max())
+
+    def unpad(states: torch.Tensor) -> torch.Tensor:
+        return states.reshape(batch_size * seq_len, states.size(2), states.size(3)).index_select(0, indices)
+
+    # dropout 0: return_attn_probs returns the normalizer without building the attention matrix
+    _, softmax_lse, _ = flash_attn_varlen_func(
+        unpad(query),
+        unpad(key),
+        unpad(value),
+        cu_seqlens_q=cu_seqlens,
+        cu_seqlens_k=cu_seqlens,
+        max_seqlen_q=max_seqlen,
+        max_seqlen_k=max_seqlen,
+        softmax_scale=scaling,
+        causal=True,
+        return_attn_probs=True,
     )
-    return total_count, merged_mean, merged_squared_deviation_sum
+    if softmax_lse.dim() == 3:
+        # flash-attn < 2.5: [batch, heads, max_seqlen_q], the row's tokens first
+        position_in_row = (valid.cumsum(dim=1) - 1).clamp(min=0)
+        gathered = softmax_lse.gather(2, position_in_row.unsqueeze(1).expand(-1, softmax_lse.size(1), -1))
+        return torch.where(valid.unsqueeze(1), gathered, torch.zeros_like(gathered))
+
+    # [heads, total tokens]
+    padded = softmax_lse.new_zeros(query.size(2), batch_size * seq_len)
+    padded[:, indices] = softmax_lse[:, : indices.numel()]
+    return padded.view(query.size(2), batch_size, seq_len).transpose(0, 1)
+
+
+def _span_attention_probabilities(
+    row_query: torch.Tensor,
+    row_key: torch.Tensor,
+    query_chunk: torch.Tensor,
+    visual_start: int,
+    visual_end: int,
+    *,
+    row_valid_mask: torch.Tensor,
+    row_softmax_lse: Optional[torch.Tensor],
+    scaling: float,
+    is_causal: bool,
+    sliding_window: Optional[int],
+    softcap: Optional[float],
+) -> torch.Tensor:
+    """Attention probabilities [heads, chunk, image tokens] of the queries in ``query_chunk`` on one image."""
+    if row_softmax_lse is None:
+        probabilities = _attention_probabilities(
+            row_query.index_select(0, query_chunk),
+            row_key,
+            query_positions=query_chunk,
+            valid_key_mask=row_valid_mask,
+            scaling=scaling,
+            is_causal=is_causal,
+            sliding_window=sliding_window,
+            softcap=softcap,
+        )
+        return probabilities[:, :, visual_start:visual_end].contiguous()
+    # every query follows the image, so all of its keys are visible: no causal mask needed
+    return _attention_probabilities_from_lse(
+        row_query.index_select(0, query_chunk),
+        row_key[visual_start:visual_end],
+        softmax_lse=row_softmax_lse.index_select(1, query_chunk),
+        valid_key_mask=row_valid_mask[visual_start:visual_end],
+        scaling=scaling,
+    )
+
+
+def _kept_or_computed(
+    query_chunks: tuple[torch.Tensor, ...],
+    kept_chunks: Optional[list[torch.Tensor]],
+    span_args: tuple[torch.Tensor, torch.Tensor, int, int],
+    span_kwargs: dict[str, Any],
+) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+    """(query chunk, its image probabilities) pairs: the kept ones, or computed again when they were not kept."""
+    row_query, row_key, visual_start, visual_end = span_args
+    for chunk_idx, query_chunk in enumerate(query_chunks):
+        if kept_chunks is not None:
+            yield query_chunk, kept_chunks[chunk_idx]
+        else:
+            yield (
+                query_chunk,
+                _span_attention_probabilities(
+                    row_query, row_key, query_chunk, visual_start, visual_end, **span_kwargs
+                ),
+            )
 
 
 def compute_cross_modal_attention_value_mean_correction(
@@ -204,8 +304,13 @@ def compute_cross_modal_attention_value_mean_correction(
     sliding_window: Optional[int] = None,
     softcap: Optional[float] = None,
     query_chunk_size: int = _CROSS_MODAL_QUERY_CHUNK_SIZE,
+    softmax_lse: Optional[torch.Tensor] = None,
 ) -> torch.Tensor:
-    """Compute the exact CF visual-value correction without materializing a full attention matrix."""
+    """Compute the exact CF visual-value correction without materializing a full attention matrix.
+
+    The text-to-image probabilities come from the attention over every key, computed here, or, when the softmax
+    normalizer of each attention row is given (``softmax_lse``, [batch, heads, seq], e.g. from flash attention),
+    from the image keys alone (causal attention without sliding window or soft-capping only)."""
     if query.ndim != 4 or key.ndim != 4 or value.ndim != 4:
         raise ValueError("Attention intervention expects query/key/value tensors with shape [batch, seq, heads, dim].")
     if query.size(0) != attention_mask.size(0) or query.size(1) != attention_mask.size(1):
@@ -214,6 +319,14 @@ def compute_cross_modal_attention_value_mean_correction(
         raise ValueError("Attention intervention visual spans must have one entry per batch sample.")
     if query_chunk_size <= 0:
         raise ValueError(f"query_chunk_size must be positive, but got {query_chunk_size}.")
+    if softmax_lse is not None:
+        if softmax_lse.shape != (query.size(0), query.size(2), query.size(1)):
+            raise ValueError(
+                f"softmax_lse must have shape [batch, heads, seq] = {(query.size(0), query.size(2), query.size(1))}, "
+                f"but got {tuple(softmax_lse.shape)}."
+            )
+        if not is_causal or sliding_window is not None or softcap is not None:
+            raise ValueError("softmax_lse supports causal attention without sliding window or soft-capping only.")
 
     num_query_heads = query.size(2)
     key = _repeat_key_value_heads(key, num_query_heads)
@@ -244,51 +357,54 @@ def compute_cross_modal_attention_value_mean_correction(
             if query_positions.numel() == 0:
                 continue
 
-            count = 0
-            mean = None
-            squared_deviation_sum = None
-            for query_chunk in query_positions.split(query_chunk_size):
-                probabilities = _attention_probabilities(
-                    row_query.index_select(0, query_chunk),
-                    row_key,
-                    query_positions=query_chunk,
-                    valid_key_mask=row_valid_mask,
-                    scaling=scaling,
-                    is_causal=is_causal,
-                    sliding_window=sliding_window,
-                    softcap=softcap,
+            # The threshold needs statistics over every query position, so the probabilities are needed in three
+            # passes (sum, squared deviations, correction); they are kept from the first unless that exceeds
+            # _CROSS_MODAL_KEPT_PROBABILITY_BYTES.
+            query_chunks = query_positions.split(query_chunk_size)
+            kept_bytes = num_query_heads * query_positions.numel() * (visual_end - visual_start) * query.element_size()
+            keep = kept_bytes <= _CROSS_MODAL_KEPT_PROBABILITY_BYTES
+            span_kwargs = {
+                "row_valid_mask": row_valid_mask,
+                "row_softmax_lse": None if softmax_lse is None else softmax_lse[row_idx],
+                "scaling": scaling,
+                "is_causal": is_causal,
+                "sliding_window": sliding_window,
+                "softcap": softcap,
+            }
+            kept_chunks: Optional[list[torch.Tensor]] = [] if keep else None
+            count = torch.zeros((), dtype=torch.long, device=query.device)  # can exceed fp32's exact integers
+            total = torch.zeros((), device=query.device)
+            for query_chunk in query_chunks:
+                cross_modal_probabilities = _span_attention_probabilities(
+                    row_query, row_key, query_chunk, visual_start, visual_end, **span_kwargs
                 )
-                count, mean, squared_deviation_sum = _merge_moments(
-                    count,
-                    mean,
-                    squared_deviation_sum,
-                    probabilities[:, :, visual_start:visual_end],
-                )
+                if kept_chunks is not None:
+                    kept_chunks.append(cross_modal_probabilities)
+                # masked sums rather than selecting the valid entries: no data-dependent shape, so no host sync
+                valid = cross_modal_probabilities > _CROSS_MODAL_VALID_ATTENTION_EPS
+                count += valid.sum()
+                total += torch.where(valid, cross_modal_probabilities.float(), 0.0).sum()
 
-            if count == 0:
-                continue
-            if count == 1:
-                standard_deviation = mean.new_tensor(float("nan"))
-            else:
-                standard_deviation = torch.sqrt(squared_deviation_sum / (count - 1))
-            # CFPO computes mean/std on the model-dtype attention probabilities.
-            # Keep FP32 Welford accumulation, then reproduce that final BF16/FP16
-            # rounding point before selecting salient entries.
+            mean = total / count
+            span_args = (row_query, row_key, visual_start, visual_end)
+            squared_deviation_sum = torch.zeros((), device=query.device)
+            for _, cross_modal_probabilities in _kept_or_computed(query_chunks, kept_chunks, span_args, span_kwargs):
+                deviation = cross_modal_probabilities.float() - mean
+                valid = cross_modal_probabilities > _CROSS_MODAL_VALID_ATTENTION_EPS
+                squared_deviation_sum += torch.where(valid, deviation.square(), 0.0).sum()
+            # sample standard deviation of the valid entries; with fewer than two (and with none, through the mean) it
+            # is nan, so is the threshold, and no entry is salient: no correction
+            standard_deviation = torch.where(
+                count > 1, torch.sqrt(squared_deviation_sum / (count - 1)), torch.full_like(mean, float("nan"))
+            )
+            # CFPO computes mean/std on the model-dtype attention probabilities. Accumulate in FP32, then reproduce
+            # that final BF16/FP16 rounding point before selecting salient entries.
             threshold = mean.to(row_query.dtype) + saliency_std_multiplier * standard_deviation.to(row_query.dtype)
             visual_value_delta = mean_visual_value - row_value[visual_start:visual_end].permute(1, 0, 2)
 
-            for query_chunk in query_positions.split(query_chunk_size):
-                probabilities = _attention_probabilities(
-                    row_query.index_select(0, query_chunk),
-                    row_key,
-                    query_positions=query_chunk,
-                    valid_key_mask=row_valid_mask,
-                    scaling=scaling,
-                    is_causal=is_causal,
-                    sliding_window=sliding_window,
-                    softcap=softcap,
-                )
-                cross_modal_probabilities = probabilities[:, :, visual_start:visual_end]
+            for query_chunk, cross_modal_probabilities in _kept_or_computed(
+                query_chunks, kept_chunks, span_args, span_kwargs
+            ):
                 salient_probabilities = cross_modal_probabilities * (cross_modal_probabilities > threshold).to(
                     cross_modal_probabilities.dtype
                 )
@@ -448,6 +564,15 @@ def flash_attention_forward(
     if intervention is not None and is_causal:
         if get_ulysses_sequence_parallel_world_size() > 1:
             raise ValueError("Model-level visual corruption currently requires worker.actor.ulysses_size=1.")
+        attention_scaling = float(scaling if scaling is not None else query.size(-1) ** -0.5)
+        softmax_lse = None
+        if sliding_window is None and softcap is None and query.dtype in (torch.float16, torch.bfloat16):
+            # the softmax normalizer from flash attention: the image probabilities need only the image keys (FP32
+            # inputs keep the softmax over every key: flash attention would need them cast, and the scores then
+            # differ from the hand-computed ones)
+            softmax_lse = flash_attention_softmax_lse(
+                query, key, value, intervention.attention_mask, scaling=attention_scaling
+            )
         correction = compute_cross_modal_attention_value_mean_correction(
             query=query,
             key=key,
@@ -455,10 +580,11 @@ def flash_attention_forward(
             attention_mask=intervention.attention_mask,
             visual_spans=intervention.visual_spans,
             saliency_std_multiplier=intervention.saliency_std_multiplier,
-            scaling=float(scaling if scaling is not None else query.size(-1) ** -0.5),
+            scaling=attention_scaling,
             is_causal=is_causal,
             sliding_window=sliding_window,
             softcap=softcap,
+            softmax_lse=softmax_lse,
         )
         attn_output = attn_output + correction.to(attn_output.dtype)
 

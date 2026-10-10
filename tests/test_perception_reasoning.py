@@ -27,6 +27,7 @@ from torch import nn
 from verl.models.transformers import flash_attention_utils as flash_attention_module
 from verl.models.transformers.flash_attention_utils import (
     compute_cross_modal_attention_value_mean_correction,
+    flash_attention_softmax_lse,
     prepare_fa2_from_position_ids,
     use_model_level_visual_corruption,
 )
@@ -1680,6 +1681,227 @@ def test_cross_modal_value_mean_chunked_correction_matches_official_bfloat16_red
     )
 
     torch.testing.assert_close(actual, expected, atol=2e-3, rtol=2e-3)
+
+
+def test_cross_modal_value_mean_correction_does_not_depend_on_chunk_size():
+    # two images in the first row, padding in the second: every chunk size gives the dense formula
+    torch.manual_seed(29)
+    query = torch.randn(2, 14, 4, 3)
+    key = torch.randn(2, 14, 2, 3)
+    value = torch.randn(2, 14, 2, 3)
+    attention_mask = torch.ones((2, 14), dtype=torch.long)
+    attention_mask[1, -3:] = 0
+    visual_spans = (((1, 4), (6, 8)), ((2, 5),))
+    kwargs = {
+        "attention_mask": attention_mask,
+        "visual_spans": visual_spans,
+        "saliency_std_multiplier": 0.5,
+        "scaling": query.size(-1) ** -0.5,
+    }
+
+    expected = _dense_cross_modal_value_mean_reference(query, key, value, **kwargs)
+    assert torch.count_nonzero(expected) > 0
+    for query_chunk_size in (1, 3, 512):
+        actual = compute_cross_modal_attention_value_mean_correction(
+            query, key, value, **kwargs, query_chunk_size=query_chunk_size
+        )
+        torch.testing.assert_close(actual, expected, atol=1e-6, rtol=1e-6)
+
+
+@pytest.mark.parametrize("with_softmax_lse", [False, True])
+def test_cross_modal_value_mean_correction_recomputes_what_it_does_not_keep(monkeypatch, with_softmax_lse):
+    # probabilities above the kept-size limit are computed again in the later passes: the same values
+    torch.manual_seed(47)
+    query = torch.randn(2, 14, 4, 3)
+    key = torch.randn(2, 14, 2, 3)
+    value = torch.randn(2, 14, 2, 3)
+    attention_mask = torch.ones((2, 14), dtype=torch.long)
+    attention_mask[1, -3:] = 0
+    kwargs = {
+        "attention_mask": attention_mask,
+        "visual_spans": (((1, 4), (6, 8)), ((2, 5),)),
+        "saliency_std_multiplier": 0.5,
+        "scaling": query.size(-1) ** -0.5,
+        "query_chunk_size": 3,
+    }
+    if with_softmax_lse:
+        kwargs["softmax_lse"] = _causal_softmax_lse_reference(query, key, attention_mask, kwargs["scaling"])
+
+    kept = compute_cross_modal_attention_value_mean_correction(query, key, value, **kwargs)
+    monkeypatch.setattr(flash_attention_module, "_CROSS_MODAL_KEPT_PROBABILITY_BYTES", 0)
+    recomputed = compute_cross_modal_attention_value_mean_correction(query, key, value, **kwargs)
+
+    assert torch.count_nonzero(kept) > 0
+    torch.testing.assert_close(recomputed, kept, atol=0.0, rtol=0.0)
+
+
+def test_cross_modal_value_mean_single_valid_probability_gives_no_correction():
+    # one head, one image token and one query after it: the standard deviation of a single value is undefined,
+    # so no entry is salient
+    torch.manual_seed(31)
+    query = torch.randn(1, 4, 1, 3)
+    key = torch.randn(1, 4, 1, 3)
+    value = torch.randn(1, 4, 1, 3)
+
+    correction = compute_cross_modal_attention_value_mean_correction(
+        query,
+        key,
+        value,
+        attention_mask=torch.ones((1, 4), dtype=torch.long),
+        visual_spans=(((1, 2),),),
+        saliency_std_multiplier=0.0,
+        scaling=query.size(-1) ** -0.5,
+    )
+
+    assert torch.count_nonzero(correction) == 0
+
+
+def _causal_softmax_lse_reference(query, key, attention_mask, scaling):
+    """[batch, heads, seq] log-sum-exp of the FP32 causal scores over the valid keys; 0 at padded queries."""
+    if key.size(2) != query.size(2):
+        key = key.repeat_interleave(query.size(2) // key.size(2), dim=2)
+    scores = torch.einsum("bqhd,bkhd->bhqk", query.float(), key.float()) * scaling
+    positions = torch.arange(query.size(1))
+    valid = attention_mask.to(torch.bool)
+    allowed = valid[:, None, None, :] & (positions[None, None, None, :] <= positions[None, None, :, None])
+    lse = torch.logsumexp(scores.masked_fill(~allowed, float("-inf")), dim=-1)
+    return torch.where(valid[:, None, :], lse, torch.zeros_like(lse))
+
+
+def test_cross_modal_value_mean_correction_from_softmax_lse_matches_dense_formula():
+    # image probabilities from the row normalizer and the image keys only: the dense formula, with padding on
+    # both sides and two images in a row
+    torch.manual_seed(37)
+    query = torch.randn(2, 14, 4, 3)
+    key = torch.randn(2, 14, 2, 3)
+    value = torch.randn(2, 14, 2, 3)
+    attention_mask = torch.ones((2, 14), dtype=torch.long)
+    attention_mask[1, :1] = 0
+    attention_mask[1, -3:] = 0
+    visual_spans = (((1, 4), (6, 8)), ((2, 5),))
+    kwargs = {
+        "attention_mask": attention_mask,
+        "visual_spans": visual_spans,
+        "saliency_std_multiplier": 0.5,
+        "scaling": query.size(-1) ** -0.5,
+    }
+    softmax_lse = _causal_softmax_lse_reference(query, key, attention_mask, kwargs["scaling"])
+
+    expected = _dense_cross_modal_value_mean_reference(query, key, value, **kwargs)
+    assert torch.count_nonzero(expected) > 0
+    for query_chunk_size in (1, 512):
+        actual = compute_cross_modal_attention_value_mean_correction(
+            query, key, value, **kwargs, query_chunk_size=query_chunk_size, softmax_lse=softmax_lse
+        )
+        torch.testing.assert_close(actual, expected, atol=1e-6, rtol=1e-6)
+
+
+def test_cross_modal_value_mean_softmax_lse_is_validated():
+    query = torch.randn(1, 6, 2, 3)
+    kwargs = {
+        "attention_mask": torch.ones((1, 6), dtype=torch.long),
+        "visual_spans": (((1, 3),),),
+        "saliency_std_multiplier": 2.0,
+        "scaling": 1.0,
+    }
+    with pytest.raises(ValueError, match="softmax_lse must have shape"):
+        compute_cross_modal_attention_value_mean_correction(
+            query, query, query, **kwargs, softmax_lse=torch.zeros(1, 6, 2)
+        )
+    for unsupported in ({"sliding_window": 4}, {"softcap": 30.0}, {"is_causal": False}):
+        with pytest.raises(ValueError, match="causal attention without sliding window or soft-capping"):
+            compute_cross_modal_attention_value_mean_correction(
+                query, query, query, **kwargs, **unsupported, softmax_lse=torch.zeros(1, 2, 6)
+            )
+
+
+@requires_flash_attn
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="flash attention runs on CUDA")
+def test_flash_attention_softmax_lse_matches_logsumexp():
+    torch.manual_seed(41)
+    device = torch.device("cuda")
+    query = torch.randn(2, 12, 4, 16, device=device, dtype=torch.bfloat16)
+    key = torch.randn(2, 12, 2, 16, device=device, dtype=torch.bfloat16)
+    value = torch.randn(2, 12, 2, 16, device=device, dtype=torch.bfloat16)
+    attention_mask = torch.ones((2, 12), dtype=torch.bool, device=device)
+    attention_mask[0, :3] = False
+    attention_mask[1, -2:] = False
+    scaling = 16**-0.5
+
+    actual = flash_attention_softmax_lse(query, key, value, attention_mask, scaling=scaling)
+    expected = _causal_softmax_lse_reference(query.cpu(), key.cpu(), attention_mask.cpu(), scaling)
+
+    assert actual.dtype == torch.float32
+    torch.testing.assert_close(actual.cpu(), expected, atol=1e-4, rtol=1e-4)
+
+
+@pytest.mark.parametrize("layout", ["heads_total", "batch_heads_max_seqlen"])
+def test_flash_attention_softmax_lse_reads_both_flash_layouts(monkeypatch, layout):
+    # flash-attn >= 2.5 returns the varlen normalizer as [heads, total tokens], 2.4 (the oldest version the
+    # requirements allow) as [batch, heads, max_seqlen]; a CPU stand-in of the flash call returns either
+    torch.manual_seed(43)
+    query = torch.randn(2, 7, 4, 3)
+    key = torch.randn(2, 7, 2, 3)
+    attention_mask = torch.tensor([[0, 1, 1, 1, 1, 1, 0], [1, 1, 1, 1, 0, 0, 0]], dtype=torch.bool)
+    scaling = 3**-0.5
+    expected = _causal_softmax_lse_reference(query, key, attention_mask, scaling)
+
+    def fake_varlen(q, k, v, *, cu_seqlens_q, max_seqlen_q, **kwargs):
+        rows = [expected[b][:, attention_mask[b]] for b in range(attention_mask.size(0))]
+        if layout == "heads_total":
+            lse = torch.cat(rows, dim=1)
+            assert lse.size(1) == q.size(0) == int(cu_seqlens_q[-1])
+        else:
+            lse = torch.full((len(rows), q.size(1), max_seqlen_q + 3), float("nan"))  # padded past max_seqlen
+            for b, row in enumerate(rows):
+                lse[b, :, : row.size(1)] = row
+        return torch.zeros_like(q), lse, None
+
+    monkeypatch.setattr(flash_attention_module, "flash_attn_varlen_func", fake_varlen, raising=False)
+    actual = flash_attention_softmax_lse(query, key, key, attention_mask, scaling=scaling)
+
+    torch.testing.assert_close(actual, expected, atol=0.0, rtol=0.0)
+
+
+@requires_flash_attn
+def test_model_level_visual_corruption_passes_the_flash_softmax_lse(monkeypatch):
+    monkeypatch.setattr(
+        flash_attention_module,
+        "_custom_flash_attention_forward",
+        lambda query, key, value, attention_mask, query_length, **kwargs: torch.zeros_like(query),
+    )
+    sentinel = torch.zeros(1, 4, 5)
+    monkeypatch.setattr(flash_attention_module, "flash_attention_softmax_lse", lambda *args, **kwargs: sentinel)
+    received = []
+
+    def record(*args, **kwargs):
+        received.append(kwargs.get("softmax_lse"))
+        return torch.zeros_like(kwargs["query"])
+
+    monkeypatch.setattr(flash_attention_module, "compute_cross_modal_attention_value_mean_correction", record)
+    input_ids = torch.tensor([[10, 20, 21, 11, 30]], dtype=torch.long)
+    query = torch.randn(1, 4, 5, 3)
+
+    with use_model_level_visual_corruption(
+        name="cross_modal_attention_value_mean",
+        kwargs={"saliency_std_multiplier": 2.0},
+        input_ids=input_ids,
+        attention_mask=torch.ones_like(input_ids),
+        vision_start_token_id=10,
+        vision_end_token_id=11,
+    ):
+        for softcap in (None, 30.0):
+            flash_attention_module.flash_attention_forward(
+                SimpleNamespace(is_causal=True), query, query, query, attention_mask=None, softcap=softcap
+            )
+        query_bf16 = query.to(torch.bfloat16)
+        flash_attention_module.flash_attention_forward(
+            SimpleNamespace(is_causal=True), query_bf16, query_bf16, query_bf16, attention_mask=None
+        )
+
+    # the normalizer from flash attention (fp16/bf16 inputs only: flash attention takes no FP32), except where the
+    # attention is soft-capped
+    assert received[0] is None and received[1] is None and received[2] is sentinel
 
 
 def test_cross_modal_value_mean_empty_visual_span_is_identity():
