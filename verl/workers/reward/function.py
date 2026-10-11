@@ -327,6 +327,9 @@ class AutoRewardManager(BatchFunctionRewardManagerMixin, SequentialFunctionRewar
                     f"`{config.reward_function_name}` of {config.reward_function} takes no argument {unknown} "
                     "(worker.reward.reward_function_kwargs); e.g. perception_weight needs math.py:compute_score."
                 )
+        validate_kwargs = getattr(module, "validate_reward_function_kwargs", None)
+        if callable(validate_kwargs):  # value checks a reward module offers, run before the first rollout
+            validate_kwargs(**config.reward_function_kwargs)
         reward_name = getattr(module, "REWARD_NAME", "unknown")
         reward_type = getattr(module, "REWARD_TYPE", "batch")
         # the response token ids, only for reward functions that ask for them (a list per response is costly)

@@ -75,6 +75,20 @@ def _max_match_iou_sum(
     return float(iou_matrix[row_idx, col_idx].sum())
 
 
+def union_area_fraction(boxes: Sequence[Sequence[int]]) -> float:
+    """Fraction of the image (0-1000 coordinates) covered by the union of the boxes."""
+    if not boxes:
+        return 0.0
+    xs = sorted({coord for box in boxes for coord in (box[0], box[2])})
+    ys = sorted({coord for box in boxes for coord in (box[1], box[3])})
+    area = 0
+    for x1, x2 in zip(xs, xs[1:]):
+        for y1, y2 in zip(ys, ys[1:]):
+            if any(box[0] <= x1 and x2 <= box[2] and box[1] <= y1 and y2 <= box[3] for box in boxes):
+                area += (x2 - x1) * (y2 - y1)
+    return min(area / 1_000_000, 1.0)
+
+
 def compute_detection_reward(
     gt_boxes: list[tuple[int, int, int, int]],
     pred_boxes: list[tuple[int, int, int, int]],
@@ -321,6 +335,7 @@ class GroundingConsistencyRewardScorer:
         grounding_dino_device: str = "worker",
         grounding_dino_batch_size: int = 4,
         aggregation: str = "group",
+        area_discount: bool = False,
     ):
         if detector not in _GROUNDING_CONSISTENCY_DETECTORS:
             raise ValueError(f"Unknown grounding consistency detector: {detector!r}.")
@@ -339,6 +354,7 @@ class GroundingConsistencyRewardScorer:
         self.prompt_template_en = prompt_template_en
         self.detector = detector
         self.aggregation = aggregation
+        self.area_discount = area_discount
         self.grounding_dino_device = grounding_dino_device
         self.grounding_dino_batch_size = grounding_dino_batch_size
         self._grounding_dino_processor: Any | None = None
@@ -564,9 +580,7 @@ class GroundingConsistencyRewardScorer:
                 if self.aggregation == "response":
                     # compute_detection_reward([], boxes) = 0: nothing re-detected to match; no regions -> 0
                     region_scores = [
-                        compute_detection_reward(
-                            state["pseudo_gt_boxes"].get(region_key, []), [tuple(box) for box in region.boxes]
-                        )
+                        self._region_match(state["pseudo_gt_boxes"].get(region_key, []), region.boxes)
                         for region_key, region in sample_map.items()
                     ]
                     raw_score = float(np.mean(region_scores)) if region_scores else 0.0
@@ -575,10 +589,8 @@ class GroundingConsistencyRewardScorer:
                     for region_key, region in sample_map.items():
                         if region_key not in state["pseudo_gt_boxes"]:
                             continue
-                        pred_boxes = [tuple(box) for box in region.boxes]
-                        numerator += state["weights"][region_key] * compute_detection_reward(
-                            state["pseudo_gt_boxes"][region_key],
-                            pred_boxes,
+                        numerator += state["weights"][region_key] * self._region_match(
+                            state["pseudo_gt_boxes"][region_key], region.boxes
                         )
                     raw_score = numerator / denominator
                 weighted_score = raw_score * self.reward_weight
@@ -605,6 +617,16 @@ class GroundingConsistencyRewardScorer:
             raw_scores=raw_scores,
             metrics=metrics,
         )
+
+    def _region_match(
+        self, pseudo_gt_boxes: list[tuple[int, int, int, int]], predicted_boxes: Sequence[Sequence[int]]
+    ) -> float:
+        """Match score of one region's predicted boxes against its re-detected boxes, discounted by the share of the
+        image the predicted boxes cover when `area_discount` is on."""
+        score = compute_detection_reward(pseudo_gt_boxes, [tuple(box) for box in predicted_boxes])
+        if self.area_discount:
+            score *= 1.0 - union_area_fraction(predicted_boxes)
+        return score
 
     def _detect_pseudo_gt_boxes(
         self,

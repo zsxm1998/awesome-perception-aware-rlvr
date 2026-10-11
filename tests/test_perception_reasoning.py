@@ -48,6 +48,7 @@ from verl.trainer.grounding_consistency import (
     compute_detection_reward,
     compute_group_eligibility_mask,
     parse_bbox_string,
+    union_area_fraction,
 )
 from verl.trainer.perception_reasoning_data import (
     PerceptionReasoningCorruptionBuilder,
@@ -4749,6 +4750,53 @@ def test_grounding_consistency_aggregation_when_nothing_is_detected(aggregation,
     # no region is confirmed: `group` leaves the group unscored, `response` scores its responses 0
     assert result.raw_scores == [0.0, 0.0]
     assert result.metrics["algo/gcr/scored_sample_fraction"] == pytest.approx(scored_fraction)
+
+
+def test_union_area_fraction():
+    assert union_area_fraction([]) == 0.0
+    assert union_area_fraction([[0, 0, 1000, 1000]]) == 1.0
+    assert union_area_fraction([[0, 0, 500, 1000], [500, 0, 1000, 1000]]) == pytest.approx(1.0)
+    # overlapping boxes are not counted twice; a box inside another adds nothing
+    assert union_area_fraction([[0, 0, 600, 1000], [400, 0, 1000, 1000]]) == pytest.approx(1.0)
+    assert union_area_fraction([[100, 100, 300, 300], [150, 150, 250, 250]]) == pytest.approx(0.04)
+    assert union_area_fraction([[100, 100, 300, 300], [500, 500, 600, 700]]) == pytest.approx(0.04 + 0.02)
+
+
+_GCR_WHOLE_IMAGE = (
+    '<think>the <region name="diagram" image_idx="0" id="0">[[0, 0, 1000, 1000]]</region> shows it</think>\\boxed{A}'
+)
+_GCR_TIGHT = (
+    '<think>the <region name="cell" image_idx="0" id="0">[[100, 100, 300, 300]]</region> shows it</think>\\boxed{A}'
+)
+
+
+@pytest.mark.parametrize("aggregation", ["group", "response"])
+def test_grounding_consistency_area_discount(aggregation):
+    # the detector returns each region's predicted box (match 1.0): the discount alone sets the score
+    tokenizer = _CharTokenizer()
+    batch = _make_grounding_batch(tokenizer, [_GCR_WHOLE_IMAGE, _GCR_TIGHT], uids=["g0", "g1"])
+    wg = _NamedFakeRolloutWG(tokenizer, {"diagram": "[[0, 0, 1000, 1000]]", "cell": "[[100, 100, 300, 300]]"})
+
+    def scorer(area_discount):
+        return GroundingConsistencyRewardScorer(
+            tokenizer=tokenizer,
+            processor=_CharProcessor(),
+            max_prompt_length=256,
+            min_pixels=None,
+            max_pixels=None,
+            video_fps=2.0,
+            reward_weight=1.0,
+            aggregation=aggregation,
+            area_discount=area_discount,
+        )
+
+    off = scorer(False).score_batch(batch, wg, _GCR_TEST_ROLLOUT_CONFIG)
+    assert off.raw_scores == pytest.approx([1.0, 1.0])
+    on = scorer(True).score_batch(batch, wg, _GCR_TEST_ROLLOUT_CONFIG)
+    assert on.raw_scores == pytest.approx([0.0, 1.0 - 0.04])
+    assert on.weighted_scores == pytest.approx(on.raw_scores)
+    assert AlgorithmConfig().grounding_consistency_area_discount is False
+    assert _make_gcr_scorer(tokenizer).area_discount is False
 
 
 def test_grounding_consistency_aggregation_is_validated():

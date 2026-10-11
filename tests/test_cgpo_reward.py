@@ -231,6 +231,92 @@ def test_cgpo_compute_score_preserves_raw_newlines_for_standalone_grounding_cap(
     assert scores[0] == pytest.approx({"overall": 0.75, "format": 0.5, "accuracy": 1.0})
 
 
+_LATE_THINK = (
+    "Figure A gives the growth ratio over the years and Figure B the population counts. "
+    "The ratio stays at one for four years, then drops, then rises again, so the population shrinks and recovers. "
+    "The counts in Figure B swing up and down without a fixed period, so they are not strictly periodic. "
+    'The <region name="figure a" image_idx="0" id="0">[[270, 36, 720, 400]]</region> shows this ratio curve.'
+)
+_EARLY_THINK = (
+    'The <region name="figure a" image_idx="0" id="0">[[270, 36, 720, 400]]</region> gives the growth ratio over '
+    "the years. It stays at one for four years, then drops, then rises again, so the population shrinks and "
+    "recovers. The counts in Figure B swing up and down without a fixed period, so they are not strictly periodic."
+)
+
+
+def test_cgpo_format_reward_caps_grounding_that_follows_the_reasoning():
+    # the region starts after 60% of the reasoning: appended once the reasoning is done
+    assert xml_grounded_reasoning.format_reward(_wrap_response(_LATE_THINK)) == 1.0  # off by default
+    assert xml_grounded_reasoning.format_reward(_wrap_response(_LATE_THINK), late_grounding_fraction=0.6) == 0.5
+    assert xml_grounded_reasoning.format_reward(_wrap_response(_EARLY_THINK), late_grounding_fraction=0.6) == 1.0
+    # no region at all: the late check does not apply (0.5 from the missing grounding either way)
+    assert xml_grounded_reasoning.format_reward(_wrap_response("plain reasoning"), late_grounding_fraction=0.6) == 0.5
+
+
+def test_cgpo_compute_score_forwards_late_grounding_fraction():
+    inputs = [{"response": _wrap_response(_LATE_THINK, boxed="42"), "ground_truth": "42", "response_length": 1}]
+    assert xml_grounded_reasoning.compute_score(inputs)[0]["format"] == 1.0
+    scores = xml_grounded_reasoning.compute_score(inputs, format_weight=0.1, late_grounding_fraction=0.6)
+    assert scores[0] == pytest.approx({"overall": 0.9 + 0.1 * 0.5, "format": 0.5, "accuracy": 1.0})
+    # the position is read on the raw response too (whitespace around tags is normalized before the ladder)
+    spaced = [
+        {
+            "response": _wrap_response(_LATE_THINK.replace("<region", "< region")),
+            "ground_truth": "A",
+            "response_length": 1,
+        }
+    ]
+    assert xml_grounded_reasoning.compute_score(spaced, late_grounding_fraction=0.6)[0]["format"] == 0.5
+    with pytest.raises(ValueError, match="late_grounding_fraction"):
+        xml_grounded_reasoning.compute_score(inputs, late_grounding_fraction=1.0)
+
+
+def test_cgpo_first_region_position_counts_the_reasoning_prose():
+    region = '<region name="a" image_idx="0" id="0">[[1, 2, 3, 4]]</region>'
+    assert xml_grounded_reasoning.first_region_position("no regions") is None
+    assert xml_grounded_reasoning.first_region_position(f"{region} abcd") == 0.0
+    # 3 of the 6 non-whitespace prose characters come before the region, whatever the spacing or the regions after it
+    assert xml_grounded_reasoning.first_region_position(f"abc {region} def") == 0.5
+    assert xml_grounded_reasoning.first_region_position(f"  a b   c\n{region}\n\nd e f  {region}{region}") == 0.5
+    assert xml_grounded_reasoning.first_region_position(region) == 0.0
+
+
+def test_cgpo_late_grounding_ignores_whitespace_and_later_regions():
+    def format_score(think):
+        inputs = [{"response": _wrap_response(think), "ground_truth": "A", "response_length": 1}]
+        return xml_grounded_reasoning.compute_score(inputs, late_grounding_fraction=0.6)[0]["format"]
+
+    assert format_score(_LATE_THINK) == 0.5
+    # whitespace inside the box list does not move the region earlier
+    assert format_score(_LATE_THINK.replace("[[270", "[[" + " " * 400 + "270")) == 0.5
+    # nor do more regions appended after the first one
+    more_regions = "".join(
+        f' The <region name="part {idx}" image_idx="0" id="{idx}">[[{100 + idx}, 210, 330, 440]]</region> is relevant.'
+        for idx in range(1, 6)
+    )
+    assert format_score(_LATE_THINK + more_regions) == 0.5
+    # and leading whitespace does not move an early region later
+    early = 'Here <region name="figure a" image_idx="0" id="0">[[270, 36, 720, 400]]</region> ' + _EARLY_THINK[85:]
+    assert format_score(early) == 1.0
+    assert format_score(" " * 2000 + early) == 1.0
+
+
+def test_cgpo_late_grounding_fraction_is_checked_at_start():
+    from verl.workers.reward.config import RewardConfig
+    from verl.workers.reward.function import AutoRewardManager
+
+    def manager(kwargs):
+        config = RewardConfig(reward_function=f"{_MODULE_PATH}:compute_score", reward_function_kwargs=kwargs)
+        config.post_init()
+        return AutoRewardManager(config, tokenizer=None)
+
+    manager({"format_weight": 0.1, "late_grounding_fraction": 0.6})
+    manager({"format_weight": 0.1})
+    for bad in (0.0, 1.0, 1.5):
+        with pytest.raises(ValueError, match="late_grounding_fraction"):
+            manager({"format_weight": 0.1, "late_grounding_fraction": bad})
+
+
 def test_cgpo_compute_score_caps_post_answer_grounding():
     scores = xml_grounded_reasoning.compute_score(
         [

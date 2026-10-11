@@ -34,6 +34,7 @@ _GROUNDING_LABEL_PATTERN = re.compile(
 _STANDALONE_FILLER_PATTERN = re.compile(r"^[\s\d\-*().,;:!?，。；：！？、\[\]（）()]*$")
 _QUOTE_CHARS_PATTERN = re.compile(r"['\"‘’“”`()]")
 _SEGMENT_BOUNDARIES = ".!?。！？;\n\r"
+_WHITESPACE_PATTERN = re.compile(r"\s+")
 _ANSWER_DECISION_PATTERN = re.compile(
     r"\b(?:the\s+)?(?:correct|final)\s+(?:answer|choice|option|statement)\s+is\b|"
     r"\bthe\s+only\s+correct\s+(?:answer|choice|option|statement)\s+is\b|"
@@ -117,13 +118,44 @@ def _has_post_answer_grounding(think_text: str) -> bool:
     return _ANSWER_DECISION_PATTERN.search(think_text[: first_region.start()]) is not None
 
 
-def format_reward(response: str, num_images: int | None = None) -> float:
+def _non_space_length(text: str) -> int:
+    return len(_WHITESPACE_PATTERN.sub("", text))
+
+
+def first_region_position(think_text: str) -> float | None:
+    """Share of the reasoning prose before the first region, None without regions. The prose is the reasoning without
+    its region tags, counted in non-whitespace characters, so neither whitespace nor the regions themselves (e.g.
+    more regions appended after the first) move the position."""
+    first_region = _REGION_PATTERN.search(think_text)
+    if first_region is None:
+        return None
+    prose_length = _non_space_length(_REGION_PATTERN.sub("", think_text))
+    return _non_space_length(think_text[: first_region.start()]) / prose_length if prose_length else 0.0
+
+
+def _has_late_grounding(think_text: str, max_first_region_fraction: float | None) -> bool:
+    """Whether the first region comes after `max_first_region_fraction` of the reasoning prose: grounding appended
+    once the reasoning is done rather than used in it."""
+    if max_first_region_fraction is None:
+        return False
+    position = first_region_position(think_text)
+    return position is not None and position > max_first_region_fraction
+
+
+def validate_reward_function_kwargs(late_grounding_fraction: float | None = None, **_: Any) -> None:
+    """Checks of `worker.reward.reward_function_kwargs` that the reward manager runs when it starts."""
+    if late_grounding_fraction is not None and not 0.0 < late_grounding_fraction < 1.0:
+        raise ValueError(f"late_grounding_fraction must be in (0, 1), but got {late_grounding_fraction!r}.")
+
+
+def format_reward(response: str, num_images: int | None = None, late_grounding_fraction: float | None = None) -> float:
     # Format reward ladder:
     # 0.0: The response misses the basic `<think>...</think>...\boxed{...}` structure.
     # 0.5: The basic structure exists, but there is no valid in-think grounding, a
     #      region appears outside `<think>`, or any <region> tag is isolated as its
     #      own sentence/line instead of being embedded in normal reasoning text, or
-    #      grounding is appended only after the answer decision has already been made.
+    #      grounding is appended only after the answer decision has already been made, or (with
+    #      `late_grounding_fraction`) the first region starts after that fraction of the reasoning.
     # 0.6: At least one embedded region is inside `<think>`, but region attributes, ids,
     #      image indices, or names are malformed.
     # 0.7: Region metadata is valid, but one or more bounding-box lists are malformed.
@@ -143,6 +175,8 @@ def format_reward(response: str, num_images: int | None = None) -> float:
     if _has_standalone_grounding_tag(think_text):
         max_reward = 0.5
     if _has_post_answer_grounding(think_text):
+        max_reward = min(max_reward, 0.5)
+    if _has_late_grounding(think_text, late_grounding_fraction):
         max_reward = min(max_reward, 0.5)
 
     regions = list(_REGION_PATTERN.finditer(response))
@@ -202,12 +236,20 @@ def accuracy_reward(response: str, ground_truth: str) -> float:
     return 1.0 if grade_answer(answer, ground_truth) else 0.0
 
 
-def compute_score(reward_inputs: list[dict[str, Any]], format_weight: float = 0.5) -> list[dict[str, float]]:
+def compute_score(
+    reward_inputs: list[dict[str, Any]], format_weight: float = 0.5, late_grounding_fraction: float | None = None
+) -> list[dict[str, float]]:
+    """`late_grounding_fraction` (e.g. 0.6): the first region must come within that fraction of the reasoning prose
+    (`first_region_position`), otherwise the format reward is capped at 0.5 like grounding appended after the answer;
+    None (default) does not check."""
+    validate_reward_function_kwargs(late_grounding_fraction=late_grounding_fraction)
     scores = []
     for reward_input in reward_inputs:
         raw_response = reward_input["response"]
         response = re.sub(r"\s*(<|>|/)\s*", r"\1", raw_response)
-        format_score = format_reward(response, num_images=reward_input.get("num_images"))
+        format_score = format_reward(
+            response, num_images=reward_input.get("num_images"), late_grounding_fraction=late_grounding_fraction
+        )
         raw_think_match = _THINK_PATTERN.search(raw_response)
         if raw_think_match is not None:
             raw_think = raw_think_match.group("think")

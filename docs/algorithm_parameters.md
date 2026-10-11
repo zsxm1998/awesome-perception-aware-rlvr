@@ -160,6 +160,7 @@ Used by CGPO.
 - `algorithm.use_grounding_consistency_reward`
 - `algorithm.grounding_consistency_reward_weight`
 - `algorithm.grounding_consistency_aggregation`: how a response's per-region match scores become its reward. `group` (default, the earlier behavior): the frequency-weighted share of the group's re-detected regions that the response grounds consistently, so naming more regions scores higher; `response`: the mean over the response's own regions, a region the detector does not find scoring 0 (the CGPO paper and its released code; the CGPO scripts use it)
+- `algorithm.grounding_consistency_area_discount`: multiply a region's match score by 1 − (the fraction of the image its boxes cover, their union), so a box around the whole image earns nothing and a tight box keeps almost all of its score; default off
 - `algorithm.grounding_consistency_detector`: `self` (default, existing rollout-model detector) or `grounding-dino` (`IDEA-Research/grounding-dino-base`)
 - `algorithm.grounding_dino_device`: `worker` (default, one detector per rollout worker GPU), `auto`, `cpu`, or a torch CUDA device such as `cuda:0`
 - `algorithm.grounding_dino_batch_size`: mini-batch size for Grounding DINO detector inference, default `4`

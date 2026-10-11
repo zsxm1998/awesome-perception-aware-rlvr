@@ -93,6 +93,14 @@ Notes:
   comparison run the policy went from 1.4 regions per response at step 10 to 23 at step 200, mostly
   coarse, repeated boxes listed after the reasoning. The scripts now use the paper's per-response
   mean (`response`).
+- Two further options for policies that start without an SFT stage, both off in these scripts:
+  `algorithm.grounding_consistency_area_discount=true` discounts a region's GCR score by the share of the
+  image its boxes cover (a whole-image box earns nothing), and `late_grounding_fraction` of
+  `examples/reward_function/xml_grounded_reasoning.py` (`worker.reward.reward_function_kwargs`, e.g. 0.6)
+  caps the format reward at 0.5 when the first region comes after that fraction of the reasoning prose (the
+  reasoning without its region tags, whitespace not counted), like grounding appended after the answer; the
+  reward manager checks the value when it starts. Without them a policy trained from an Instruct model tends to
+  reason in plain text and append one coarse box at the end.
 - `xml_grounded_reasoning_v2.jinja` replaces `xml_grounded_reasoning.jinja` (kept for runs trained
   with it): its example box no longer has round coordinates, and rule 5 asks for tight boxes and no
   whole-image boxes. Qwen3-VL-4B-Instruct copies the example: on MMK12 test (512 prompts x 8

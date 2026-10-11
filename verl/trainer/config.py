@@ -341,6 +341,11 @@ class AlgorithmConfig:
     detector finds, w_r = fraction of the group's responses naming r, so naming more of the group's regions scores
     higher; `response`: mean match over the response's own regions, a region the detector does not find scoring 0
     (the CGPO paper and its released code). See GROUNDING_CONSISTENCY_AGGREGATIONS in grounding_consistency.py."""
+    grounding_consistency_area_discount: bool = False
+    """multiply a region's match score by 1 - (the fraction of the image its boxes cover, their union): a box around
+    the whole image earns nothing, a tight box keeps almost all of its score. The CGPO paper gives GCR the role of
+    discouraging over-extended boxes; without this a generic region name with a large box is re-detected consistently
+    and scores. Off by default (the earlier behavior)."""
     grounding_consistency_detector: str = "self"
     """detector backend for grounding consistency reward. `self` preserves the existing rollout-model detector; `grounding-dino` uses IDEA-Research/grounding-dino-base."""
     grounding_dino_device: str = "worker"
