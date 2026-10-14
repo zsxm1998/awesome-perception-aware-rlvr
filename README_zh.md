@@ -235,15 +235,16 @@ token 选择、优势缩放、辅助损失和额外奖励；在线策略蒸馏�
 [`examples/comparison/qwen3_vl_4b`](examples/comparison/README.md) 在 Qwen3-VL-4B-Instruct 上训练除 DeepEyes 外的所有方法
 （[原因](examples/comparison/README.md#why-deepeyes-is-not-included)），使用相同的数据（ViRL39K / MMK12）、相同的
 GRPO 超参数和相同的评测，只有方法相关的参数不同，各方法沿用其论文中的图像扰动方式。`comparison` 套件含 19 项基准，
-分为三组（见 [comparison README](examples/comparison/README.md#results)），总分取三组均值的平均。结果将补充到这里。
+分为三组（见 [comparison README](examples/comparison/README.md#results)），总分取三组均值的平均；各方法均取最后一步。这些数字只反映我们的复现在同一个统一设定下的表现，供参考，不是对方法的排名，
+见[关于结果的说明](#-关于结果的说明)。
 
 | 方法 | GRPO | DAPO | PAPO | VPPO | ToR | DVRP | PGPO | PEPO | CFPO | VEPO | NoisyRollout | VGPO | VAPO | GRIT | CGPO |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 数学推理（7 项） | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| 依赖视觉的推理（6 项） | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| 感知与幻觉（6 项） | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| **总分**（三组均值的平均） | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| 全部（19 项基准的平均） | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| 数学推理（7 项） | 62.8 | 62.0 | 69.1 | 67.4 | 68.6 | 68.9 | 66.1 | 67.4 | 67.5 | 68.6 | 59.0 | 52.2 | 63.0 | 65.8 | 67.0 |
+| 依赖视觉的推理（6 项） | 70.7 | 70.8 | 75.1 | 72.8 | 73.3 | 74.6 | 71.7 | 73.4 | 74.7 | 73.6 | 70.5 | 63.0 | 70.1 | 70.4 | 70.5 |
+| 感知与幻觉（6 项） | 78.4 | 79.1 | 78.2 | 77.9 | 78.3 | 77.8 | 77.7 | 78.1 | 79.0 | 78.7 | 79.3 | 76.6 | 78.2 | 77.5 | 77.8 |
+| **总分**（三组均值的平均） | **70.6** | **70.7** | **74.1** | **72.7** | **73.4** | **73.8** | **71.8** | **73.0** | **73.7** | **73.6** | **69.6** | **63.9** | **70.4** | **71.2** | **71.8** |
+| 全部（19 项基准的平均） | 70.2 | 70.2 | 73.9 | 72.4 | 73.2 | 73.5 | 71.5 | 72.7 | 73.4 | 73.4 | 69.1 | 63.3 | 70.0 | 70.9 | 71.5 |
 
 [`examples/comparison/opd_qwen3_vl_2b`](examples/comparison/opd_qwen3_vl_2b/README.md) 以 Qwen3-VL-2B 为学生、
 RL 对比中的 GRPO 运行（Qwen3-VL-4B-Instruct，取验证最优步）为教师对比在线策略蒸馏，使用相同的数据、训练量和评测，每批采样只更新一次，不加 KL 和熵项。
@@ -266,8 +267,8 @@ README 中标注为本仓库的列）请结合以下几点阅读：
   的细节可能与作者代码不同，已知差异列在各方法的 README 中。
 - **环境不同。** 硬件、软件版本（PyTorch、vLLM、transformers、强化学习框架）、数据预处理和评测框架
   都与原论文不同，并且所有方法使用同一套评测协议（见[评测](#-评测)）。
-- **单种子。** 每个配置只训练一次。在这些基准上，强化学习结果在不同种子之间常有一个点以上的波动，
-  与许多论文报告的提升幅度相当。
+- **单次运行。** 每个配置只训练一次，而训练本身并不确定。同一配置的 CFPO 跑两次，统一对比的总分相差
+  0.6，单项基准最多相差 2.6；方法之间一个点左右的差距都在这一波动范围内，与许多论文报告的提升幅度相当。
 - **统一设定。** 统一对比对所有方法使用同一个模型、同一份数据和同一组超参数；针对其他设定调优的方法
   在这里未必能发挥最佳性能。
 

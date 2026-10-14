@@ -11,6 +11,30 @@ Each script only sets `ALGO_ARGS`, the switches that define the method; everythi
 On-policy distillation (VA-OPD, VGS, VCSD and the two base OPD objectives) is compared separately, on a 2B
 student distilled from this comparison's GRPO run: see [opd_qwen3_vl_2b/README.md](opd_qwen3_vl_2b/README.md).
 
+> [!IMPORTANT]
+> **The results are a reference, not a verdict on the methods.** Please read them with these limits in mind:
+>
+> - **Re-implementations.** Except for CGPO, the methods are our re-implementations of the papers and, where
+>   available, the official code. Details a paper leaves open may differ from the authors' code; the known
+>   differences are listed in each method's README.
+> - **One run per method.** Training is not deterministic (sampling, kernels, hardware), and each configuration
+>   is trained once. Two runs of CFPO with the same configuration (the second with a faster implementation of its
+>   counterfactual attention that differs only by rounding) ended 0.6 points apart in Overall and up to 2.6
+>   points apart on single benchmarks, in both directions, while two checkpoints of one run five steps apart
+>   differ by about 0.15 points. Differences of about a point between methods are within this variation.
+> - **A shared setting that is not the methods' own.** One backbone, one dataset, one training budget, one set
+>   of GRPO hyper-parameters and one prompt are used for every method. Most methods were designed and tuned for
+>   another setting (a different model, data, base algorithm, response length or schedule), and some of their
+>   components are left out here (see [Methods](#methods)); a method may not reach its best performance in this
+>   setting.
+> - **Our evaluation protocol.** All checkpoints are evaluated with this repository's harness and prompts,
+>   which differ from the papers' evaluations.
+>
+> The tables describe how our re-implementations behave in this setting; they do not rank the methods and are
+> not evidence for or against any of them. The original papers remain the reference for each method's
+> performance. If you are an author and see a problem with our implementation or setting, please open an issue
+> or a pull request; we will correct it.
+
 ## Shared setting
 
 | | `examples/comparison/qwen3_vl_4b/common.sh` |
@@ -147,22 +171,22 @@ method at the step with the best validation reward, on the other 18 benchmarks.
 
 | Method | Math reasoning | Vision-dependent reasoning | Perception and hallucination | Overall | All | Training hours |
 | --- | --- | --- | --- | --- | --- | --- |
-| Qwen3-VL-4B-Instruct (no RL) | TBD | TBD | TBD | TBD | TBD | – |
-| GRPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| DAPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| PAPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| VPPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| ToR | TBD | TBD | TBD | TBD | TBD | TBD |
-| DVRP | TBD | TBD | TBD | TBD | TBD | TBD |
-| PGPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| PEPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| CFPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| VEPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| NoisyRollout | TBD | TBD | TBD | TBD | TBD | TBD |
-| VGPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| VAPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| GRIT | TBD | TBD | TBD | TBD | TBD | TBD |
-| CGPO | TBD | TBD | TBD | TBD | TBD | TBD |
+| Qwen3-VL-4B-Instruct (no RL) | 46.5 | 62.0 | 76.0 | 61.5 | 60.7 | – |
+| GRPO | 62.8 | 70.7 | 78.4 | **70.6** | 70.2 | 31.0 (1.00×) |
+| DAPO | 62.0 | 70.8 | 79.1 | **70.7** | 70.2 | 50.6 (1.63×) |
+| PAPO | 69.1 | 75.1 | 78.2 | **74.1** | 73.9 | 35.6 (1.15×) |
+| VPPO | 67.4 | 72.8 | 77.9 | **72.7** | 72.4 | 37.4 (1.21×) |
+| ToR | 68.6 | 73.3 | 78.3 | **73.4** | 73.2 | 36.0 (1.16×) |
+| DVRP | 68.9 | 74.6 | 77.8 | **73.8** | 73.5 | 40.5 (1.31×) |
+| PGPO | 66.1 | 71.7 | 77.7 | **71.8** | 71.5 | 31.7 (1.02×) |
+| PEPO | 67.4 | 73.4 | 78.1 | **73.0** | 72.7 | 32.0 (1.03×) |
+| CFPO | 67.5 | 74.7 | 79.0 | **73.7** | 73.4 | 46.7 (1.51×) |
+| VEPO | 68.6 | 73.6 | 78.7 | **73.6** | 73.4 | 34.7 (1.12×) |
+| NoisyRollout | 59.0 | 70.5 | 79.3 | **69.6** | 69.1 | 31.0 (1.00×) |
+| VGPO | 52.2 | 63.0 | 76.6 | **63.9** | 63.3 | 29.8 (0.96×) |
+| VAPO | 63.0 | 70.1 | 78.2 | **70.4** | 70.0 | 34.2 (1.10×) |
+| GRIT | 65.8 | 70.4 | 77.5 | **71.2** | 70.9 | 32.0 (1.03×) |
+| CGPO | 67.0 | 70.5 | 77.8 | **71.8** | 71.5 | 41.1 (1.33×) |
 
 **Training hours** is the wall-clock time of the 202 training steps on 4 A800 80GB GPUs (rollout, reward,
 the auxiliary views and the updates), without the validation runs and checkpoint saves, which are the same
@@ -173,64 +197,64 @@ differences of a few percent can come from the node load.
 
 | Method | Geo3K | MathVista | We-Math | MMK12 | MathVerse | MathVision | DynaMath | Avg |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Qwen3-VL-4B-Instruct (no RL) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| GRPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| DAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| PAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VPPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| ToR | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| DVRP | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| PGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| PEPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| CFPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VEPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| NoisyRollout | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| GRIT | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| CGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Qwen3-VL-4B-Instruct (no RL) | 48.9 | 66.4 | 57.7 | 41.9 | 47.4 | 14.0 | 49.0 | 46.5 |
+| GRPO | 54.3 | 73.6 | 72.5 | 64.7 | 69.6 | 34.0 | 70.8 | 62.8 |
+| DAPO | 55.6 | 73.8 | 72.7 | 61.5 | 67.9 | 32.8 | 70.1 | 62.0 |
+| PAPO | 63.9 | 74.4 | 76.7 | 71.8 | 77.9 | 45.1 | 73.8 | 69.1 |
+| VPPO | 62.6 | 73.2 | 76.2 | 68.5 | 75.6 | 42.0 | 73.7 | 67.4 |
+| ToR | 62.7 | 73.7 | 77.1 | 70.2 | 77.4 | 44.8 | 74.7 | 68.6 |
+| DVRP | 63.2 | 73.9 | 76.8 | 71.5 | 77.8 | 44.4 | 74.8 | 68.9 |
+| PGPO | 62.0 | 71.8 | 74.3 | 68.6 | 74.5 | 40.5 | 71.0 | 66.1 |
+| PEPO | 60.3 | 72.8 | 76.9 | 70.2 | 75.4 | 42.7 | 73.4 | 67.4 |
+| CFPO | 59.7 | 75.6 | 73.8 | 70.7 | 78.0 | 39.9 | 74.7 | 67.5 |
+| VEPO | 60.9 | 75.9 | 77.4 | 71.1 | 77.0 | 44.0 | 74.0 | 68.6 |
+| NoisyRollout | 54.5 | 69.0 | 71.7 | 55.4 | 64.5 | 30.1 | 67.9 | 59.0 |
+| VGPO | 44.8 | 68.8 | 62.3 | 49.4 | 54.9 | 21.3 | 63.7 | 52.2 |
+| VAPO | 56.0 | 73.4 | 72.5 | 64.1 | 69.8 | 33.8 | 71.1 | 63.0 |
+| GRIT | 59.5 | 73.4 | 74.8 | 67.6 | 74.8 | 40.1 | 70.6 | 65.8 |
+| CGPO | 60.2 | 74.2 | 77.0 | 68.8 | 75.0 | 41.8 | 72.3 | 67.0 |
 
 ### Vision-dependent reasoning
 
 | Method | MathVerse-V | MMMU-Pro | LogicVista | Counting | AI2D | MME (cognition) | Avg |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Qwen3-VL-4B-Instruct (no RL) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| GRPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| DAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| PAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VPPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| ToR | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| DVRP | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| PGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| PEPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| CFPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VEPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| NoisyRollout | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| GRIT | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| CGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Qwen3-VL-4B-Instruct (no RL) | 44.1 | 27.1 | 41.7 | 87.9 | 78.5 | 92.5 | 62.0 |
+| GRPO | 64.3 | 41.5 | 54.2 | 89.6 | 83.9 | 90.8 | 70.7 |
+| DAPO | 63.8 | 39.7 | 54.9 | 90.1 | 83.9 | 92.5 | 70.8 |
+| PAPO | 73.5 | 45.8 | 62.4 | 93.1 | 83.2 | 92.9 | 75.1 |
+| VPPO | 72.2 | 43.5 | 58.5 | 84.9 | 83.7 | 94.1 | 72.8 |
+| ToR | 73.5 | 45.0 | 59.7 | 86.9 | 82.7 | 92.0 | 73.3 |
+| DVRP | 73.9 | 46.0 | 60.8 | 92.9 | 82.5 | 91.6 | 74.6 |
+| PGPO | 71.1 | 42.3 | 58.2 | 81.3 | 83.2 | 94.1 | 71.7 |
+| PEPO | 72.0 | 44.4 | 59.6 | 87.5 | 82.9 | 93.8 | 73.4 |
+| CFPO | 74.4 | 44.7 | 59.1 | 97.1 | 81.9 | 90.9 | 74.7 |
+| VEPO | 72.8 | 43.8 | 58.4 | 90.6 | 83.8 | 92.5 | 73.6 |
+| NoisyRollout | 59.9 | 37.9 | 53.9 | 95.5 | 84.7 | 91.2 | 70.5 |
+| VGPO | 50.4 | 33.8 | 42.7 | 80.1 | 79.4 | 91.7 | 63.0 |
+| VAPO | 65.3 | 40.8 | 54.7 | 83.9 | 82.8 | 92.8 | 70.1 |
+| GRIT | 70.8 | 39.3 | 52.6 | 82.9 | 81.8 | 94.7 | 70.4 |
+| CGPO | 71.5 | 41.5 | 57.2 | 77.8 | 83.1 | 91.6 | 70.5 |
 
 ### Perception and hallucination
 
 | Method | POPE | HallusionBench | MMStar | BLINK | MME (perception) | CV-Bench | Avg |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Qwen3-VL-4B-Instruct (no RL) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| GRPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| DAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| PAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VPPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| ToR | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| DVRP | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| PGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| PEPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| CFPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VEPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| NoisyRollout | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VAPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| GRIT | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| CGPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Qwen3-VL-4B-Instruct (no RL) | 88.4 | 72.8 | 65.0 | 62.3 | 83.0 | 84.4 | 76.0 |
+| GRPO | 89.0 | 74.1 | 71.0 | 66.1 | 84.4 | 85.5 | 78.4 |
+| DAPO | 89.0 | 73.8 | 71.9 | 67.3 | 86.5 | 86.0 | 79.1 |
+| PAPO | 89.3 | 75.0 | 68.9 | 66.9 | 83.0 | 86.2 | 78.2 |
+| VPPO | 88.4 | 75.0 | 69.7 | 66.0 | 82.9 | 85.7 | 77.9 |
+| ToR | 88.3 | 75.3 | 69.9 | 67.7 | 82.3 | 86.1 | 78.3 |
+| DVRP | 88.5 | 73.7 | 69.1 | 66.7 | 82.9 | 85.8 | 77.8 |
+| PGPO | 88.4 | 73.6 | 68.7 | 65.1 | 84.7 | 85.8 | 77.7 |
+| PEPO | 89.3 | 74.5 | 69.7 | 66.3 | 83.3 | 85.7 | 78.1 |
+| CFPO | 88.9 | 74.3 | 69.3 | 69.0 | 85.8 | 86.4 | 79.0 |
+| VEPO | 89.0 | 74.0 | 71.3 | 67.7 | 83.9 | 86.1 | 78.7 |
+| NoisyRollout | 89.3 | 75.8 | 71.1 | 69.0 | 83.7 | 87.1 | 79.3 |
+| VGPO | 88.9 | 71.4 | 67.2 | 64.8 | 81.8 | 85.6 | 76.6 |
+| VAPO | 88.9 | 74.1 | 69.7 | 66.6 | 83.6 | 86.2 | 78.2 |
+| GRIT | 89.2 | 71.5 | 68.5 | 65.0 | 86.2 | 84.4 | 77.5 |
+| CGPO | 88.8 | 72.6 | 68.5 | 66.5 | 84.9 | 85.8 | 77.8 |
 
 MME (cognition) and MME (perception) are MME's cognition score (commonsense reasoning, numerical calculation,
 text translation and code reasoning; 260 questions, out of 800) and its perception score (the other 10 subtasks;
@@ -249,24 +273,22 @@ the math reasoning of a method whose best step comes well before its last may st
 
 | Method | Best step | Math reasoning (without MMK12) | Vision-dependent reasoning | Perception and hallucination | Overall | Last step |
 | --- | --- | --- | --- | --- | --- | --- |
-| Qwen3-VL-4B-Instruct (no RL) | – | TBD | TBD | TBD | TBD | – |
-| GRPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| DAPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| PAPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| VPPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| ToR | TBD | TBD | TBD | TBD | TBD | TBD |
-| DVRP | TBD | TBD | TBD | TBD | TBD | TBD |
-| PGPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| PEPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| CFPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| VEPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| NoisyRollout | TBD | TBD | TBD | TBD | TBD | TBD |
-| VGPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| VAPO | TBD | TBD | TBD | TBD | TBD | TBD |
-| GRIT | TBD | TBD | TBD | TBD | TBD | TBD |
-| CGPO | TBD | TBD | TBD | TBD | TBD | TBD |
-
-Results will be added after the runs finish.
+| Qwen3-VL-4B-Instruct (no RL) | – | 47.2 | 62.0 | 76.0 | 61.7 | – |
+| GRPO | 175 | 65.9 | 72.4 | 78.0 | **72.1** | 70.5 |
+| DAPO | 105 | 70.2 | 74.6 | 78.6 | **74.5** | 70.7 |
+| PAPO | 202 | 68.6 | 75.1 | 78.2 | **74.0** | 74.0 |
+| VPPO | 200 | 67.4 | 73.4 | 77.6 | **72.8** | 72.6 |
+| ToR | 202 | 68.4 | 73.3 | 78.3 | **73.3** | 73.3 |
+| DVRP | 200 | 68.3 | 74.6 | 77.7 | **73.5** | 73.6 |
+| PGPO | 202 | 65.7 | 71.7 | 77.7 | **71.7** | 71.7 |
+| PEPO | 200 | 67.0 | 73.0 | 78.1 | **72.7** | 72.8 |
+| CFPO | 190 | 67.1 | 74.8 | 78.9 | **73.6** | 73.5 |
+| VEPO | 170 | 68.4 | 73.2 | 78.5 | **73.4** | 73.5 |
+| NoisyRollout | 160 | 67.0 | 74.6 | 79.1 | **73.6** | 69.8 |
+| VGPO | 165 | 65.9 | 71.1 | 77.1 | **71.3** | 64.1 |
+| VAPO | 155 | 66.9 | 72.5 | 78.4 | **72.6** | 70.3 |
+| GRIT | 202 | 65.5 | 70.4 | 77.5 | **71.1** | 71.1 |
+| CGPO | 160 | 66.8 | 71.3 | 77.6 | **71.9** | 71.7 |
 
 > [!IMPORTANT]
 > Except for CGPO, every method in this table is our unofficial re-implementation, run in one shared

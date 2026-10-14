@@ -270,15 +270,16 @@ the same data (ViRL39K / MMK12), the same GRPO hyper-parameters and the same eva
 method-specific arguments differ, and each method keeps the image perturbation of its paper. The
 `comparison` suite has 19 benchmarks in three groups (listed in the
 [comparison README](examples/comparison/README.md#results)); the overall score is the mean of the three
-group means. Results will be added here.
+group means; every method at its last step. These numbers are a reference for our re-implementations in
+one shared setting, not a ranking of the methods: see [About the results](#-about-the-results).
 
 | Method | GRPO | DAPO | PAPO | VPPO | ToR | DVRP | PGPO | PEPO | CFPO | VEPO | NoisyRollout | VGPO | VAPO | GRIT | CGPO |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Math reasoning (7) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Vision-dependent reasoning (6) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Perception and hallucination (6) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| **Overall** (mean of the three groups) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| All (mean of the 19 benchmarks) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Math reasoning (7) | 62.8 | 62.0 | 69.1 | 67.4 | 68.6 | 68.9 | 66.1 | 67.4 | 67.5 | 68.6 | 59.0 | 52.2 | 63.0 | 65.8 | 67.0 |
+| Vision-dependent reasoning (6) | 70.7 | 70.8 | 75.1 | 72.8 | 73.3 | 74.6 | 71.7 | 73.4 | 74.7 | 73.6 | 70.5 | 63.0 | 70.1 | 70.4 | 70.5 |
+| Perception and hallucination (6) | 78.4 | 79.1 | 78.2 | 77.9 | 78.3 | 77.8 | 77.7 | 78.1 | 79.0 | 78.7 | 79.3 | 76.6 | 78.2 | 77.5 | 77.8 |
+| **Overall** (mean of the three groups) | **70.6** | **70.7** | **74.1** | **72.7** | **73.4** | **73.8** | **71.8** | **73.0** | **73.7** | **73.6** | **69.6** | **63.9** | **70.4** | **71.2** | **71.8** |
+| All (mean of the 19 benchmarks) | 70.2 | 70.2 | 73.9 | 72.4 | 73.2 | 73.5 | 71.5 | 72.7 | 73.4 | 73.4 | 69.1 | 63.3 | 70.0 | 70.9 | 71.5 |
 
 [`examples/comparison/opd_qwen3_vl_2b`](examples/comparison/opd_qwen3_vl_2b/README.md) compares on-policy
 distillation on a Qwen3-VL-2B student with the GRPO run of the RL comparison (Qwen3-VL-4B-Instruct, best
@@ -306,8 +307,10 @@ and the "this repo" columns of every `examples/reproduction/<method>` README) co
 - **Different environment.** Hardware, software versions (PyTorch, vLLM, transformers, the RL
   framework), data preprocessing and the evaluation harness differ from those of the original
   papers, and one evaluation protocol is used for all methods (see [Evaluation](#-evaluation)).
-- **Single seed.** Each configuration is trained once. On these benchmarks RLVR results often move
-  by a point or more between seeds, which is as large as many reported gains.
+- **Single run.** Each configuration is trained once, and training is not deterministic. Two runs of CFPO
+  with the same configuration ended 0.6 points apart in the comparison's Overall score and up to 2.6 points
+  apart on single benchmarks; differences of about a point between methods are within this variation, and
+  many reported gains are of this size.
 - **Shared setting.** The controlled comparison uses one backbone, one dataset and one set of
   hyper-parameters for every method; a method tuned for another setting may not reach its best
   performance here.
