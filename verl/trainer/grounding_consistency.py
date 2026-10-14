@@ -115,10 +115,8 @@ def compute_group_eligibility_mask(uids: Sequence[Any], accuracy_values: Sequenc
 
     GCR is added to the training reward only when accuracy == 1.0 (the gating convention of
     the grounded-reasoning reward functions), so detection for a group with no correct answer
-    is wasted work: every score in it is zeroed downstream. Group granularity is required \u2014
-    within an eligible group all regions must be detected, including those mentioned only by
-    incorrect responses, because they enter the shared group-level denominator (`group`
-    aggregation; with `response` they are detected but unused).
+    is wasted work: every score in it is zeroed downstream. The mask is per group because the
+    detection requests of a group are built and deduplicated together.
     """
     if len(uids) != len(accuracy_values):
         raise ValueError(f"uids and accuracy_values must align, but got {len(uids)} and {len(accuracy_values)}.")
@@ -127,13 +125,6 @@ def compute_group_eligibility_mask(uids: Sequence[Any], accuracy_values: Sequenc
 
 
 _GROUNDING_CONSISTENCY_DETECTORS = {"self", "grounding-dino"}
-GROUNDING_CONSISTENCY_AGGREGATIONS = {"group", "response"}
-"""How the per-region match scores of a response become its reward:
-- `group`: the frequency-weighted share of the group's detectable regions that the response grounds consistently,
-  sum_{r in response} w_r * match_r / sum_{r in group} w_r, w_r = fraction of the group's responses that name r;
-  regions the detector does not find are left out. Naming more of the group's regions raises the score.
-- `response`: the mean match score over the response's own regions, a region the detector does not find scoring 0
-  (the CGPO paper: the response's predicted vs. re-detected regions; the released code averages over its entities)."""
 _GROUNDING_DINO_MODEL_ID = "IDEA-Research/grounding-dino-base"
 _GROUNDING_DINO_BOX_THRESHOLD = 0.4
 _GROUNDING_DINO_TEXT_THRESHOLD = 0.3
@@ -334,13 +325,9 @@ class GroundingConsistencyRewardScorer:
         detector: str = "self",
         grounding_dino_device: str = "worker",
         grounding_dino_batch_size: int = 4,
-        aggregation: str = "group",
-        area_discount: bool = False,
     ):
         if detector not in _GROUNDING_CONSISTENCY_DETECTORS:
             raise ValueError(f"Unknown grounding consistency detector: {detector!r}.")
-        if aggregation not in GROUNDING_CONSISTENCY_AGGREGATIONS:
-            raise ValueError(f"Unknown grounding consistency aggregation: {aggregation!r}.")
         if grounding_dino_batch_size <= 0:
             raise ValueError(f"grounding_dino_batch_size must be positive, but got {grounding_dino_batch_size}.")
         self.tokenizer = tokenizer
@@ -353,8 +340,6 @@ class GroundingConsistencyRewardScorer:
         self.prompt_template = prompt_template
         self.prompt_template_en = prompt_template_en
         self.detector = detector
-        self.aggregation = aggregation
-        self.area_discount = area_discount
         self.grounding_dino_device = grounding_dino_device
         self.grounding_dino_batch_size = grounding_dino_batch_size
         self._grounding_dino_processor: Any | None = None
@@ -418,6 +403,9 @@ class GroundingConsistencyRewardScorer:
         eligible_sample_mask: Optional[Sequence[bool]] = None,
         cache_token: Any = None,
     ) -> GroundingConsistencyRewardResult:
+        """R_gc of a response: the mean match score over its own regions (the response's predicted boxes against
+        the boxes the detector finds for the region's name on the original image), a region the detector does not
+        find scoring 0; see `_region_match`. The reward adds `reward_weight` * R_gc at the last response token."""
         start_time = time.perf_counter()
         reward_tensor = torch.zeros_like(batch.batch["responses"], dtype=torch.float32)
         zero_metrics = {
@@ -493,7 +481,6 @@ class GroundingConsistencyRewardScorer:
             if uid not in eligible_uids:
                 continue
             unique_regions: OrderedDict[tuple[int, str], ParsedResponseRegion] = OrderedDict()
-            region_occurrence_count: dict[tuple[int, str], int] = {}
             sample_region_map: dict[int, dict[tuple[int, str], ParsedResponseRegion]] = {}
             for sample_idx in indices:
                 regions = sample_regions[sample_idx]
@@ -505,8 +492,6 @@ class GroundingConsistencyRewardScorer:
                     if region_key not in unique_regions:
                         unique_regions[region_key] = region
                 sample_region_map[sample_idx] = sample_map
-                for region_key in sample_map:
-                    region_occurrence_count[region_key] = region_occurrence_count.get(region_key, 0) + 1
 
             if not unique_regions:
                 continue
@@ -514,9 +499,6 @@ class GroundingConsistencyRewardScorer:
             group_states[uid] = {
                 "indices": indices,
                 "sample_region_map": sample_region_map,
-                "weights": {
-                    region_key: count / max(len(indices), 1) for region_key, count in region_occurrence_count.items()
-                },
                 "pseudo_gt_boxes": {},
             }
             for region_key, region in unique_regions.items():
@@ -554,8 +536,7 @@ class GroundingConsistencyRewardScorer:
             )
             for dedup_key, request_idx in pending_request_by_key.items():
                 gt_boxes = infer_box_lists[request_idx]
-                # empty results are cached too: a region the detector cannot find is left out (`group`)
-                # or scores 0 (`response`)
+                # empty results are cached too: a region the detector cannot find scores 0
                 self._pseudo_gt_cache[dedup_key] = gt_boxes
                 if gt_boxes:
                     for uid, region_key in request_consumers[request_idx]:
@@ -567,32 +548,15 @@ class GroundingConsistencyRewardScorer:
         scored_samples = 0
         unique_region_counts = []
         for uid, state in group_states.items():
-            valid_region_keys = [
-                region_key for region_key in state["weights"] if region_key in state["pseudo_gt_boxes"]
-            ]
-            unique_region_counts.append(len(valid_region_keys))
-            denominator = sum(state["weights"][region_key] for region_key in valid_region_keys)
-            if self.aggregation == "group" and denominator <= 0.0:
-                continue
-
+            unique_region_counts.append(len(state["pseudo_gt_boxes"]))
             for sample_idx in state["indices"]:
                 sample_map = state["sample_region_map"].get(sample_idx, {})
-                if self.aggregation == "response":
-                    # compute_detection_reward([], boxes) = 0: nothing re-detected to match; no regions -> 0
-                    region_scores = [
-                        self._region_match(state["pseudo_gt_boxes"].get(region_key, []), region.boxes)
-                        for region_key, region in sample_map.items()
-                    ]
-                    raw_score = float(np.mean(region_scores)) if region_scores else 0.0
-                else:
-                    numerator = 0.0
-                    for region_key, region in sample_map.items():
-                        if region_key not in state["pseudo_gt_boxes"]:
-                            continue
-                        numerator += state["weights"][region_key] * self._region_match(
-                            state["pseudo_gt_boxes"][region_key], region.boxes
-                        )
-                    raw_score = numerator / denominator
+                # compute_detection_reward([], boxes) = 0: nothing re-detected to match; no regions -> 0
+                region_scores = [
+                    self._region_match(state["pseudo_gt_boxes"].get(region_key, []), region.boxes)
+                    for region_key, region in sample_map.items()
+                ]
+                raw_score = float(np.mean(region_scores)) if region_scores else 0.0
                 weighted_score = raw_score * self.reward_weight
                 raw_scores[sample_idx] = raw_score
                 weighted_scores[sample_idx] = weighted_score
@@ -621,12 +585,12 @@ class GroundingConsistencyRewardScorer:
     def _region_match(
         self, pseudo_gt_boxes: list[tuple[int, int, int, int]], predicted_boxes: Sequence[Sequence[int]]
     ) -> float:
-        """Match score of one region's predicted boxes against its re-detected boxes, discounted by the share of the
-        image the predicted boxes cover when `area_discount` is on."""
+        """Match score of one region's predicted boxes against its re-detected boxes (`compute_detection_reward`),
+        times 1 - the share of the image the predicted boxes cover (their union): a box around the whole image earns
+        nothing, a tight box keeps almost all of its score, so a generic region name with a large box, which the
+        detector finds again easily, does not score."""
         score = compute_detection_reward(pseudo_gt_boxes, [tuple(box) for box in predicted_boxes])
-        if self.area_discount:
-            score *= 1.0 - union_area_fraction(predicted_boxes)
-        return score
+        return score * (1.0 - union_area_fraction(predicted_boxes))
 
     def _detect_pseudo_gt_boxes(
         self,

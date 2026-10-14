@@ -93,6 +93,5 @@ CGPO_ALGO_ARGS=(
     "algorithm.include_region_tokens_in_perception_mask=true"
     "algorithm.use_grounding_consistency_reward=true"
     "algorithm.grounding_consistency_reward_weight=0.5"
-    "algorithm.grounding_consistency_aggregation=response"  # R_gc: mean over the response's regions (Sec. 3.3.3)
     "worker.rollout.mm_processor_cache_gb=4"  # GCR detects several regions per image: process each image once
 )

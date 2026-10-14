@@ -3964,7 +3964,7 @@ def test_build_sensitivity_shaping_context_rejects_unknown_method():
         ),
     ],
 )
-def test_grounding_consistency_reward_uses_weighted_rollout_group_scoring(response_text_0, response_text_1):
+def test_grounding_consistency_reward_scores_each_response_with_rollout_detections(response_text_0, response_text_1):
     tokenizer = _CharTokenizer()
     processor = _CharProcessor()
     scorer = GroundingConsistencyRewardScorer(
@@ -4048,7 +4048,8 @@ def test_grounding_consistency_reward_uses_weighted_rollout_group_scoring(respon
 
     result = scorer.score_batch(batch, _FakeRolloutWG(), {"n": 1, "temperature": 1.0, "top_p": 0.99})
 
-    expected_raw_scores = [1.0, 2.0 / 3.0]
+    # every region is re-detected exactly (match 1.0) and its box covers 0.01% of the image
+    expected_raw_scores = [1.0 - 1e-4, 1.0 - 1e-4]
     expected_weighted_scores = [score * 0.5 for score in expected_raw_scores]
     assert result.weighted_scores == pytest.approx(expected_weighted_scores)
     assert torch.isclose(
@@ -4458,8 +4459,9 @@ def test_grounding_consistency_reward_grounding_dino_uses_external_detector(monk
 
     result = scorer.score_batch(batch, _FailingRolloutWG(), {"n": 1})
 
-    assert result.weighted_scores == pytest.approx([0.5])
-    assert torch.isclose(result.reward_tensor.sum(), torch.tensor(0.5, dtype=torch.float32))
+    # exact match; the box covers 0.01% of the image
+    assert result.weighted_scores == pytest.approx([0.5 * (1.0 - 1e-4)])
+    assert torch.isclose(result.reward_tensor.sum(), torch.tensor(0.5 * (1.0 - 1e-4), dtype=torch.float32))
     assert result.metrics["algo/gcr/response_region_count"] == pytest.approx(1.0)
     assert result.metrics["algo/gcr/group_unique_region_count"] == pytest.approx(1.0)
     assert result.metrics["algo/gcr/scored_sample_fraction"] == pytest.approx(1.0)
@@ -4502,7 +4504,8 @@ def test_grounding_consistency_reward_grounding_dino_empty_detection_is_fail_clo
     assert result.weighted_scores == pytest.approx([0.0])
     assert torch.isclose(result.reward_tensor.sum(), torch.tensor(0.0, dtype=torch.float32))
     assert result.metrics["algo/gcr/group_unique_region_count"] == pytest.approx(0.0)
-    assert result.metrics["algo/gcr/scored_sample_fraction"] == pytest.approx(0.0)
+    # the response is scored, with 0: its region is not found
+    assert result.metrics["algo/gcr/scored_sample_fraction"] == pytest.approx(1.0)
 
 
 def test_max_match_iou_sum_empty():
@@ -4704,17 +4707,11 @@ _GCR_NO_REGION = "<think>a cat sits</think>\\boxed{A}"
 _GCR_NAMED_DETECTIONS = {"cat": "[[10, 10, 20, 20]]", "dog": "[[30, 30, 35, 40]]"}
 
 
-@pytest.mark.parametrize(
-    ("aggregation", "expected"),
-    [
-        # group: w = share of the 3 responses naming the region (cat 2/3, dog 1/3, ghost 1/3 but not found, left out);
-        # (w_cat * match_cat + w_dog * match_dog) / (w_cat + w_dog)
-        ("group", [(2 / 3 * 1.0 + 1 / 3 * 0.5) / (2 / 3 + 1 / 3), (2 / 3 * 1.0) / (2 / 3 + 1 / 3), 0.0]),
-        # response: mean over the response's own regions, ghost (not re-detected) scores 0
-        ("response", [(1.0 + 0.5 + 0.0) / 3, 1.0, 0.0]),
-    ],
-)
-def test_grounding_consistency_aggregation(aggregation, expected):
+# each of these boxes covers 0.01% of the image: a region keeps 1 - 0.0001 of its match score
+_GCR_SMALL_BOX_KEEP = 1.0 - 1e-4
+
+
+def test_grounding_consistency_reward_averages_the_regions_of_the_response():
     tokenizer = _CharTokenizer()
     scorer = GroundingConsistencyRewardScorer(
         tokenizer=tokenizer,
@@ -4724,32 +4721,28 @@ def test_grounding_consistency_aggregation(aggregation, expected):
         max_pixels=None,
         video_fps=2.0,
         reward_weight=0.5,
-        aggregation=aggregation,
     )
     batch = _make_grounding_batch(tokenizer, [_GCR_THREE_REGIONS, _GCR_ONE_REGION, _GCR_NO_REGION], uids=["g"] * 3)
     result = scorer.score_batch(batch, _NamedFakeRolloutWG(tokenizer, _GCR_NAMED_DETECTIONS), _GCR_TEST_ROLLOUT_CONFIG)
 
+    # mean over the response's own regions, ghost (not re-detected) scoring 0; a response without regions scores 0
+    expected = [(1.0 + 0.5 + 0.0) / 3 * _GCR_SMALL_BOX_KEEP, 1.0 * _GCR_SMALL_BOX_KEEP, 0.0]
     assert result.raw_scores == pytest.approx(expected)
     assert result.weighted_scores == pytest.approx([0.5 * score for score in expected])
     assert result.metrics["algo/gcr/scored_sample_fraction"] == pytest.approx(1.0)
-    # the group rewards the response that names more of the group's regions; the paper's mean does not
-    if aggregation == "group":
-        assert result.raw_scores[0] > result.raw_scores[1]
-    else:
-        assert result.raw_scores[0] < result.raw_scores[1]
+    # naming more regions does not raise the score
+    assert result.raw_scores[0] < result.raw_scores[1]
 
 
-@pytest.mark.parametrize(("aggregation", "scored_fraction"), [("group", 0.0), ("response", 1.0)])
-def test_grounding_consistency_aggregation_when_nothing_is_detected(aggregation, scored_fraction):
+def test_grounding_consistency_reward_when_nothing_is_detected():
     tokenizer = _CharTokenizer()
     scorer = _make_gcr_scorer(tokenizer)
-    scorer.aggregation = aggregation
     batch = _make_grounding_batch(tokenizer, [_GCR_THREE_REGIONS, _GCR_ONE_REGION], uids=["g", "g"])
     result = scorer.score_batch(batch, _NamedFakeRolloutWG(tokenizer, {}), _GCR_TEST_ROLLOUT_CONFIG)
 
-    # no region is confirmed: `group` leaves the group unscored, `response` scores its responses 0
+    # no region is confirmed: the responses are scored, with 0
     assert result.raw_scores == [0.0, 0.0]
-    assert result.metrics["algo/gcr/scored_sample_fraction"] == pytest.approx(scored_fraction)
+    assert result.metrics["algo/gcr/scored_sample_fraction"] == pytest.approx(1.0)
 
 
 def test_union_area_fraction():
@@ -4770,57 +4763,14 @@ _GCR_TIGHT = (
 )
 
 
-@pytest.mark.parametrize("aggregation", ["group", "response"])
-def test_grounding_consistency_area_discount(aggregation):
-    # the detector returns each region's predicted box (match 1.0): the discount alone sets the score
+def test_grounding_consistency_reward_discounts_the_image_share_of_the_boxes():
+    # the detector returns each region's predicted box (match 1.0): the share of the image alone sets the score
     tokenizer = _CharTokenizer()
     batch = _make_grounding_batch(tokenizer, [_GCR_WHOLE_IMAGE, _GCR_TIGHT], uids=["g0", "g1"])
     wg = _NamedFakeRolloutWG(tokenizer, {"diagram": "[[0, 0, 1000, 1000]]", "cell": "[[100, 100, 300, 300]]"})
-
-    def scorer(area_discount):
-        return GroundingConsistencyRewardScorer(
-            tokenizer=tokenizer,
-            processor=_CharProcessor(),
-            max_prompt_length=256,
-            min_pixels=None,
-            max_pixels=None,
-            video_fps=2.0,
-            reward_weight=1.0,
-            aggregation=aggregation,
-            area_discount=area_discount,
-        )
-
-    off = scorer(False).score_batch(batch, wg, _GCR_TEST_ROLLOUT_CONFIG)
-    assert off.raw_scores == pytest.approx([1.0, 1.0])
-    on = scorer(True).score_batch(batch, wg, _GCR_TEST_ROLLOUT_CONFIG)
-    assert on.raw_scores == pytest.approx([0.0, 1.0 - 0.04])
-    assert on.weighted_scores == pytest.approx(on.raw_scores)
-    assert AlgorithmConfig().grounding_consistency_area_discount is False
-    assert _make_gcr_scorer(tokenizer).area_discount is False
-
-
-def test_grounding_consistency_aggregation_is_validated():
-    config = AlgorithmConfig()
-    config.post_init()
-    assert config.grounding_consistency_aggregation == "group"
-    assert _make_gcr_scorer(_CharTokenizer()).aggregation == AlgorithmConfig.grounding_consistency_aggregation
-
-    config = AlgorithmConfig(grounding_consistency_aggregation="response")
-    config.post_init()
-    assert config.grounding_consistency_aggregation == "response"
-
-    with pytest.raises(ValueError, match="grounding_consistency_aggregation"):
-        AlgorithmConfig(grounding_consistency_aggregation="mean").post_init()
-    with pytest.raises(ValueError, match="aggregation"):
-        GroundingConsistencyRewardScorer(
-            tokenizer=_CharTokenizer(),
-            processor=_CharProcessor(),
-            max_prompt_length=256,
-            min_pixels=None,
-            max_pixels=None,
-            video_fps=2.0,
-            aggregation="mean",
-        )
+    result = _make_gcr_scorer(tokenizer).score_batch(batch, wg, _GCR_TEST_ROLLOUT_CONFIG)
+    assert result.raw_scores == pytest.approx([0.0, 1.0 - 0.04])
+    assert result.weighted_scores == pytest.approx(result.raw_scores)
 
 
 def test_grounding_consistency_scorer_deduplicates_identical_requests_across_groups():
@@ -4834,7 +4784,7 @@ def test_grounding_consistency_scorer_deduplicates_identical_requests_across_gro
     result = scorer.score_batch(batch, wg, _GCR_TEST_ROLLOUT_CONFIG)
 
     assert wg.request_counts == [1]
-    assert result.weighted_scores == pytest.approx([1.0, 1.0])
+    assert result.weighted_scores == pytest.approx([_GCR_SMALL_BOX_KEEP, _GCR_SMALL_BOX_KEEP])
     assert result.metrics["algo/gcr/detection_request_count"] == 1.0
 
 

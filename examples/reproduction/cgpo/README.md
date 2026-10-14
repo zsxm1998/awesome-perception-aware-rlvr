@@ -28,7 +28,8 @@ evidence is removed. It needs only answer-level supervision:
    re-detects the entity on the original image; an F1-weighted overlap between the matched
    predicted and re-detected boxes is added to the reward (`R + gamma * R_gc`, only for correct
    answers). `R_gc` is the mean of this score over the response's own entities, an entity that the
-   re-detection does not find scoring 0 (`grounding_consistency_aggregation=response`). This prevents
+   re-detection does not find scoring 0, and each entity's score is multiplied by one minus the
+   share of the image its boxes cover, so a box around the whole image earns nothing. This prevents
    the policy from inflating the evidence boxes to increase *S*. (The paper describes greedy CIoU
    matching; this release uses optimal one-to-one IoU matching, see `compute_detection_reward` in
    `verl/trainer/grounding_consistency.py`.)
@@ -42,7 +43,7 @@ evidence is removed. It needs only answer-level supervision:
 | Evidence dependence *S_t* | `algorithm.visual_sensitivity_reference=old` (sampled KL estimator) | `verl/trainer/visual_sensitivity.py` |
 | Response scaling (`lambda`) | `algorithm.advantage_scaling_method=cgpo`, `cgpo_response_scaling_coef` | `perception_reasoning_loss.py::_compute_cgpo_response_scaling` |
 | Token selection (`rho_r`, `rho_p`, Span_E) | `top_entropy_quantile`, `top_perception_quantile`, `*_thr_granularity=micro_batch` (thresholds within each update micro-batch, as in the paper experiments), `include_region_tokens_in_perception_mask=true` | `perception_reasoning_loss.py` |
-| GCR (`gamma`) | `use_grounding_consistency_reward=true`, `grounding_consistency_reward_weight`, `grounding_consistency_aggregation=response` (`grounding_consistency_detector=self`; `grounding-dino` is available as an external detector) | `verl/trainer/grounding_consistency.py`, `examples/reward_function/xml_grounded_reasoning.py` |
+| GCR (`gamma`) | `use_grounding_consistency_reward=true`, `grounding_consistency_reward_weight` (`grounding_consistency_detector=self`; `grounding-dino` is available as an external detector) | `verl/trainer/grounding_consistency.py`, `examples/reward_function/xml_grounded_reasoning.py` |
 
 ## Reproduction in this repository (natural images)
 
@@ -87,20 +88,6 @@ Notes:
   The paper starts from an SFT model that already produces ESR-style responses.
 - GCR re-runs the policy as a referring detector inside the rollout engine; its cost is reported
   as `algo/gcr/detection_time_s`. Detection is skipped for groups without a correct answer.
-- Earlier versions of these scripts scored GCR per group (`grounding_consistency_aggregation=group`,
-  still the default of the option): the frequency-weighted share of the group's re-detected regions
-  that a response grounds consistently. Naming more regions raises that score; in the Qwen3-VL-4B
-  comparison run the policy went from 1.4 regions per response at step 10 to 23 at step 200, mostly
-  coarse, repeated boxes listed after the reasoning. The scripts now use the paper's per-response
-  mean (`response`).
-- Two further options for policies that start without an SFT stage, both off in these scripts:
-  `algorithm.grounding_consistency_area_discount=true` discounts a region's GCR score by the share of the
-  image its boxes cover (a whole-image box earns nothing), and `late_grounding_fraction` of
-  `examples/reward_function/xml_grounded_reasoning.py` (`worker.reward.reward_function_kwargs`, e.g. 0.6)
-  caps the format reward at 0.5 when the first region comes after that fraction of the reasoning prose (the
-  reasoning without its region tags, whitespace not counted), like grounding appended after the answer; the
-  reward manager checks the value when it starts. Without them a policy trained from an Instruct model tends to
-  reason in plain text and append one coarse box at the end.
 - `xml_grounded_reasoning_v2.jinja` replaces `xml_grounded_reasoning.jinja` (kept for runs trained
   with it): its example box no longer has round coordinates, and rule 5 asks for tight boxes and no
   whole-image boxes. Qwen3-VL-4B-Instruct copies the example: on MMK12 test (512 prompts x 8
