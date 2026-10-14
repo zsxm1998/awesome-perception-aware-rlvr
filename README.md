@@ -30,7 +30,7 @@ gain rather than its language prior, or letting the model teach itself with a pr
 image.
 
 <p align="center">
-  <img src="docs/assets/taxonomy.svg" width="100%" alt="Perception-aware RLVR methods grouped by where the visual signal enters training: grounded reasoning (GRIT, DeepEyes), counterfactual views (PAPO, DVRP, CFPO) and token-level visual credit (VPPO, ToR, PGPO, PEPO, VEPO). CGPO grounds the evidence inline, masks it into a counterfactual image and lets the evidence dependence scale token advantages.">
+  <img src="docs/assets/architecture.svg" width="100%" alt="Framework architecture: one RL step in three stages. Rollout in vLLM: noised rollout images (NoisyRollout), a zoom-in tool (DeepEyes), online filtering (DAPO), and the reward inputs the policy must generate before vLLM sleeps: grounding consistency (CGPO) and visual-claim probes (VAPO). Before the update, without gradient: rollout-policy, reference and teacher log-probs; an auxiliary forward on a changed input (masked, noised, pixelated or removed image, or a change inside the model) that gives each token's visual dependence; the reward function with each method's extra term; the advantages. Actor update: the five steps of compute_perception_reasoning_policy_loss (control signals, advantage modulation, token-wise PPO terms, token selection, auxiliary losses), or a distillation loss for on-policy distillation, then the optimizer step.">
 </p>
 
 This repository provides

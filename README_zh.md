@@ -27,7 +27,7 @@ PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · NoisyRollout · V
 在看到更多图像信息的条件下给自己当教师。
 
 <p align="center">
-  <img src="docs/assets/taxonomy_zh.svg" width="100%" alt="按视觉信号进入训练的位置对感知导向 RLVR 方法分类：基于定位的推理（GRIT、DeepEyes）、反事实视图（PAPO、DVRP、CFPO）、token 级视觉信用分配（VPPO、ToR、PGPO、PEPO、VEPO）；CGPO 在推理中内联定位证据，遮挡证据得到反事实图像，并用证据依赖缩放 token 优势。">
+  <img src="docs/assets/architecture_zh.svg" width="100%" alt="框架架构：一个 RL 训练步分三个阶段。vLLM 采样：加噪图像采样（NoisyRollout）、放大工具（DeepEyes）、在线过滤（DAPO），以及需要策略生成、在 vLLM 休眠前算完的奖励输入：定位一致性（CGPO）和视觉断言探针（VAPO）。更新前无梯度计算：rollout 策略、参考模型和教师的 log-prob，改动输入（遮挡、加噪、像素化或去掉图像，或模型内部改动）上的辅助前向（由此得到每个 token 的视觉依赖），带各方法额外项的奖励函数，以及优势。策略更新：执行 compute_perception_reasoning_policy_loss 的五步（控制信号、优势调制、逐 token PPO 项、token 筛选、辅助损失），或在线策略蒸馏的蒸馏损失，然后优化器更新。">
 </p>
 
 本仓库提供：
