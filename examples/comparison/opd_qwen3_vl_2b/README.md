@@ -9,6 +9,17 @@ reference under **one** setting, the RL comparison's ([../README.md](../README.m
 trained in that comparison: Qwen3-VL-4B-Instruct after GRPO, at its best validation step (see [Teacher](#teacher)).
 Each script only sets `ALGO_ARGS`; everything else comes from [common.sh](common.sh).
 
+> [!IMPORTANT]
+> **The results are a reference, not a verdict on the methods.** The methods are our re-implementations (the
+> known differences from each paper are in its README); each configuration is trained once, and in the RL
+> comparison two runs of one method with the same configuration ended 0.6 points apart in Overall and up to 2.6
+> points apart on single benchmarks, so differences of about a point are within run-to-run variation. The
+> shared setting (student, teacher, data, training budget, prompt and response length) is not the setting each
+> paper designed and tuned its method for, and the evaluation is this repository's. The tables describe how our
+> re-implementations behave in this setting; they do not rank the methods and are not evidence for or against
+> any of them. The original papers remain the reference. Authors who see a problem with our implementation or
+> setting are welcome to open an issue or a pull request.
+
 ## Shared setting
 
 | | `examples/comparison/opd_qwen3_vl_2b/common.sh` | RL comparison (`../qwen3_vl_4b/common.sh`) |
@@ -117,63 +128,74 @@ same overall score (the mean of the three group means; All is the mean of the 19
 
 | Method | Math reasoning | Vision-dependent reasoning | Perception and hallucination | Overall | All |
 | --- | --- | --- | --- | --- | --- |
-| Qwen3-VL-2B-Instruct (student, no training) | TBD | TBD | TBD | TBD | TBD |
-| Teacher: GRPO on Qwen3-VL-4B-Instruct, best validation step | TBD | TBD | TBD | TBD | TBD |
-| GRPO | TBD | TBD | TBD | TBD | TBD |
-| OPD (sampled tokens) | TBD | TBD | TBD | TBD | TBD |
-| OPD (full distributions) | TBD | TBD | TBD | TBD | TBD |
-| VA-OPD | TBD | TBD | TBD | TBD | TBD |
-| VGS | TBD | TBD | TBD | TBD | TBD |
-| VCSD (no external teacher) | TBD | TBD | TBD | TBD | TBD |
+| Qwen3-VL-2B-Instruct (student, no training) | 36.7 | 51.8 | 69.0 | **52.5** | 51.7 |
+| Teacher: GRPO on Qwen3-VL-4B-Instruct, best validation step | 66.4 | 72.4 | 78.0 | **72.3** | 72.0 |
+| GRPO | 55.3 | 64.5 | 72.3 | **64.0** | 63.6 |
+| OPD (sampled tokens) | 51.3 | 63.1 | 72.7 | **62.4** | 61.8 |
+| OPD (full distributions) | 51.8 | 63.8 | 72.9 | **62.8** | 62.3 |
+| VA-OPD | 46.7 | 60.7 | 73.2 | **60.2** | 59.5 |
+| VGS | 49.5 | 61.3 | 72.4 | **61.0** | 60.4 |
+| VCSD (no external teacher) | 2.7 | 16.3 | 35.5 | **18.2** | 17.3 |
 
 ### Math reasoning
 
 | Method | Geo3K | MathVista | We-Math | MMK12 | MathVerse | MathVision | DynaMath | Avg |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Qwen3-VL-2B-Instruct (student, no training) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Teacher: GRPO on Qwen3-VL-4B-Instruct, best validation step | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| GRPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| OPD (sampled tokens) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| OPD (full distributions) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VA-OPD | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VGS | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VCSD (no external teacher) | TBD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Qwen3-VL-2B-Instruct (student, no training) | 30.9 | 56.6 | 46.8 | 29.6 | 36.7 | 8.7 | 47.2 | 36.7 |
+| Teacher: GRPO on Qwen3-VL-4B-Instruct, best validation step | 58.4 | 74.1 | 75.2 | 69.3 | 73.9 | 39.9 | 73.7 | 66.4 |
+| GRPO | 45.4 | 65.2 | 68.1 | 52.2 | 64.0 | 29.5 | 62.4 | 55.3 |
+| OPD (sampled tokens) | 41.4 | 61.6 | 63.4 | 48.5 | 57.4 | 24.4 | 62.4 | 51.3 |
+| OPD (full distributions) | 41.9 | 61.7 | 63.7 | 49.7 | 58.4 | 24.2 | 63.2 | 51.8 |
+| VA-OPD | 37.8 | 59.3 | 58.1 | 43.6 | 50.2 | 17.8 | 60.2 | 46.7 |
+| VGS | 38.8 | 60.4 | 60.8 | 45.7 | 56.0 | 22.8 | 61.7 | 49.5 |
+| VCSD (no external teacher) | 0.0 | 15.1 | 0.0 | 0.1 | 0.1 | 0.0 | 3.4 | 2.7 |
 
 ### Vision-dependent reasoning
 
 | Method | MathVerse-V | MMMU-Pro | LogicVista | Counting | AI2D | MME (cognition) | Avg |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Qwen3-VL-2B-Instruct (student, no training) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Teacher: GRPO on Qwen3-VL-4B-Instruct, best validation step | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| GRPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| OPD (sampled tokens) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| OPD (full distributions) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VA-OPD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VGS | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VCSD (no external teacher) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Qwen3-VL-2B-Instruct (student, no training) | 33.8 | 20.2 | 31.2 | 69.3 | 68.0 | 88.0 | 51.8 |
+| Teacher: GRPO on Qwen3-VL-4B-Instruct, best validation step | 69.6 | 43.6 | 58.7 | 87.7 | 83.0 | 92.1 | 72.4 |
+| GRPO | 60.4 | 31.8 | 47.3 | 83.2 | 74.6 | 89.6 | 64.5 |
+| OPD (sampled tokens) | 53.2 | 29.0 | 46.6 | 85.7 | 74.1 | 90.0 | 63.1 |
+| OPD (full distributions) | 54.6 | 29.1 | 47.0 | 86.9 | 74.7 | 90.5 | 63.8 |
+| VA-OPD | 45.6 | 26.8 | 42.7 | 86.1 | 73.3 | 89.4 | 60.7 |
+| VGS | 51.7 | 27.7 | 44.5 | 82.8 | 73.2 | 87.6 | 61.3 |
+| VCSD (no external teacher) | 0.1 | 0.1 | 0.5 | 71.4 | 3.1 | 22.8 | 16.3 |
 
 ### Perception and hallucination
 
 | Method | POPE | HallusionBench | MMStar | BLINK | MME (perception) | CV-Bench | Avg |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Qwen3-VL-2B-Instruct (student, no training) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| Teacher: GRPO on Qwen3-VL-4B-Instruct, best validation step | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| GRPO | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| OPD (sampled tokens) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| OPD (full distributions) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VA-OPD | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VGS | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
-| VCSD (no external teacher) | TBD | TBD | TBD | TBD | TBD | TBD | TBD |
+| Qwen3-VL-2B-Instruct (student, no training) | 88.2 | 65.2 | 53.9 | 52.6 | 79.3 | 75.1 | 69.0 |
+| Teacher: GRPO on Qwen3-VL-4B-Instruct, best validation step | 88.8 | 74.0 | 69.6 | 66.3 | 84.0 | 85.2 | 78.0 |
+| GRPO | 88.3 | 67.5 | 58.6 | 57.8 | 81.6 | 80.0 | 72.3 |
+| OPD (sampled tokens) | 88.7 | 67.9 | 62.1 | 57.3 | 81.8 | 78.5 | 72.7 |
+| OPD (full distributions) | 88.4 | 70.0 | 60.7 | 55.9 | 83.9 | 78.7 | 72.9 |
+| VA-OPD | 88.8 | 69.0 | 60.1 | 58.8 | 83.1 | 79.4 | 73.2 |
+| VGS | 87.6 | 68.6 | 60.5 | 57.4 | 81.8 | 78.7 | 72.4 |
+| VCSD (no external teacher) | 89.0 | 26.0 | 8.0 | 6.3 | 53.9 | 29.7 | 35.5 |
 
 MME (cognition) and MME (perception) are MME's cognition score (commonsense reasoning, numerical calculation,
 text translation and code reasoning; 260 questions, out of 800) and its perception score (the other 10 subtasks;
 2,114 questions, out of 2,000), each on a 0-100 scale.
 
-Results will be added after the runs finish.
+### Best validation step
 
-> [!IMPORTANT]
-> Every method in this table is our unofficial re-implementation, run in one shared setting (backbone, data
-> and hyper-parameters chosen for the comparison, not for each method), on our hardware and software versions,
-> with a single seed per method. Differences of a point or less between methods can come from training
-> randomness alone. The original papers remain the reference for each method's performance. See
-> [About the results](../../../README.md#-about-the-results); corrections from the authors are welcome.
+Each method at the step with the best validation reward (`best_global_step` in the run's
+`checkpoint_tracker.json`; MMK12 test every 15 steps), on the 18 benchmarks other than MMK12, as in
+[the RL comparison](../README.md#best-validation-step); **Last step** is the same mean of 18 at the last step
+(606; GRPO: 202).
+
+| Method | Best step | Math reasoning (without MMK12) | Vision-dependent reasoning | Perception and hallucination | Overall | Last step |
+| --- | --- | --- | --- | --- | --- | --- |
+| GRPO | 202 | 55.8 | 64.5 | 72.3 | **64.2** | 64.2 |
+| OPD (sampled tokens) | 606 | 51.8 | 63.1 | 72.7 | **62.5** | 62.5 |
+| OPD (full distributions) | 600 | 52.1 | 63.6 | 72.7 | **62.8** | 63.0 |
+| VA-OPD | 255 | 52.3 | 62.9 | 72.1 | **62.5** | 60.4 |
+| VGS | 600 | 49.9 | 61.2 | 72.0 | **61.0** | 61.3 |
+| VCSD (no external teacher) | 30 | 43.3 | 55.9 | 71.1 | **56.8** | 18.3 |
+
+VCSD's validation reward is highest at step 30 and falls afterwards; at the last step most of its answers run
+to the 2,048-token limit. Its paper trains 90 steps of 32 prompts x 8 responses, about 4% of the 606 updates of
+1,024 responses here, so this budget is far longer than the one VCSD was designed for.

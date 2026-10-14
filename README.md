@@ -289,11 +289,15 @@ student and uses no external teacher; GRPO on the same student is the RL referen
 
 | Method | GRPO | OPD (sampled tokens) | OPD (full distributions) | VA-OPD | VGS | VCSD |
 | --- | --- | --- | --- | --- | --- | --- |
-| Math reasoning (7) | TBD | TBD | TBD | TBD | TBD | TBD |
-| Vision-dependent reasoning (6) | TBD | TBD | TBD | TBD | TBD | TBD |
-| Perception and hallucination (6) | TBD | TBD | TBD | TBD | TBD | TBD |
-| **Overall** (mean of the three groups) | TBD | TBD | TBD | TBD | TBD | TBD |
-| All (mean of the 19 benchmarks) | TBD | TBD | TBD | TBD | TBD | TBD |
+| Math reasoning (7) | 55.3 | 51.3 | 51.8 | 46.7 | 49.5 | 2.7 |
+| Vision-dependent reasoning (6) | 64.5 | 63.1 | 63.8 | 60.7 | 61.3 | 16.3 |
+| Perception and hallucination (6) | 72.3 | 72.7 | 72.9 | 73.2 | 72.4 | 35.5 |
+| **Overall** (mean of the three groups) | **64.0** | **62.4** | **62.8** | **60.2** | **61.0** | **18.2** |
+| All (mean of the 19 benchmarks) | 63.6 | 61.8 | 62.3 | 59.5 | 60.4 | 17.3 |
+
+Every method at its last step. VCSD's last step comes long after the training budget of its paper; at its best
+validation step (30) its Overall on the 18 benchmarks other than MMK12 is 56.8 (see the
+[OPD README](examples/comparison/opd_qwen3_vl_2b/README.md#best-validation-step)).
 
 ### 📌 About the results
 
