@@ -54,7 +54,7 @@ def test_registry_groups_and_keys():
         by_group.setdefault(spec.group, []).append(spec.key)
 
     assert by_group == {
-        "Reasoning": REASONING,
+        "Reasoning": REASONING + ["visualpuzzles", "zerobench_sub"],
         "Perception": [
             "pope",
             "hallusionbench",
@@ -136,6 +136,8 @@ def test_registry_metric_contracts():
         ("ai2d", "mcq"),
         ("mmmu_val", "mmmu"),
         ("zoombench", "zoombench"),
+        ("visualpuzzles", "mcq"),
+        ("zerobench_sub", "zerobench"),
     ]:
         spec = by_key[key]
         assert (spec.scorer, spec.primary_metric, spec.num_samples, spec.temperature) == (
@@ -152,6 +154,7 @@ def test_registry_metric_contracts():
         "refcoco_val",
         "refcoco_plus_val",
         "refcocog_val",
+        "zerobench_sub",
     }
 
 

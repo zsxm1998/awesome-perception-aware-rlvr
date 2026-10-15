@@ -1321,6 +1321,112 @@ def score_zoombench(
 
 
 # ---------------------------------------------------------------------------
+# ZeroBench sub-questions: the exact match of the official example code (jonathan-roberts1/zerobench,
+# README.md) on the final answer as the reasoning benchmarks read it
+# ---------------------------------------------------------------------------
+
+
+def zerobench_answer(response: str) -> tuple[str, str]:
+    """The final answer of a ZeroBench response, lowercased, and its source (``boxed``, ``answer_tag``, ``none``).
+
+    The answer is read with ``boxed_answer`` (the last ``\\boxed{}``, else the last ``<answer>`` block), where the
+    official code takes the last ``{...}`` of the lowercased response. A response without an answer gives ``""``,
+    the official code's answer when it finds no braces.
+    """
+    answer, source = boxed_answer(response)
+    if source == "boxed" and answer == "None":
+        # mathruler returns "None" for a last box that is not closed, too; only a closed box holds the text "None"
+        start = response.rfind("\\boxed{") + len("\\boxed{")
+        if _balanced_brace_content(response, start)[0] is None:
+            source = "none"
+    if source == "none":
+        return "", "none"
+    return answer.lower(), source
+
+
+def _zerobench_reference(target: Any) -> str:
+    # boxed_answer removes the whitespace around <, > and / of the response (as the training reward does); the
+    # reference gets the same, so that a reference written with such whitespace can still be matched
+    return _PAPO_TAG_SPACE_RE.sub(r"\1", str(target))
+
+
+def zerobench_correct(answer: str, target: Any) -> bool:
+    """The official comparison: ``parsed_answer[:len(ground_truth)].lower() == ground_truth.strip().lower() and
+    len(parsed_answer) == len(ground_truth.strip())``, i.e. the answer equals the stripped reference, ignoring case."""
+    ground_truth = _zerobench_reference(target)
+    return answer[: len(ground_truth)].lower() == ground_truth.strip().lower() and len(answer) == len(
+        ground_truth.strip()
+    )
+
+
+def zerobench_contains(answer: str, target: Any) -> bool:
+    """VLMEvalKit's ``ZEROBench.evaluate``: correct when the stripped reference is contained in the answer, ignoring
+    case (reported in the details only)."""
+    return _zerobench_reference(target).strip().lower() in answer.lower()
+
+
+def zerobench_row_answers(row: dict[str, Any]) -> list[tuple[str, str, bool]]:
+    """(answer, source, correct) per response of a ZeroBench row."""
+    read = [zerobench_answer(str(response)) for response in row.get("responses") or []]
+    return [(answer, source, zerobench_correct(answer, row.get("target"))) for answer, source in read]
+
+
+def zerobench_row_score(row: dict[str, Any]) -> float:
+    read = zerobench_row_answers(row)
+    return sum(float(correct) for _, _, correct in read) / len(read) if read else 0.0
+
+
+def score_zerobench(
+    spec: BenchmarkSpec, rows: PredictionRows, judge_config: JudgeConfig | None, output_dir: Path
+) -> MetricResult:
+    """Accuracy over all sub-questions with the official exact match (mean over the samples of a question), with
+    VLMEvalKit's containment reading and the answer sources in the details."""
+    scores, contained_scores, per_sample = [], [], []
+    source_counts = {"boxed": 0, "answer_tag": 0, "none": 0}
+    k_values = set()
+    for row in rows:
+        read = zerobench_row_answers(row)
+        for _, source, _ in read:
+            source_counts[source] += 1
+        k_values.add(len(read))
+        score = sum(float(correct) for _, _, correct in read) / len(read) if read else 0.0
+        contained = [float(zerobench_contains(answer, row.get("target"))) for answer, _, _ in read]
+        scores.append(score)
+        contained_scores.append(sum(contained) / len(contained) if contained else 0.0)
+        per_sample.append(
+            {
+                "sample_id": row.get("sample_id"),
+                "target": row.get("target"),
+                "answers": [answer for answer, _, _ in read],
+                "sources": [source for _, source, _ in read],
+                "scores": [float(correct) for _, _, correct in read],
+                "mean_accuracy": score,
+                "main_question": (row.get("metadata") or {}).get("main_question"),
+            }
+        )
+    accuracy = sum(scores) / len(scores) if scores else 0.0
+    raw = accuracy * 100.0
+    write_jsonl(output_dir / f"{spec.key}_per_sample.jsonl", per_sample)
+    return MetricResult(
+        spec.key,
+        spec.group,
+        spec.primary_metric,
+        raw,
+        raw,
+        len(rows),
+        details={
+            "scoring": "zerobench_exact_match",
+            "accuracy": accuracy,
+            "vlmevalkit_containment_accuracy": sum(contained_scores) / len(contained_scores)
+            if contained_scores
+            else 0.0,
+            "k": max(k_values) if k_values else 0,
+            "answer_source_counts": source_counts,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # CFPO real-world benchmarks (C-VQA-Real, MARS-Bench, TextVQA)
 # ---------------------------------------------------------------------------
 
@@ -2504,6 +2610,9 @@ def _sample_score_and_correct(spec: BenchmarkSpec, row: dict[str, Any]) -> tuple
     if spec.scorer == "zoombench":
         score = zoombench_row_score(row)
         return score, score >= 0.5
+    if spec.scorer == "zerobench":
+        score = zerobench_row_score(row)
+        return score, score >= 0.5
     return None, None
 
 
@@ -2975,6 +3084,7 @@ SCORERS: dict[str, Scorer] = {
     "mcq": score_mcq,
     "mmmu": score_mmmu,
     "zoombench": score_zoombench,
+    "zerobench": score_zerobench,
     "answer_bbox": score_answer_bbox,
     "grounding_iou": score_grounding_iou,
     "refcoco": score_refcoco,

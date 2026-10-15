@@ -169,6 +169,40 @@ benchmarks:
     num_samples: 8
 
   # ---------------------------------------------------------------------------
+  # Reasoning benchmarks of the S-OPD table without a PAPO-Eval file, greedy, single sample
+  # (S-OPD decodes greedily): VisualPuzzles (four-option puzzles; option accuracy with the
+  # letter extraction of V*, accuracy per reasoning category in the details) and the ZeroBench
+  # sub-questions (open answers; the official exact match on the final answer). ZeroBench is a
+  # gated dataset, so it is optional (left out of `all`).
+  # ---------------------------------------------------------------------------
+  - key: visualpuzzles
+    label: VisualPuzzles
+    group: Reasoning
+    loader: visualpuzzles
+    scorer: mcq
+    primary_metric: overall_accuracy
+    source: neulab/VisualPuzzles (train, the whole benchmark)
+    path: visualpuzzles/train.parquet
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+    metadata:
+      aggregate: micro
+
+  - key: zerobench_sub
+    label: ZeroBench (sub-questions)
+    group: Reasoning
+    loader: zerobench
+    scorer: zerobench
+    primary_metric: overall_accuracy
+    source: jonathan-roberts1/zerobench (zerobench_subquestions; gated)
+    path: zerobench_sub/zerobench_subquestions.parquet
+    max_new_tokens: 2048
+    temperature: 0.0
+    num_samples: 1
+    optional: true
+
+  # ---------------------------------------------------------------------------
   # Perception / hallucination (greedy, single sample).
   # ---------------------------------------------------------------------------
   - key: pope

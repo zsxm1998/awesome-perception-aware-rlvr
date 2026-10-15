@@ -314,6 +314,7 @@ def test_skipped_result_and_scorer_registry():
         "mcq",
         "mmmu",
         "zoombench",
+        "zerobench",
         "answer_bbox",
         "grounding_iou",
         "refcoco",

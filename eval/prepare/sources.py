@@ -27,8 +27,10 @@ from . import (
     papo_eval,
     refcoco,
     seed_bench,
+    visualpuzzles,
     vppo_eval,
     vstar,
+    zerobench,
     zoombench,
 )
 from .base import BenchmarkSource
@@ -39,6 +41,8 @@ SOURCES: dict[str, BenchmarkSource] = {
     for module in (
         papo_eval,
         vppo_eval,
+        visualpuzzles,
+        zerobench,
         lmms_lab,
         mmstar,
         blink,
