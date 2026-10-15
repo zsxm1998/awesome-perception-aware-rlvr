@@ -55,7 +55,19 @@ DATASETS: dict[str, TrainDataset] = {
         repo_id="PAPOGalaxy/PAPO_ViRL39K_train",
         splits={"train": ["data/train-*.parquet"]},
         description="ViRL39K (38,870 multimodal reasoning problems) as preprocessed by PAPO",
-        used_by=["papo", "vppo", "dvrp", "pgpo", "cgpo", "comparison", "opd_comparison", "va_opd", "vcsd", "vgpo"],
+        used_by=[
+            "papo",
+            "vppo",
+            "dvrp",
+            "pgpo",
+            "cgpo",
+            "comparison",
+            "opd_comparison",
+            "va_opd",
+            "vcsd",
+            "vgpo",
+            "s_opd",
+        ],
     ),
     "mmk12": TrainDataset(
         name="mmk12",
@@ -75,6 +87,7 @@ DATASETS: dict[str, TrainDataset] = {
             "vcsd",
             "vision_opd",
             "vgpo",
+            "s_opd",
         ],
     ),
     "geometry3k": TrainDataset(
@@ -86,7 +99,7 @@ DATASETS: dict[str, TrainDataset] = {
             "test": ["data/test-*.parquet"],
         },
         description="Geometry3K (2,101 train / 300 val / 601 test)",
-        used_by=["tor", "pepo", "vepo", "va_opd", "noisyrollout"],  # VEPO: through the vepo dataset
+        used_by=["tor", "pepo", "vepo", "va_opd", "noisyrollout", "s_opd"],  # VEPO: through the vepo dataset
     ),
     "k12": TrainDataset(
         name="k12",
@@ -199,6 +212,7 @@ METHOD_GROUPS: dict[str, list[str]] = {
     "vision_opd": ["vision_opd", "mmk12"],
     "vgpo": ["virl39k", "mmk12"],
     "vapo": ["vapo", "vapo_val"],
+    "s_opd": ["virl39k", "mmk12", "geometry3k"],
 }
 
 

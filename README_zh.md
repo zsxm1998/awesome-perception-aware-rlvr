@@ -5,14 +5,14 @@
 **面向大视觉语言模型的感知导向可验证奖励强化学习（Reinforcement Learning with Verifiable Rewards, RLVR）与在线策略蒸馏（On-Policy Distillation, OPD）：统一复现、统一设定对比与一键评测，并附论文清单**
 
 RLVR：PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · NoisyRollout · VGPO · VAPO · GRIT · DeepEyes · CGPO<br>
-OPD：VA-OPD · VGS · VCSD · Vision-OPD<br>
+OPD：VA-OPD · VGS · VCSD · Vision-OPD · S-OPD<br>
 统一的 EasyR1 代码库，30+ 个评测基准
 
 🌟 **[CGPO](#-cgpo-acm-mm-2026-oral)（ACM MM 2026 Oral）官方代码仓库** 🌟
 
 [English](README.md) | [简体中文](README_zh.md)
 
-[![Awesome](https://awesome.re/badge.svg)](https://github.com/sindresorhus/awesome) [![Papers](https://img.shields.io/badge/Papers-125-blue)](#-论文清单) [![Reproduced](https://img.shields.io/badge/Reproduced-18-brightgreen)](#-已复现方法) [![CGPO](https://img.shields.io/badge/CGPO-ACM%20MM%202026%20Oral-8A2BE2)](https://doi.org/10.1145/3767308.3835969) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) [![Built on EasyR1](https://img.shields.io/badge/built%20on-EasyR1-orange)](https://github.com/hiyouga/EasyR1)
+[![Awesome](https://awesome.re/badge.svg)](https://github.com/sindresorhus/awesome) [![Papers](https://img.shields.io/badge/Papers-125-blue)](#-论文清单) [![Reproduced](https://img.shields.io/badge/Reproduced-19-brightgreen)](#-已复现方法) [![CGPO](https://img.shields.io/badge/CGPO-ACM%20MM%202026%20Oral-8A2BE2)](https://doi.org/10.1145/3767308.3835969) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) [![Built on EasyR1](https://img.shields.io/badge/built%20on-EasyR1-orange)](https://github.com/hiyouga/EasyR1)
 
 </div>
 
@@ -25,7 +25,7 @@ RLVR 能提升大视觉语言模型的推理能力，但它的奖励只检查最
 本仓库提供：
 
 - **[CGPO](#-cgpo-acm-mm-2026-oral) 官方实现**（ACM MM 2026 Oral）；
-- **[方法复现](#-已复现方法)**：17 个方法（13 个 RLVR、4 个 OPD），各自使用原论文的数据、模型和超参数，并附带论文中对比的基线；
+- **[方法复现](#-已复现方法)**：18 个方法（13 个 RLVR、5 个 OPD），各自使用原论文的数据、模型和超参数，并附带论文中对比的基线；
 - **[统一设定对比](#-统一设定对比)**：两个对比各用一套统一设定，RLVR 方法（除 DeepEyes 外）在 Qwen3-VL-4B 上对比；OPD 方法以 Qwen3-VL-2B 为学生，以经 GRPO 训练的 Qwen3-VL-4B 为教师进行对比；
 - **[一键评测](eval/README.md)**：覆盖这些论文所用评测基准的并集，每个基准都有下载处理脚本，每篇论文都有对应的评测套件；
 - **[论文清单](#-论文清单)**：感知导向的 RLVR（含基于定位的推理与看图思考，即 thinking with images）与 OPD，按训练环节分类，以及这一方向常用的评测基准。
@@ -53,6 +53,7 @@ RLVR 能提升大视觉语言模型的推理能力，但它的奖励只检查最
 
 ## 🔥 更新
 
+- **2026-10**：复现 [S-OPD](examples/reproduction/s_opd/README.md)（给 OPD 加两项学生侧损失：经教师门控的原图与遮挡图对比，以及原图与加噪图的一致），S-OPD 加入 [OPD 统一对比](examples/comparison/opd_qwen3_vl_2b/README_zh.md)，评测新增 VisualPuzzles 和 ZeroBench（子问题）。
 - **2026-10**：两个[统一设定对比](#-统一设定对比)的结果，每个方法给出最后一步和验证最优步；[论文清单](#-论文清单)新增 30 篇感知导向的 OPD 论文。
 - **2026-10**：OPD：教师模型（冻结模型或策略的 EMA）、基于采样 token 和基于完整下一 token 分布的两种 OPD 目标，复现 [VA-OPD](examples/reproduction/va_opd/README.md)、[VGS](examples/reproduction/vgs/README.md)、[VCSD](examples/reproduction/vcsd/README.md)、[Vision-OPD](examples/reproduction/vision_opd/README.md)，新增 [OPD 统一对比](examples/comparison/opd_qwen3_vl_2b/README_zh.md)，评测新增 ZoomBench、BLINK、MMStar、AI2D、MMMU。
 - **2026-10**：🎉 首次发布：[CGPO](#-cgpo-acm-mm-2026-oral)（ACM MM 2026 Oral）官方实现、13 个复现的 RLVR 方法（PAPO、VPPO、DVRP、ToR、PGPO、PEPO、CFPO、VEPO、NoisyRollout、VGPO、VAPO、GRIT、DeepEyes）、Qwen3-VL-4B 上的统一设定对比、一键评测。
@@ -60,7 +61,7 @@ RLVR 能提升大视觉语言模型的推理能力，但它的奖励只检查最
 ## 🚧 计划
 
 - [x] 两个统一设定对比的结果（RLVR 在 Qwen3-VL-4B 上，OPD 在 Qwen3-VL-2B 上）。
-- [x] OPD：GRPO、DAPO 之外的基础训练方式（教师模型，基于采样 token 和基于完整分布的两种目标），及 VA-OPD、VGS、VCSD、Vision-OPD。
+- [x] OPD：GRPO、DAPO 之外的基础训练方式（教师模型，基于采样 token 和基于完整分布的两种目标），及 VA-OPD、VGS、VCSD、Vision-OPD、S-OPD。
 - [x] 统一设定对比加入更多单轮方法：NoisyRollout、VGPO、VAPO。
 - [ ] 在带证据框的数据上新开定位推理对比：TreeVGR、DeFacto、iVGR，与 GRIT、CGPO 一起比较。
 - [ ] 更多 DeepEyes 方向的看图思考方法：MGPO、Mini-o3、Pixel Reasoner，以及 MED 的"有工具/无工具"评测。
@@ -131,6 +132,7 @@ bash scripts/eval.sh checkpoints/CGPO-Reproduce/qwen3_vl_8b_cgpo --suite cgpo
 | [**VCSD**](examples/reproduction/vcsd/README.md) | **蒸馏目标** | [Visual Contrastive Self-Distillation](https://arxiv.org/abs/2607.21556)<br>Yijun Liang et al. · `2607.21556` | arXiv | [GitHub](https://github.com/joliang17/VCSD) | 从 EMA 教师自蒸馏：以原图分布按其与全黑图的对比锐化后作为前向 KL 的目标，不需要答案或奖励。 | Qwen3-VL-2B/4B/8B、Qwen3.5-2B/4B/9B，EMA 自教师，ViRL39K |
 | [**VGS**](examples/reproduction/vgs/README.md) | **蒸馏目标** · 辅助目标 | [Decomposed On-Policy Distillation for Vision-Language Reasoning: Steering Gradients for Visual Grounding](https://arxiv.org/abs/2606.00564)<br>Hee Suk Yoon et al. · `2606.00564` | ICML 2026 (Spotlight) | - | 把教师分解为语言先验和视觉增益：在反向 KL 之外，学生拟合自己的纯文本分布乘以教师有图/无图的概率比。 | Qwen3-VL-2B / 4B 学生，经 GRPO 训练的 Qwen3-VL-8B 教师，Vision-SR1-47K |
 | [**VA-OPD**](examples/reproduction/va_opd/README.md) | **信用分配** | [Visual-Advantage On-Policy Distillation for Vision-Language Models](https://arxiv.org/abs/2605.21924)<br>Ruiqi Liu et al. · `2605.21924` | arXiv | - | 按教师的视觉优势（原图下比像素化图像下高出的对数概率）逐回答、逐 token 加权蒸馏。 | Qwen3-VL-2B 学生，4B / 8B / 32B 教师，Geometry3K / ViRL39K |
+| [**S-OPD**](examples/reproduction/s_opd/README.md) | **辅助目标** | [Is Better Teacher Supervision Enough? Unlocking Student-side Learning in Multimodal On-Policy Distillation](https://arxiv.org/abs/2609.39120)<br>Siyuan Liu et al. · `2609.39120` | arXiv | [GitHub](https://github.com/Sirilaw/S-OPD) | 在基于采样 token 的 OPD 上加两项学生侧损失：在遮挡会降低教师对数概率的 token 上，拉开学生在原图与遮挡图上的预测；同时拉近学生在原图与加噪图上的预测。 | Qwen3-VL-2B / 4B 学生，Qwen3-VL-8B 或经 GRPO 训练的 8B 教师，ViRL39K / Geometry3K |
 
 EasyR1 原有的算法（GRPO、DAPO、GSPO、CISPO、SAPO、REINFORCE++、RLOO、ReMax）仍然可用。OPD 方法从教师学习，不使用可验证奖励；它们共用教师（`worker.teacher`）和两种基础目标：基于采样 token 的 OPD（`algorithm.adv_estimator=teacher_log_ratio`）和基于完整下一 token 分布的 OPD（`algorithm.distill_loss_coef`），见 [docs/algorithm_parameters.md](docs/algorithm_parameters.md#on-policy-distillation)。
 
@@ -212,7 +214,7 @@ python3 scripts/finalize_run.py checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_pa
 两个对比各用一套统一设定训练已复现的方法，并在同样的 19 项基准上评测，分为三组：数学推理、依赖视觉的推理、感知与幻觉。[examples/comparison/](examples/comparison/README_zh.md) 列出了这两个对比，并说明了[这些结果能说明什么、不能说明什么](examples/comparison/README_zh.md#关于结果的说明)。
 
 - **[RLVR](examples/comparison/rlvr_qwen3_vl_4b/README_zh.md)**：除 DeepEyes 外的所有 RLVR 方法（[原因](examples/comparison/rlvr_qwen3_vl_4b/README_zh.md#为什么不包含-deepeyes)）在 Qwen3-VL-4B-Instruct 上训练，使用相同的数据（ViRL39K / MMK12）和相同的 GRPO 超参数，只有方法相关的参数不同，各方法沿用其论文中的图像扰动方式。
-- **[OPD](examples/comparison/opd_qwen3_vl_2b/README_zh.md)**：两种基础 OPD 目标、VA-OPD、VGS、VCSD 以 Qwen3-VL-2B 为学生，以经 GRPO 训练的 Qwen3-VL-4B 为教师（VCSD 改为从学生自身的 EMA 蒸馏），并与同一学生上的 GRPO 对照，使用相同的数据、训练量和评测；Vision-OPD 需要区域标注，这份数据没有。
+- **[OPD](examples/comparison/opd_qwen3_vl_2b/README_zh.md)**：两种基础 OPD 目标、VA-OPD、VGS、VCSD、S-OPD 以 Qwen3-VL-2B 为学生，以经 GRPO 训练的 Qwen3-VL-4B 为教师（VCSD 改为从学生自身的 EMA 蒸馏），并与同一学生上的 GRPO 对照，使用相同的数据、训练量和评测；Vision-OPD 需要区域标注，这份数据没有。
 
 每个对比的 README 给出每个方法在各组和各基准上的分数（最后一步和验证最优步）以及训练时长。
 
@@ -387,12 +389,6 @@ python3 scripts/finalize_run.py checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_pa
 | 2026-07 | [Correcting What You Cannot See: Credit Assignment for Perception Distillation in Multimodal Reasoners](https://arxiv.org/abs/2607.28336)<br>Feng Xiong et al. · `2607.28336` | arXiv | - | **PCD**: Strengthens distillation only where downstream failure and teacher-student disagreement both point to a correctable perception error, with separated perception and reasoning rollouts. |
 | 2026-07 | [Med-OPD: Improving Medical Vision-Language Models via Evidence-Aware On-Policy Distillation](https://arxiv.org/abs/2607.16303)<br>Yunhang Qian et al. · `2607.16303` | arXiv | [GitHub](https://github.com/yunhang8658/MedOPD) | **Med-OPD**: A medical evidence advantage from a teacher counterfactual focuses distillation on the diagnosis-critical, evidence-dependent tokens of medical VLMs. |
 | 2026-06 | [V-Zero: Answer-Label-Free On-Policy Distillation with Contrastive Evidence Gating for Fine-Grained Visual Reasoning](https://arxiv.org/abs/2606.25319)<br>Haoxiang Sun et al. · `2606.25319` | arXiv | [GitHub](https://github.com/eVI-group-SCU/V-Zero) | **V-Zero**: Answer-label-free OPD for fine-grained visual reasoning: a question-relevant crop and a negative view gate the token-level distillation. |
-
-#### 辅助目标
-
-| Date | Paper | Venue | Code | Key idea |
-|---|---|---|---|---|
-| 2026-09 | [Is Better Teacher Supervision Enough? Unlocking Student-side Learning in Multimodal On-Policy Distillation](https://arxiv.org/abs/2609.39120)<br>Siyuan Liu et al. · `2609.39120` | arXiv | [GitHub](https://github.com/Sirilaw/S-OPD) | **S-OPD**: Strengthens student-side perception: contrasts the student under the original and a masked image with teacher-based token gating, and aligns it under noise-perturbed images. |
 
 ### 📏 评测基准与数据集
 

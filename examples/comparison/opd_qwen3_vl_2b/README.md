@@ -3,11 +3,11 @@
 [English](README.md) | [简体中文](README_zh.md)
 
 On-policy distillation (OPD) trains a student on its own rollouts toward a stronger teacher's next-token
-distributions. The four OPD papers reproduced in this repository ([VA-OPD](../../reproduction/va_opd/README.md),
+distributions. The five OPD papers reproduced in this repository ([VA-OPD](../../reproduction/va_opd/README.md),
 [VGS](../../reproduction/vgs/README.md), [VCSD](../../reproduction/vcsd/README.md),
-[Vision-OPD](../../reproduction/vision_opd/README.md)) use different students, teachers, data and evaluations.
-This directory trains the three that do not need region annotations, the two base OPD objectives and a GRPO
-reference under **one** setting, that of the [RLVR comparison](../rlvr_qwen3_vl_4b/README.md) with a 2B student and
+[Vision-OPD](../../reproduction/vision_opd/README.md), [S-OPD](../../reproduction/s_opd/README.md)) use different
+students, teachers, data and evaluations. This directory trains the four that do not need region annotations, the
+two base OPD objectives and a GRPO reference under **one** setting, that of the [RLVR comparison](../rlvr_qwen3_vl_4b/README.md) with a 2B student and
 a teacher trained in that comparison: Qwen3-VL-4B-Instruct after GRPO, at its best validation step (see
 [Teacher](#teacher)). Each script only sets `ALGO_ARGS`; everything else comes from [common.sh](common.sh). The
 other comparisons are listed in [examples/comparison/](../README.md).
@@ -76,6 +76,7 @@ weights. `TEACHER_PATH` or `worker.teacher.model.model_path=...` on the command 
 | `va_opd.sh` | [VA-OPD](../../reproduction/va_opd/README.md) | `opd_full` + `distill_weighting=va_opd` (pixelation 0.1, teacher-scored `sampled_positive_log_ratio`, τ 1, p_v 0.2, λ 0.5) |
 | `vgs.sh` | [VGS](../../reproduction/vgs/README.md) | `distill_target=visual_gain`, `distill_contrast_view=no_image`, γ 2, λ 0.01, top 30% by the teacher's visual dependency per micro-batch, η 0.41 |
 | `vcsd.sh` | [VCSD](../../reproduction/vcsd/README.md) | EMA teacher (0.05), `distill_target=contrast_sharpened`, `distill_contrast_view=black`, forward KL at T=2 (times 4), α 1, β 0.1 |
+| `s_opd.sh` | [S-OPD](../../reproduction/s_opd/README.md) | `opd_sampled` + TPC (`random_patch` 16 px, p 0.6, `visual_sensitivity_loss_weighting=teacher`, 0.02) + PA (`rgb_gaussian_noise` σ 0.2, `visual_robustness_loss_coef` 0.02) |
 | `opd_full_seq.sh` | optional ablation, not in the table | `opd_full.sh` averaged per response, then over responses |
 
 Settings of each paper that belong to its own recipe rather than to its method (batch sizes, learning rates,
@@ -94,6 +95,10 @@ are kept. Notes:
   the whole loss changes little. Its gate takes the 70% quantile within each update micro-batch.
 - **VCSD** applies the distillation temperature to every distribution, as its paper describes (its released code
   applies only the T² factor; see the VCSD README).
+- **S-OPD** builds on OPD from sampled tokens, so its row compares with `opd_sampled.sh`. It uses the weights of
+  its paper's main experiments (0.02 and 0.02), masks 16 px blocks with probability 0.6 and adds noise with σ 0.2;
+  the masked and the noisy copies are drawn on the resized image, as the comparison's other views, and one per
+  response (its released code draws one per sample). Its teacher gate uses the comparison's teacher.
 - **Vision-OPD** is not included: it needs a region annotation per question for the teacher's crop, which
   ViRL39K does not have.
 - The student is the 2B model: Qwen3-VL-2B-Instruct scores 10-22 points below the 4B and 8B on most math and
@@ -105,7 +110,7 @@ are kept. Notes:
 bash scripts/prepare_data.sh opd_comparison
 bash examples/comparison/rlvr_qwen3_vl_4b/grpo.sh                    # the teacher, if the RLVR comparison has not run it
 python3 scripts/finalize_run.py checkpoints/Comparison-Qwen3-VL-4B/grpo   # keeps its last and best step
-for m in grpo opd_sampled opd_full va_opd vgs vcsd; do
+for m in grpo opd_sampled opd_full va_opd vgs vcsd s_opd; do
     bash examples/comparison/opd_qwen3_vl_2b/$m.sh
 done
 bash scripts/prepare_eval_data.sh opd
@@ -117,7 +122,8 @@ Checkpoints go to `checkpoints/Comparison-OPD-Qwen3-VL-2B/<method>`. `MODEL_PATH
 student and the teacher; any `key=value` appended to a script overrides the shared setting. The teacher adds
 forward passes and about 2 GB of bf16 weights per GPU on 4 GPUs: in the update, one forward per micro-batch for
 the distillation losses (two for VGS and VCSD, with their contrast view); before the update, the log-probs of
-the sampled tokens for OPD from sampled tokens and for VA-OPD's weights (VA-OPD also on the pixelated image).
+the sampled tokens for OPD from sampled tokens, VA-OPD's weights and S-OPD (VA-OPD also on the pixelated image,
+S-OPD on the masked one, where the student also scores its masked and noisy copies).
 
 ## Results
 
@@ -135,6 +141,7 @@ same two means (the mean of the 3 groups, in bold, and the mean of the 19 benchm
 | VA-OPD | 46.7 | 60.7 | 73.2 | **60.2** | 59.5 | 34.4 (1.64×) |
 | VGS | 49.5 | 61.3 | 72.4 | **61.0** | 60.4 | 35.3 (1.68×) |
 | VCSD (no external teacher) | 2.7 | 16.3 | 35.5 | **18.2** | 17.3 | 40.3 (1.92×) |
+| S-OPD | TBD | TBD | TBD | **TBD** | TBD | TBD |
 
 **Training time** is the wall-clock time in hours of the training steps on 4 A800 80GB GPUs (606 OPD steps, or
 the 202 GRPO steps of 3 updates each: the same 606 updates of 1,024 responses), with the rollout, the teacher's

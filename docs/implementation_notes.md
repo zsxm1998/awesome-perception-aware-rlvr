@@ -105,8 +105,8 @@ the batch is full:
 
 ## On-policy distillation
 
-The OPD methods (the [OPD comparison](../examples/comparison/opd_qwen3_vl_2b/README.md), VA-OPD, VGS, VCSD and
-Vision-OPD) share one teacher and two objectives; the parameters are listed in
+The OPD methods (the [OPD comparison](../examples/comparison/opd_qwen3_vl_2b/README.md), VA-OPD, VGS, VCSD,
+Vision-OPD and S-OPD) share one teacher and two objectives; the parameters are listed in
 [algorithm_parameters.md](algorithm_parameters.md#on-policy-distillation).
 
 **Teacher.** `worker.teacher` lives in the actor's worker. A teacher model (`source=model`) is a frozen FSDP

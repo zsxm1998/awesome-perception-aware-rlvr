@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README_zh.md)
 
-在线策略蒸馏（On-Policy Distillation, OPD）让学生在自己采样的回答上向更强教师的下一 token 分布学习。本仓库复现的四篇 OPD 论文（[VA-OPD](../../reproduction/va_opd/README.md)、[VGS](../../reproduction/vgs/README.md)、[VCSD](../../reproduction/vcsd/README.md)、[Vision-OPD](../../reproduction/vision_opd/README.md)）使用不同的学生、教师、数据和评测。本目录在**同一套**设定下训练其中不需要区域标注的三个方法、两种基础 OPD 目标和一个 GRPO 参照：沿用 [RLVR 对比](../rlvr_qwen3_vl_4b/README_zh.md)的设定，学生换成 2B 模型，教师是在该对比中经 GRPO 训练的 Qwen3-VL-4B-Instruct 的验证最优步（见[教师](#教师)）。每个脚本只设置 `ALGO_ARGS`；其余配置都来自 [common.sh](common.sh)。其他对比见 [examples/comparison/](../README_zh.md)。
+在线策略蒸馏（On-Policy Distillation, OPD）让学生在自己采样的回答上向更强教师的下一 token 分布学习。本仓库复现的五篇 OPD 论文（[VA-OPD](../../reproduction/va_opd/README.md)、[VGS](../../reproduction/vgs/README.md)、[VCSD](../../reproduction/vcsd/README.md)、[Vision-OPD](../../reproduction/vision_opd/README.md)、[S-OPD](../../reproduction/s_opd/README.md)）使用不同的学生、教师、数据和评测。本目录在**同一套**设定下训练其中不需要区域标注的四个方法、两种基础 OPD 目标和一个 GRPO 参照：沿用 [RLVR 对比](../rlvr_qwen3_vl_4b/README_zh.md)的设定，学生换成 2B 模型，教师是在该对比中经 GRPO 训练的 Qwen3-VL-4B-Instruct 的验证最优步（见[教师](#教师)）。每个脚本只设置 `ALGO_ARGS`；其余配置都来自 [common.sh](common.sh)。其他对比见 [examples/comparison/](../README_zh.md)。
 
 > [!IMPORTANT]
 > **这些结果仅供参考，不作为对方法本身的评判。** 这些方法都是我们的复现，每个配置只训练一次（RLVR 对比中同一配置的两次运行，三组平均相差 0.6），统一设定也不是各方法设计和调参时所用的设定。阅读表格前请先看[关于结果的说明](../README_zh.md#关于结果的说明)。
@@ -43,6 +43,7 @@
 | `va_opd.sh` | [VA-OPD](../../reproduction/va_opd/README.md) | `opd_full` + `distill_weighting=va_opd`（像素化 0.1，由教师打分的 `sampled_positive_log_ratio`，τ 1，p_v 0.2，λ 0.5） |
 | `vgs.sh` | [VGS](../../reproduction/vgs/README.md) | `distill_target=visual_gain`，`distill_contrast_view=no_image`，γ 2，λ 0.01，在每个 micro-batch 内按教师的视觉依赖取前 30%，η 0.41 |
 | `vcsd.sh` | [VCSD](../../reproduction/vcsd/README.md) | EMA 教师（0.05），`distill_target=contrast_sharpened`，`distill_contrast_view=black`，T=2 下的前向 KL（乘以 4），α 1，β 0.1 |
+| `s_opd.sh` | [S-OPD](../../reproduction/s_opd/README.md) | `opd_sampled` + TPC（`random_patch` 16 px，p 0.6，`visual_sensitivity_loss_weighting=teacher`，0.02）+ PA（`rgb_gaussian_noise` σ 0.2，`visual_robustness_loss_coef` 0.02） |
 | `opd_full_seq.sh` | 可选消融，不在表中 | `opd_full.sh` 改为先在每个回答内平均、再在回答间平均 |
 
 各论文中属于其基础配置而非方法本身的设置（批大小、学习率、长度、数据和提示词）都换成统一设定；方法自身的组件和常数保持不变。说明：
@@ -51,6 +52,7 @@
 - **损失平均方式。** 所有方法都在批次内的所有回答 token 上平均，与已公开的 OPD 代码（VCSD、Vision-OPD）以及 verl、TRL 和 NeMo-RL 一致；论文中的损失写成先在每个回答内平均、再在回答间平均。VA-OPD 的权重按定义在每道题内归一化（同一道题的权重之和为 1），因此它与 `opd_full.sh` 的差别也包含这一归一化；`opd_full_seq.sh`（按回答平均）可以把这部分分离出来。
 - **VGS** 使用 η = 0.41，即论文给 2B 学生的值；有梯度裁剪和 AdamW 时，整个损失乘一个常数影响不大。它的门控在每个更新 micro-batch 内取 70% 分位数。
 - **VCSD** 按论文所述对所有分布都施加蒸馏温度（其公开代码只乘了 T² 因子；见 VCSD README）。
+- **S-OPD** 建立在基于采样 token 的 OPD 之上，所以它的对照是 `opd_sampled.sh`。两个系数取其论文主实验的值（0.02 和 0.02），遮挡块为 16 px、遮挡概率 0.6，噪声 σ 为 0.2；遮挡图和加噪图与本对比的其他视图一样在缩放后的图像上生成，每条回答各一份（其公开代码按样本各生成一份）。教师门控使用本对比的教师。
 - **Vision-OPD** 没有包含在内：它需要每道题的区域标注来给教师裁剪图像，而 ViRL39K 没有这种标注。
 - 学生用 2B 模型：在 Qwen3-VL 技术报告（表 4）的大多数数学和推理基准上，Qwen3-VL-2B-Instruct 比 4B 和 8B 低 10-22 分，因此有向教师学习的空间。
 
@@ -60,7 +62,7 @@
 bash scripts/prepare_data.sh opd_comparison
 bash examples/comparison/rlvr_qwen3_vl_4b/grpo.sh                    # 教师（如果 RLVR 对比还没有运行它）
 python3 scripts/finalize_run.py checkpoints/Comparison-Qwen3-VL-4B/grpo   # 保留其最后一步和最优步
-for m in grpo opd_sampled opd_full va_opd vgs vcsd; do
+for m in grpo opd_sampled opd_full va_opd vgs vcsd s_opd; do
     bash examples/comparison/opd_qwen3_vl_2b/$m.sh
 done
 bash scripts/prepare_eval_data.sh opd
@@ -68,7 +70,7 @@ bash scripts/eval.sh checkpoints/Comparison-OPD-Qwen3-VL-2B/va_opd --suite opd
 python3 scripts/finalize_run.py checkpoints/Comparison-OPD-Qwen3-VL-2B/*   # 训练结束后：保留最后一步和最优步
 ```
 
-检查点保存在 `checkpoints/Comparison-OPD-Qwen3-VL-2B/<method>`。`MODEL_PATH` 和 `TEACHER_PATH` 分别设置学生和教师；在脚本后追加 `key=value` 可以覆盖统一设定。教师会增加前向计算，在 4 张 GPU 上每张约多占 2 GB 的 bf16 权重：更新时，蒸馏损失在每个 micro-batch 做一次教师前向（VGS 和 VCSD 还要算对照视图，共两次）；更新前，基于采样 token 的 OPD 和 VA-OPD 的权重需要教师给出采样 token 的 log-prob（VA-OPD 还要在像素化的图像上算一次）。
+检查点保存在 `checkpoints/Comparison-OPD-Qwen3-VL-2B/<method>`。`MODEL_PATH` 和 `TEACHER_PATH` 分别设置学生和教师；在脚本后追加 `key=value` 可以覆盖统一设定。教师会增加前向计算，在 4 张 GPU 上每张约多占 2 GB 的 bf16 权重：更新时，蒸馏损失在每个 micro-batch 做一次教师前向（VGS 和 VCSD 还要算对照视图，共两次）；更新前，基于采样 token 的 OPD、VA-OPD 的权重和 S-OPD 需要教师给出采样 token 的 log-prob（VA-OPD 还要在像素化的图像上算一次，S-OPD 还要在遮挡图上算一次，同时学生也要在遮挡图和加噪图上各算一次）。
 
 ## 结果
 
@@ -84,6 +86,7 @@ python3 scripts/finalize_run.py checkpoints/Comparison-OPD-Qwen3-VL-2B/*   # 训
 | VA-OPD | 46.7 | 60.7 | 73.2 | **60.2** | 59.5 | 34.4 (1.64×) |
 | VGS | 49.5 | 61.3 | 72.4 | **61.0** | 60.4 | 35.3 (1.68×) |
 | VCSD（无外部教师） | 2.7 | 16.3 | 35.5 | **18.2** | 17.3 | 40.3 (1.92×) |
+| S-OPD | TBD | TBD | TBD | **TBD** | TBD | TBD |
 
 **训练时长**是训练步在 4 张 A800 80GB 上的墙钟时间（小时）：OPD 为 606 步，GRPO 为 202 步、每步更新 3 次，两者都是 606 次更新、每次 1,024 个回答；包含采样、教师前向、奖励和更新，不含验证和检查点保存；括号中是相对 GRPO 的倍数。部分运行与另一个运行共用一个 8 卡节点，因此几个百分点以内的差异可能来自节点负载。VCSD 越来越多的回答写到 2,048 token 的上限，所以耗时更长。
 

@@ -7,7 +7,7 @@
 | 对比 | 方法 | 统一设定 | 结果 |
 | --- | --- | --- | --- |
 | [Qwen3-VL-4B-Instruct 上的 RLVR 对比](rlvr_qwen3_vl_4b/README_zh.md) | GRPO 和 DAPO 基线；PAPO、VPPO、ToR、DVRP、PGPO、PEPO、CFPO、VEPO、NoisyRollout、VGPO、VAPO、GRIT、CGPO | ViRL39K，202 步，每步 384 道题 × 8 个回答，GRPO 超参数，4 张 A800 | 三组共 19 项基准，最后一步和验证最优步；训练时长 |
-| [Qwen3-VL-2B-Instruct 上的 OPD 对比](opd_qwen3_vl_2b/README_zh.md) | GRPO 参照；基于采样 token 的 OPD、基于完整分布的 OPD、VA-OPD、VGS、VCSD | 沿用 RLVR 对比的数据、提示词和长度；以经 GRPO 训练的 Qwen3-VL-4B-Instruct 为教师；606 次更新，每次 1,024 个回答，4 张 A800 | 同样的 19 项基准，最后一步和验证最优步；训练时长 |
+| [Qwen3-VL-2B-Instruct 上的 OPD 对比](opd_qwen3_vl_2b/README_zh.md) | GRPO 参照；基于采样 token 的 OPD、基于完整分布的 OPD、VA-OPD、VGS、VCSD、S-OPD | 沿用 RLVR 对比的数据、提示词和长度；以经 GRPO 训练的 Qwen3-VL-4B-Instruct 为教师；606 次更新，每次 1,024 个回答，4 张 A800 | 同样的 19 项基准，最后一步和验证最优步；训练时长 |
 
 DeepEyes（RLVR）和 Vision-OPD（OPD）不在这两个对比中，原因见各对比的 README。
 
