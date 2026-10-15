@@ -32,7 +32,7 @@ Used by entropy logging, entropy masking, and entropy regularization paths share
 
 ## Decremental / Counterfactual View Controls
 
-Used by PAPO, VPPO, ToR, CGPO, DVRP, PGPO, CFPO and VEPO whenever a decremental / counterfactual auxiliary view is enabled.
+Used by PAPO, VPPO, ToR, CGPO, DVRP, PGPO, CFPO, VEPO and S-OPD whenever a decremental / counterfactual auxiliary view is enabled.
 
 - `algorithm.corrupt_image`
 - `algorithm.corrupt_image_kwargs`: e.g. `random_patch` takes `patch_size`, `black_prob` and `mask_before_resize` (mask the original image before resizing, as PAPO's code); `gaussian_noise` takes `std`, added to the image processor's normalized pixel values (as VEPO's code)
@@ -53,6 +53,12 @@ Used by perception-token selection and response-level scaling. The default keeps
 - `algorithm.visual_sensitivity_entropy_gate`
 - `algorithm.visual_sensitivity_reference`: `current`, `old`, or `teacher` (the distillation teacher scores both views; VA-OPD, with `distill_weighting`). With `hidden_state_similarity` and `advantage_scaling_method=vgpo`, `old` scores the tokens in the old log-prob forward
 - `algorithm.visual_sensitivity_loss_coef`
+- `algorithm.visual_sensitivity_loss_weighting`: `none` (default) or `teacher` (S-OPD): before the update the teacher
+  (`worker.teacher`) scores the same `corrupt_image` view as the student; the sensitivity loss of token t is weighted by
+  w_t = max(log q(y_t | image) − log q(y_t | view), 0) and averaged over the tokens with w_t > 0 (over the update
+  mini-batch with `loss_avg_mode=token`; within each response, at least one token in the denominator, with `seq`).
+  Logs `algo/sensitivity/teacher_gate_fraction` (share of response tokens with w_t > 0) and
+  `algo/sensitivity/teacher_gate_mean` (mean w_t over them)
 - `algorithm.decremental_entropy_coef`
 - `algorithm.top_perception_quantile`
 - `algorithm.perception_thr_granularity`: as `entropy_thr_granularity`
@@ -97,15 +103,17 @@ Used by ToR.
 
 ## DVRP Incremental View
 
-Used by DVRP-style incremental-view training.
+Used by DVRP and S-OPD.
 
-- `algorithm.incremental_image_transform`
-- `algorithm.incremental_image_kwargs`
+- `algorithm.incremental_image_transform`: `vp_diffusion` (DVRP) or `rgb_gaussian_noise` (S-OPD: N(0, std²) on the
+  [0, 1] RGB pixels, clipped and rounded to 8 bits)
+- `algorithm.incremental_image_kwargs`: `rgb_gaussian_noise` takes `std` (default 0.2) and `noise_before_resize`
+  (default false; true noises the image at its original resolution, then resizes it, as S-OPD's code)
 - `algorithm.visual_robustness_loss_coef`
 - `algorithm.incremental_entropy_coef`
-- `algorithm.noise_t_init`
-- `algorithm.noise_gamma`
-- `algorithm.noise_t_max` (at most 1000): the noised view uses step t of NoisyRollout's 1,000-step forward-diffusion schedule
+- `algorithm.noise_t_init`, `algorithm.noise_gamma` (`vp_diffusion` only)
+- `algorithm.noise_t_max` (`vp_diffusion` only, at most 1000): the noised view uses step t of NoisyRollout's 1,000-step
+  forward-diffusion schedule
 
 ## Rollouts from Transformed Images
 
@@ -185,6 +193,9 @@ Objective from sampled tokens (as verl's and NeMo-RL's OPD):
 
 - `algorithm.adv_estimator=teacher_log_ratio`: advantage log q(y_t) − log π_old(y_t) per token, with the PPO loss
 - `algorithm.teacher_log_ratio_clip` (default 10, `null` for none)
+- S-OPD adds the teacher-weighted sensitivity loss (`algorithm.visual_sensitivity_loss_weighting=teacher`, see
+  [Visual Sensitivity Scoring](#visual-sensitivity-scoring)) and the robustness loss on an `rgb_gaussian_noise` view
+  ([DVRP Incremental View](#dvrp-incremental-view)) to this objective
 
 Objective on the full distributions (a direct loss, no PPO ratio):
 

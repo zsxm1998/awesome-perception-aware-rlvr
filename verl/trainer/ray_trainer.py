@@ -115,7 +115,7 @@ from .rollout_image_transform import (
     compute_rollout_image_transform_metrics,
     restore_clean_images,
 )
-from .visual_sensitivity import compute_sampled_sensitivity_scores
+from .visual_sensitivity import compute_sampled_positive_log_ratio, compute_sampled_sensitivity_scores
 
 
 class Role(IntEnum):
@@ -351,6 +351,8 @@ class RayPPOTrainer:
             print(f"Claim probes: {rows_with_claims} training rows have visual claims.")
 
         self._latest_vision_metrics: dict[str, float] = {}
+        # the `corrupt_image` view of the step, kept for the teacher when it weights the sensitivity loss
+        self._sensitivity_view: Optional[DataProto] = None
         self.visual_token_ids: list[int] = []
         if needs_hidden_state_visual_sensitivity(config.algorithm):
             visual_token_ids = resolve_visual_token_ids(tokenizer, config.algorithm.visual_token)
@@ -478,6 +480,7 @@ class RayPPOTrainer:
             auxiliary_output = decremental_output.union(incremental_output)
             self._latest_vision_metrics.update(decremental_result.stats)
             self._latest_vision_metrics.update(incremental_result.stats)
+            self._keep_sensitivity_view(decremental_result.batch)
         else:
             decremental_result = self.perception_reasoning_corruption_builder.build_batch(
                 batch=batch,
@@ -492,8 +495,15 @@ class RayPPOTrainer:
                 else None,
             )
             self._latest_vision_metrics.update(decremental_result.stats)
+            self._keep_sensitivity_view(decremental_result.batch)
 
         return auxiliary_output
+
+    def _keep_sensitivity_view(self, view: DataProto) -> None:
+        """Keep the view the student was scored on for the teacher: a response-position random_patch view is
+        drawn without a seed, so a rebuilt view would differ."""
+        if self.config.algorithm.visual_sensitivity_loss_weighting == "teacher":
+            self._sensitivity_view = view
 
     def _compute_incremental_old_log_probs(self, batch: DataProto) -> DataProto:
         if self.perception_reasoning_corruption_builder is None:
@@ -608,6 +618,28 @@ class RayPPOTrainer:
         batch.batch["distill_token_weights"] = token_weights_for_token_mean(
             weights, response_mask, batch.non_tensor_batch["uid"]
         )
+
+    def _attach_visual_sensitivity_loss_weights(self, batch: DataProto, metrics: dict[str, Any]) -> None:
+        """S-OPD's teacher gate: the teacher scores the `corrupt_image` view the student's
+        `decremental_old_log_probs` came from; w_t = max(log q(y_t | image) - log q(y_t | view), 0) weights the
+        sensitivity loss of token t (the loss averages over the tokens with w_t > 0)."""
+        view, self._sensitivity_view = self._sensitivity_view, None
+        if view is None:
+            raise RuntimeError("visual_sensitivity_loss_weighting=teacher found no corrupt_image view for this step.")
+        view.meta_info["teacher_log_probs_output_key"] = "decremental_teacher_log_probs"
+        view_log_probs = self.actor_rollout_ref_wg.compute_teacher_log_probs(view)
+        response_mask = batch.batch["response_mask"]
+        weights = (
+            compute_sampled_positive_log_ratio(
+                corrupted_log_probs=view_log_probs.batch["decremental_teacher_log_probs"],
+                reference_log_probs=batch.batch["teacher_log_probs"],
+            )
+            * response_mask
+        )
+        gated = (weights > 0) & response_mask.bool()
+        metrics["algo/sensitivity/teacher_gate_fraction"] = (gated.sum() / response_mask.sum().clamp(min=1)).item()
+        metrics["algo/sensitivity/teacher_gate_mean"] = (weights.sum() / gated.sum().clamp(min=1)).item()
+        batch.batch["visual_sensitivity_loss_weights"] = weights
 
     def _attach_text_prior_gate(
         self, batch: DataProto, quantile: float, vocab_size: int, metrics: dict[str, Any]
@@ -1608,9 +1640,15 @@ class RayPPOTrainer:
                     self._check_response_ids_within_tokenizer(batch)
 
                 # the teacher's log-probs of the sampled tokens: the advantage of on-policy distillation from sampled
-                # tokens, or the reference of the teacher-scored visual sensitivity of distill_weighting
+                # tokens, or the reference of the teacher-scored visual sensitivity of distill_weighting and
+                # visual_sensitivity_loss_weighting
                 uses_teacher_log_ratio = self.config.algorithm.adv_estimator == AdvantageEstimator.TEACHER_LOG_RATIO
-                if uses_teacher_log_ratio or self.config.algorithm.distill_weighting != "none":
+                teacher_weights_sensitivity = self.config.algorithm.visual_sensitivity_loss_weighting == "teacher"
+                if (
+                    uses_teacher_log_ratio
+                    or self.config.algorithm.distill_weighting != "none"
+                    or teacher_weights_sensitivity
+                ):
                     with timer("teacher", timing_raw):
                         teacher_log_probs = self.actor_rollout_ref_wg.compute_teacher_log_probs(batch)
                         batch = batch.union(teacher_log_probs)
@@ -1626,6 +1664,9 @@ class RayPPOTrainer:
                 if self.config.algorithm.distill_weighting != "none":
                     with timer("teacher_aux", timing_raw):
                         self._attach_distillation_token_weights(batch, metrics)
+                if teacher_weights_sensitivity:
+                    with timer("teacher_aux", timing_raw):
+                        self._attach_visual_sensitivity_loss_weights(batch, metrics)
 
                 # compute values
                 if self.use_critic:

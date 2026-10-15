@@ -30,6 +30,7 @@ from ..protocol import DataProto
 from ..utils.dataset import ProcessedImageInput, process_image
 from ..utils.perturbations.pixel import (
     compute_noise_schedule,
+    gaussian_noise_image,
     pixelate_image,
     random_patch_blackening,
     vp_diffusion_noise,
@@ -419,6 +420,7 @@ def build_perception_reasoning_loss_config(
         "corrupt_image": config.corrupt_image,
         "corrupt_image_position": config.corrupt_image_position,
         "visual_sensitivity_loss_coef": config.visual_sensitivity_loss_coef,
+        "visual_sensitivity_loss_weighting": config.visual_sensitivity_loss_weighting,
         "decremental_entropy_coef": config.decremental_entropy_coef,
         "invariant_entropy_coef": config.invariant_entropy_coef,
         "entropy_loss_type": config.entropy_loss_type,
@@ -856,9 +858,10 @@ class PerceptionReasoningCorruptionBuilder:
         total_training_steps: int,
     ) -> AuxiliaryBatchBuildResult:
         incremental_kwargs = dict(config.incremental_image_kwargs or {})
-        incremental_kwargs.setdefault("noise_t_init", config.noise_t_init)
-        incremental_kwargs.setdefault("noise_gamma", config.noise_gamma)
-        incremental_kwargs.setdefault("noise_t_max", config.noise_t_max)
+        if config.incremental_image_transform == "vp_diffusion":
+            incremental_kwargs.setdefault("noise_t_init", config.noise_t_init)
+            incremental_kwargs.setdefault("noise_gamma", config.noise_gamma)
+            incremental_kwargs.setdefault("noise_t_max", config.noise_t_max)
         return self._build_auxiliary_batch(
             batch=batch,
             transform_name=config.incremental_image_transform,
@@ -1297,6 +1300,42 @@ class PerceptionReasoningCorruptionBuilder:
                 )
             transformed["images"] = self._mark_processed_images([self._load_image(image) for image in raw_images])
             transformed[PIXEL_VALUES_NOISE_KEY] = {"std": float(gaussian_kwargs.get("std", 2.0)), "seed": seed}
+            if transform_position == "prompt":
+                self._prompt_cache[cache_key] = CachedAuxiliaryMedia(multi_modal_data=deepcopy(transformed), stats={})
+            return transformed, {}
+
+        if transform_name == "rgb_gaussian_noise":
+            # S-OPD's near view (its Eq. 8): N(0, std^2) on the [0, 1] RGB pixels, clipped and rounded back to uint8,
+            # an independent draw per image. noise_before_resize (S-OPD's code) noises the image at its original
+            # resolution, then resizes it like the clean view; by default the resized image is noised.
+            noise_kwargs = dict(transform_kwargs or {})
+            noise_before_resize = bool(noise_kwargs.pop("noise_before_resize", False))
+            std = float(noise_kwargs.pop("std", 0.2))
+            cache_descriptor = self._cache_descriptor(transform_name, {"std": std}, global_step)
+            if noise_before_resize:
+                cache_descriptor += ":noise_before_resize"
+
+            def noise(image: Any, seed: int) -> Image.Image:
+                if not noise_before_resize:
+                    return gaussian_noise_image(self._load_image(image), std=std, seed=seed)
+                noisy = gaussian_noise_image(process_image(image, None, None), std=std, seed=seed)
+                return noisy if isinstance(image, ProcessedImageInput) else self._load_image(noisy)
+
+            if transform_position == "prompt":
+                cache_key = (corruption_group_key, cache_descriptor)
+                if cache_key in self._prompt_cache:
+                    cache_entry = self._prompt_cache[cache_key]
+                    return deepcopy(cache_entry.multi_modal_data), dict(cache_entry.stats)
+
+                seed_base = _stable_prompt_seed(cache_descriptor + ":" + corruption_group_key, salt="rgb_noise_v1")
+            else:
+                seed_base = _stable_prompt_seed(
+                    f"{cache_descriptor}:{corruption_group_key}:{sample_idx}:{response_text}",
+                    salt="rgb_noise_response_v1",
+                )
+            transformed["images"] = self._mark_processed_images(
+                [noise(image, seed_base + image_idx) for image_idx, image in enumerate(raw_images)]
+            )
             if transform_position == "prompt":
                 self._prompt_cache[cache_key] = CachedAuxiliaryMedia(multi_modal_data=deepcopy(transformed), stats={})
             return transformed, {}

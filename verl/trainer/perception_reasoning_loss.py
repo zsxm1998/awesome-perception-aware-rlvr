@@ -245,6 +245,8 @@ def compute_perception_reasoning_policy_loss(
     batch_entropy_mask: torch.Tensor | None = None,
     batch_perception_mask: torch.Tensor | None = None,
     advantage_scaling_factors: torch.Tensor | None = None,
+    visual_sensitivity_loss_weights: torch.Tensor | None = None,
+    visual_sensitivity_loss_normalizer: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     """Unified policy loss for PAPO / VPPO / ToR / DVRP / VEPO / PGPO / PEPO / CFPO / CGPO.
 
@@ -259,6 +261,12 @@ def compute_perception_reasoning_policy_loss(
       5. Add auxiliary terms: visual sensitivity (PAPO/VPPO; sampled KL by default, or
          the Box-Cox score-function form under `visual_sensitivity_metric='sampled_boxcox'`),
          invariant / decremental / incremental entropy (PAPO/DVRP), visual robustness KL (DVRP).
+         With ``visual_sensitivity_loss_weighting=teacher`` (S-OPD) the sensitivity objective is
+         weighted by ``visual_sensitivity_loss_weights`` and averaged over the tokens with a positive
+         weight: in token mode ``visual_sensitivity_loss_normalizer`` is the update mini-batch's
+         response tokens over its weighted tokens (all ranks), so that after the actor's token-mean
+         rescaling the term is sum(w * objective) / #(w > 0); in seq mode each response is divided by
+         max(1, its number of tokens with w > 0).
 
     Returns the scalar policy loss and a metrics dict. ``actor/pg_loss`` stays the
     raw PG loss (unmasked, comparable across algorithms); ``algo/loss/pg_loss_effective``
@@ -516,6 +524,14 @@ def compute_perception_reasoning_policy_loss(
             per_token_sensitivity_objective = per_token_sampled_sensitivity.detach() * log_prob
         else:
             per_token_sensitivity_objective = per_token_sampled_sensitivity
+        if loss_config.get("visual_sensitivity_loss_weighting", "none") == "teacher":
+            per_token_sensitivity_objective = _weight_sensitivity_objective(
+                per_token_sensitivity_objective,
+                weights=visual_sensitivity_loss_weights,
+                normalizer=visual_sensitivity_loss_normalizer,
+                response_mask=response_mask,
+                loss_avg_mode=actor_config.loss_avg_mode,
+            )
         sensitivity_loss = average_loss(
             -loss_config["visual_sensitivity_loss_coef"] * per_token_sensitivity_objective,
             response_mask,
@@ -593,6 +609,30 @@ def compute_perception_reasoning_policy_loss(
 
     metrics["algo/loss/policy_loss"] = to_float(policy_loss)
     return policy_loss, metrics
+
+
+def _weight_sensitivity_objective(
+    objective: torch.Tensor,
+    weights: torch.Tensor | None,
+    normalizer: torch.Tensor | None,
+    response_mask: torch.Tensor,
+    loss_avg_mode: str,
+) -> torch.Tensor:
+    """Per-token weights of the sensitivity objective, scaled so that ``average_loss`` averages over the tokens with
+    a positive weight (S-OPD's teacher-gated perception contrast)."""
+    if weights is None:
+        raise ValueError(
+            "visual_sensitivity_loss_weighting=teacher requires the visual_sensitivity_loss_weights built before the "
+            "update."
+        )
+    weights = weights.to(objective.dtype)
+    if loss_avg_mode == "seq":
+        tokens = response_mask.sum(-1, keepdim=True).to(objective.dtype)
+        weighted_tokens = ((weights > 0) & response_mask.bool()).sum(-1, keepdim=True).clamp(min=1)
+        return objective * weights * (tokens / weighted_tokens)
+    if normalizer is None:
+        raise ValueError("visual_sensitivity_loss_weighting=teacher with loss_avg_mode=token requires the normalizer.")
+    return objective * weights * normalizer
 
 
 def _get_advantage_scaling_method(loss_config: dict[str, Any] | None) -> str | None:
