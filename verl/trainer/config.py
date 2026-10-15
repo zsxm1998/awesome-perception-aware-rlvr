@@ -231,6 +231,12 @@ class AlgorithmConfig:
     """Whether corruption is built from the prompt side or from the generated response side. VPPO/CGPO mostly use response; PAPO/DVRP uses prompt."""
     visual_sensitivity_loss_coef: float = 0.0
     """coefficient for KL-based decremental-view sensitivity regularization (KL_prcp in PAPO). Used by PAPO/DVRP, not needed by VPPO/ToR/CGPO default scripts."""
+    visual_sensitivity_loss_weighting: str = "none"
+    """per-token weights of the sensitivity loss: `none` (every response token, unweighted), or `teacher` (S-OPD's
+    teacher-gated perception contrast): before the update the teacher scores the same `corrupt_image` view as the
+    student, and token t gets w_t = max(log q(y_t | image) - log q(y_t | view), 0). The loss is the w-weighted
+    objective averaged over the tokens with w_t > 0: over the update mini-batch with `loss_avg_mode=token`, within
+    each response (at least one token in the denominator) with `seq`. Needs a teacher (`worker.teacher`)."""
     visual_sensitivity_reference: str = "current"
     """which branch is compared against decremental log-probs when computing visual sensitivity / KL_prcp. CGPO and VPPO/ToR use `old`; PAPO and DVRP use `current`; `teacher` scores both views with the distillation teacher (VA-OPD, for `distill_weighting`)."""
     visual_sensitivity_metric: str = "sampled_low_var_kl"
@@ -301,9 +307,9 @@ class AlgorithmConfig:
     """VGPO's response score for the group-level factor: the sum of the normalized compensated scores
     (`compensated`, the released code) or of the compensated scores before normalization (`raw`, Eq. 9)."""
     incremental_image_transform: Optional[str] = None
-    """incremental auxiliary-view transform. Configuring this, or non-zero incremental-view loss coefficients, enters DVRP-style dual-view mode. Currently only `vp_diffusion` is supported."""
+    """incremental auxiliary-view transform. Configuring this, or non-zero incremental-view loss coefficients, enters DVRP-style dual-view mode. `vp_diffusion` (DVRP) noises the image on NoisyRollout's annealed schedule; `rgb_gaussian_noise` (S-OPD) adds N(0, std^2) to the [0, 1] RGB pixels, then clips and rounds them back to uint8."""
     incremental_image_kwargs: Any = None
-    """JSON/mapping kwargs for the incremental auxiliary transform. Supplying them implies DVRP-style incremental-view training is intended."""
+    """JSON/mapping kwargs for the incremental auxiliary transform. Supplying them implies DVRP-style incremental-view training is intended. `rgb_gaussian_noise` takes `std` (default 0.2) and `noise_before_resize` (default false: noise the resized image, as `vp_diffusion`; true: noise the original image, then resize it, as S-OPD's code); one draw per prompt, or per response with `corrupt_image_position=response`."""
     visual_robustness_loss_coef: float = 0.0
     """coefficient for the incremental-view robustness KL term. Non-zero values enable the DVRP-style incremental loss path."""
     incremental_entropy_coef: float = 0.0
@@ -633,7 +639,7 @@ class AlgorithmConfig:
         _validate_choice(
             "incremental_image_transform",
             self.incremental_image_transform,
-            {"vp_diffusion"},
+            {"vp_diffusion", "rgb_gaussian_noise"},
             allow_none=True,
         )
         _validate_choice(
@@ -705,6 +711,26 @@ class AlgorithmConfig:
             raise ValueError(
                 "`visual_sensitivity_reference` must be `current` when `visual_sensitivity_loss_coef` is non-zero."
             )
+        _validate_choice(
+            "visual_sensitivity_loss_weighting", self.visual_sensitivity_loss_weighting, {"none", "teacher"}
+        )
+        if self.visual_sensitivity_loss_weighting == "teacher":
+            if self.visual_sensitivity_loss_coef == 0.0:
+                raise ValueError(
+                    "visual_sensitivity_loss_weighting=teacher weights the sensitivity loss: set "
+                    "visual_sensitivity_loss_coef."
+                )
+            if self.corrupt_image in MODEL_LEVEL_VISUAL_CORRUPTIONS or self.corrupt_image == "mask_visual_attention":
+                # the teacher scores the view built by the driver; it does not apply interventions inside the model
+                raise ValueError(
+                    "visual_sensitivity_loss_weighting=teacher needs an image corruption in `corrupt_image` "
+                    f"(random_patch), not {self.corrupt_image}."
+                )
+            if self.visual_sensitivity_metric not in sampled_sensitivity_metrics:
+                raise ValueError(
+                    "visual_sensitivity_loss_weighting=teacher needs a sampled visual_sensitivity_metric "
+                    "(sampled_low_var_kl)."
+                )
 
         if self.tor_use_token_weighting and self.top_entropy_quantile >= 1.0 and self.top_perception_quantile >= 1.0:
             raise ValueError(
@@ -722,10 +748,33 @@ class AlgorithmConfig:
                 raise ValueError(
                     "Incremental-view (DVRP-style) training requires `corrupt_image` to configure the decremental view."
                 )
-            if self.incremental_image_transform != "vp_diffusion":
+            if self.incremental_image_transform is None:
                 raise ValueError(
-                    "Incremental-view (DVRP-style) training currently requires `incremental_image_transform=vp_diffusion`."
+                    "Incremental-view (DVRP-style) training requires `incremental_image_transform` (vp_diffusion or "
+                    "rgb_gaussian_noise)."
                 )
+            if self.incremental_image_transform == "rgb_gaussian_noise":
+                noise_kwargs = self.incremental_image_kwargs or {}
+                unknown_kwargs = set(noise_kwargs) - {"std", "noise_before_resize"}
+                if unknown_kwargs:
+                    raise ValueError(
+                        f"rgb_gaussian_noise received unsupported incremental_image_kwargs: {sorted(unknown_kwargs)}."
+                    )
+                std = noise_kwargs.get("std", 0.2)
+                if isinstance(std, bool) or not isinstance(std, (int, float)) or not std > 0.0:
+                    raise ValueError(f"incremental_image_kwargs.std must be a positive number, but got {std!r}.")
+                if not isinstance(noise_kwargs.get("noise_before_resize", False), bool):
+                    raise ValueError("incremental_image_kwargs.noise_before_resize must be true or false.")
+                defaults = AlgorithmConfig()
+                changed = [
+                    name
+                    for name in ("noise_t_init", "noise_gamma", "noise_t_max")
+                    if getattr(self, name) != getattr(defaults, name)
+                ]
+                if changed:
+                    raise ValueError(
+                        f"{', '.join(changed)} set the vp_diffusion schedule and do not apply to rgb_gaussian_noise."
+                    )
 
         for field_name, field_value in {
             "noise_t_init": self.noise_t_init,
@@ -1080,6 +1129,8 @@ class PPOConfig:
         consumers = []
         if self.algorithm.adv_estimator == "teacher_log_ratio":
             consumers.append("algorithm.adv_estimator=teacher_log_ratio")
+        if self.algorithm.visual_sensitivity_loss_weighting == "teacher":
+            consumers.append("algorithm.visual_sensitivity_loss_weighting=teacher")
         if self.algorithm.distill_loss_coef > 0.0:
             consumers.append("algorithm.distill_loss_coef > 0")
             if not self.worker.actor.padding_free:
@@ -1119,7 +1170,8 @@ class PPOConfig:
         if not consumers:
             raise ValueError(
                 f"worker.teacher.source={teacher.source} but no objective uses the teacher; set "
-                "algorithm.adv_estimator=teacher_log_ratio or algorithm.distill_loss_coef, or remove the teacher."
+                "algorithm.adv_estimator=teacher_log_ratio, algorithm.distill_loss_coef or "
+                "algorithm.visual_sensitivity_loss_weighting=teacher, or remove the teacher."
             )
         if teacher.source == "ema" and self.worker.actor.model.lora.rank > 0:
             raise ValueError("worker.teacher.source=ema averages the actor's full weights and does not support LoRA.")

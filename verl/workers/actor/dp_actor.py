@@ -1319,6 +1319,7 @@ class DataParallelPPOActor(BasePPOActor):
             "distill_token_weights",
             "distill_text_prior_gate",
             "advantage_scaling_factors",
+            "visual_sensitivity_loss_weights",
         ]:
             if optional_key in data.batch.keys():
                 select_keys.append(optional_key)
@@ -1347,6 +1348,15 @@ class DataParallelPPOActor(BasePPOActor):
                 else:
                     total_response_tokens = torch.sum(mini_batch.batch["response_mask"])
                     dist.all_reduce(total_response_tokens, op=dist.ReduceOp.SUM)
+                sensitivity_normalizer = None
+                if "visual_sensitivity_loss_weights" in mini_batch.batch.keys() and self.config.loss_avg_mode != "seq":
+                    # the teacher-weighted sensitivity loss averages over the weighted tokens of the mini-batch
+                    weighted_tokens = torch.sum(
+                        (mini_batch.batch["visual_sensitivity_loss_weights"] > 0)
+                        & mini_batch.batch["response_mask"].bool()
+                    )
+                    dist.all_reduce(weighted_tokens, op=dist.ReduceOp.SUM)
+                    sensitivity_normalizer = total_response_tokens / weighted_tokens.clamp(min=1)
                 distill_sums = None
                 if distill_config is not None:
                     distill_sums = DistillationMetricSums(
@@ -1452,6 +1462,8 @@ class DataParallelPPOActor(BasePPOActor):
                             batch_entropy_mask=model_inputs.get("batch_entropy_mask"),
                             batch_perception_mask=model_inputs.get("batch_perception_mask"),
                             advantage_scaling_factors=model_inputs.get("advantage_scaling_factors"),
+                            visual_sensitivity_loss_weights=model_inputs.get("visual_sensitivity_loss_weights"),
+                            visual_sensitivity_loss_normalizer=sensitivity_normalizer,
                         )
                     else:
                         pg_loss, pg_metrics = compute_policy_loss(

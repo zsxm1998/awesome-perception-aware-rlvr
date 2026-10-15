@@ -11,7 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Auxiliary image views: random patches masked before or after resizing; noise on normalized pixel_values."""
+"""Auxiliary image views: random patches masked before or after resizing; noise on normalized pixel_values; RGB
+Gaussian noise before or after resizing."""
 
 from types import SimpleNamespace
 
@@ -24,7 +25,7 @@ from verl.protocol import DataProto
 from verl.trainer.config import AlgorithmConfig
 from verl.trainer.perception_reasoning_data import PerceptionReasoningCorruptionBuilder, _stable_prompt_seed
 from verl.utils.dataset import process_image
-from verl.utils.perturbations.pixel import random_patch_blackening
+from verl.utils.perturbations.pixel import gaussian_noise_image, random_patch_blackening
 from verl.utils.perturbations.pixel_values import PIXEL_VALUES_NOISE_KEY, add_pixel_values_noise
 from verl.workers.fsdp_workers import FSDPWorker
 
@@ -183,3 +184,78 @@ def test_gaussian_noise_kwargs_are_validated():
         AlgorithmConfig(corrupt_image="gaussian_noise", corrupt_image_kwargs={"std": 0}).post_init()
     with pytest.raises(ValueError, match="unsupported corrupt_image_kwargs"):
         AlgorithmConfig(corrupt_image="gaussian_noise", corrupt_image_kwargs={"sigma": 1.0}).post_init()
+
+
+def _rgb_noise(builder, image, kwargs, **transform):
+    return np.asarray(_transform(builder, image, "rgb_gaussian_noise", kwargs, **transform)["images"][0].image)
+
+
+def _rgb_prompt_seed(builder, descriptor_suffix="") -> int:
+    descriptor = builder._cache_descriptor("rgb_gaussian_noise", {"std": 0.2}, 3) + descriptor_suffix
+    return _stable_prompt_seed(descriptor + ":group", salt="rgb_noise_v1")
+
+
+def test_rgb_noise_after_resize():
+    """S-OPD's Eq. 8 on the resized image: N(0, std^2) on [0, 1] pixels, clipped and rounded to 8 bits."""
+    builder, image = _builder(), _image()
+    expected = gaussian_noise_image(
+        process_image(image, MIN_PIXELS, 1024 * 1024), std=0.2, seed=_rgb_prompt_seed(builder)
+    )
+    for kwargs in ({}, {"std": 0.2}, {"std": 0.2, "noise_before_resize": False}):
+        np.testing.assert_array_equal(_rgb_noise(_builder(), image, kwargs), np.asarray(expected))
+
+
+def test_rgb_noise_before_resize_noises_the_original_image():
+    """S-OPD's code noises the image at its original resolution; the processor then resizes it."""
+    builder, image = _builder(), _image()
+    noisy = _rgb_noise(builder, image, {"noise_before_resize": True})
+    seed = _rgb_prompt_seed(builder, ":noise_before_resize")
+    original = process_image(image, None, None)
+    expected = process_image(gaussian_noise_image(original, std=0.2, seed=seed), MIN_PIXELS, 1024 * 1024)
+    np.testing.assert_array_equal(noisy, np.asarray(expected))
+    clean = process_image(image, MIN_PIXELS, 1024 * 1024)
+    assert expected.size == clean.size and clean.size != image.size  # same image tokens as the clean view
+
+
+def test_rgb_noise_draws():
+    image = _image()
+
+    def noisy(**kwargs):
+        return _rgb_noise(_builder(), image, {"std": 0.2}, **kwargs)
+
+    # position=prompt: one draw per prompt (and step); position=response: one per response, even for equal texts
+    np.testing.assert_array_equal(noisy(sample_idx=0), noisy(sample_idx=1))
+    assert not np.array_equal(noisy(), noisy(group="other"))
+    assert not np.array_equal(noisy(position="response", sample_idx=0), noisy(position="response", sample_idx=1))
+    np.testing.assert_array_equal(noisy(position="response"), noisy(position="response"))
+    # the images of a prompt get draws of their own
+    transformed = _transform(_builder(), image, "rgb_gaussian_noise", {"std": 0.2})
+    two = _builder()._transform_multi_modal_data(
+        multi_modal_data={"images": [image, image]},
+        response_text="answer",
+        transform_name="rgb_gaussian_noise",
+        transform_kwargs={"std": 0.2},
+        transform_position="prompt",
+        corruption_group_key="group",
+        global_step=3,
+        total_training_steps=None,
+    )[0]["images"]
+    np.testing.assert_array_equal(np.asarray(two[0].image), np.asarray(transformed["images"][0].image))
+    assert not np.array_equal(np.asarray(two[0].image), np.asarray(two[1].image))
+
+
+@pytest.mark.parametrize("transform", ["vp_diffusion", "rgb_gaussian_noise"])
+def test_incremental_view_kwargs(monkeypatch, transform):
+    """vp_diffusion keeps receiving the schedule from the config fields; rgb_gaussian_noise receives its own kwargs."""
+    config = AlgorithmConfig(
+        corrupt_image="random_patch", incremental_image_transform=transform, visual_robustness_loss_coef=0.02
+    )
+    config.post_init()
+    builder, received = _builder(), {}
+    monkeypatch.setattr(builder, "_build_auxiliary_batch", lambda **kwargs: received.update(kwargs))
+    builder.build_incremental_batch(batch=None, config=config, global_step=1, total_training_steps=10)
+    assert received["transform_name"] == transform
+    if transform == "vp_diffusion":
+        assert received["transform_kwargs"] == {"noise_t_init": 500.0, "noise_gamma": 10.0, "noise_t_max": 1000.0}
+    else:
+        assert received["transform_kwargs"] == {}
