@@ -1,30 +1,28 @@
-# Controlled comparison of on-policy distillation on Qwen3-VL-2B-Instruct
+# OPD controlled comparison on Qwen3-VL-2B-Instruct
+
+[English](README.md) | [简体中文](README_zh.md)
 
 On-policy distillation (OPD) trains a student on its own rollouts toward a stronger teacher's next-token
 distributions. The four OPD papers reproduced in this repository ([VA-OPD](../../reproduction/va_opd/README.md),
 [VGS](../../reproduction/vgs/README.md), [VCSD](../../reproduction/vcsd/README.md),
 [Vision-OPD](../../reproduction/vision_opd/README.md)) use different students, teachers, data and evaluations.
 This directory trains the three that do not need region annotations, the two base OPD objectives and a GRPO
-reference under **one** setting, the RL comparison's ([../README.md](../README.md)) with a 2B student and a teacher
-trained in that comparison: Qwen3-VL-4B-Instruct after GRPO, at its best validation step (see [Teacher](#teacher)).
-Each script only sets `ALGO_ARGS`; everything else comes from [common.sh](common.sh).
+reference under **one** setting, that of the [RLVR comparison](../rlvr_qwen3_vl_4b/README.md) with a 2B student and
+a teacher trained in that comparison: Qwen3-VL-4B-Instruct after GRPO, at its best validation step (see
+[Teacher](#teacher)). Each script only sets `ALGO_ARGS`; everything else comes from [common.sh](common.sh). The
+other comparisons are listed in [examples/comparison/](../README.md).
 
 > [!IMPORTANT]
-> **The results are a reference, not a verdict on the methods.** The methods are our re-implementations (the
-> known differences from each paper are in its README); each configuration is trained once, and in the RL
-> comparison two runs of one method with the same configuration ended 0.6 points apart in Overall and up to 2.6
-> points apart on single benchmarks, so differences of about a point are within run-to-run variation. The
-> shared setting (student, teacher, data, training budget, prompt and response length) is not the setting each
-> paper designed and tuned its method for, and the evaluation is this repository's. The tables describe how our
-> re-implementations behave in this setting; they do not rank the methods and are not evidence for or against
-> any of them. The original papers remain the reference. Authors who see a problem with our implementation or
-> setting are welcome to open an issue or a pull request. See [About the results](../README.md#about-the-results).
+> **The results are a reference, not a verdict on the methods.** The methods are our re-implementations,
+> each configuration is trained once (in the RLVR comparison two runs of one configuration ended 0.6 points apart
+> in the mean of the 3 groups), and the shared setting is not the one each method was designed and tuned for.
+> Read [About the results](../README.md#about-the-results) before the tables.
 
 ## Shared setting
 
-| | `examples/comparison/opd_qwen3_vl_2b/common.sh` | RL comparison (`../qwen3_vl_4b/common.sh`) |
+| | `examples/comparison/opd_qwen3_vl_2b/common.sh` | RLVR comparison (`../rlvr_qwen3_vl_4b/common.sh`) |
 | --- | --- | --- |
-| Student / teacher | Qwen3-VL-2B-Instruct / the RL comparison's GRPO run (Qwen3-VL-4B-Instruct) at its best validation step (VCSD: an EMA of the student) | Qwen3-VL-4B-Instruct / – |
+| Student / teacher | Qwen3-VL-2B-Instruct / Qwen3-VL-4B-Instruct trained with GRPO in the RLVR comparison, at its best validation step (VCSD: an EMA of the student) | Qwen3-VL-4B-Instruct / – |
 | Data, validation, prompt | ViRL39K; MMK12 test every 15 steps; `math_perception.jinja` with `<think>` as plain text | same; every 5 steps |
 | Rollout | 128 prompts x 8 per step, **one update per step**, T=1.0, **top-p 1.0** | 384 x 8 per step, update batch 128 (3 updates per step), top-p 0.99 |
 | Loss | the method's objective, token-level averaging | GRPO, token-level, clip 0.2 / 0.2 |
@@ -42,7 +40,7 @@ reads the student's token ids and pixel values; the trainer checks at startup th
 
 ## Teacher
 
-The teacher is `../qwen3_vl_4b/grpo.sh` at the step with the highest validation reward
+The teacher is `../rlvr_qwen3_vl_4b/grpo.sh` at the step with the highest validation reward
 (`best_global_step` of its `checkpoint_tracker.json`; step 175 of 202 in our run), not an Instruct model:
 
 - **Length.** Under this prompt and the 2,048-token cap, the Instruct models write past the cap on many
@@ -62,7 +60,7 @@ The teacher is `../qwen3_vl_4b/grpo.sh` at the step with the highest validation 
   against 70.5, mostly on the math group). MMK12 test is the validation set, so the students' MMK12 scores
   may be slightly favored by this choice.
 
-Run `../qwen3_vl_4b/grpo.sh` first and keep its best step (`python3 scripts/finalize_run.py
+Run `../rlvr_qwen3_vl_4b/grpo.sh` first and keep its best step (`python3 scripts/finalize_run.py
 checkpoints/Comparison-Qwen3-VL-4B/grpo` keeps the last and the best step, or merge it with
 `scripts/model_merger.py`); the scripts read it from there and stop before training when that step has no complete
 weights. `TEACHER_PATH` or `worker.teacher.model.model_path=...` on the command line sets another teacher, and
@@ -72,7 +70,7 @@ weights. `TEACHER_PATH` or `worker.teacher.model.model_path=...` on the command 
 
 | Script | Method | `ALGO_ARGS` (abridged) |
 | --- | --- | --- |
-| `grpo.sh` | GRPO reference | the RL comparison's `grpo.sh` with the 2B student |
+| `grpo.sh` | GRPO reference | the RLVR comparison's `grpo.sh` with the 2B student |
 | `opd_sampled.sh` | OPD from sampled tokens | `adv_estimator=teacher_log_ratio` (log q − log π_old per token, clamped to ±10) with the PPO loss |
 | `opd_full.sh` | OPD on the full distributions (the "Standard OPD" of VA-OPD and VGS) | `distill_loss_coef=1`, `policy_loss_coef=0`, `distill_divergence=reverse_kl` |
 | `va_opd.sh` | [VA-OPD](../../reproduction/va_opd/README.md) | `opd_full` + `distill_weighting=va_opd` (pixelation 0.1, teacher-scored `sampled_positive_log_ratio`, τ 1, p_v 0.2, λ 0.5) |
@@ -105,7 +103,7 @@ are kept. Notes:
 
 ```bash
 bash scripts/prepare_data.sh opd_comparison
-bash examples/comparison/qwen3_vl_4b/grpo.sh                    # the teacher, if the RL comparison has not run it
+bash examples/comparison/rlvr_qwen3_vl_4b/grpo.sh                    # the teacher, if the RLVR comparison has not run it
 python3 scripts/finalize_run.py checkpoints/Comparison-Qwen3-VL-4B/grpo   # keeps its last and best step
 for m in grpo opd_sampled opd_full va_opd vgs vcsd; do
     bash examples/comparison/opd_qwen3_vl_2b/$m.sh
@@ -117,31 +115,38 @@ python3 scripts/finalize_run.py checkpoints/Comparison-OPD-Qwen3-VL-2B/*   # aft
 
 Checkpoints go to `checkpoints/Comparison-OPD-Qwen3-VL-2B/<method>`. `MODEL_PATH` and `TEACHER_PATH` set the
 student and the teacher; any `key=value` appended to a script overrides the shared setting. The teacher adds
-its forward passes to the update (one per micro-batch; two for VGS, VCSD and VA-OPD's scoring of the
-pixelated image) and about 2 GB of bf16 weights per GPU on 4 GPUs.
+forward passes and about 2 GB of bf16 weights per GPU on 4 GPUs: in the update, one forward per micro-batch for
+the distillation losses (two for VGS and VCSD, with their contrast view); before the update, the log-probs of
+the sampled tokens for OPD from sampled tokens and for VA-OPD's weights (VA-OPD also on the pixelated image).
 
 ## Results
 
-Suite `opd`: the 19 benchmarks of the RL comparison in the same three groups, with the same protocol and the
-same overall score (the mean of the three group means; All is the mean of the 19 benchmarks); see
-[the comparison README](../README.md#results). Every method is evaluated at its last step.
+Suite `opd`: the 19 benchmarks of the RLVR comparison in the same three groups, with the same protocol and the
+same two means (the mean of the 3 groups, in bold, and the mean of the 19 benchmarks); see
+[the RLVR comparison](../rlvr_qwen3_vl_4b/README.md#results). Every method is evaluated at its last step.
 
-| Method | Math reasoning | Vision-dependent reasoning | Perception and hallucination | Overall | All |
-| --- | --- | --- | --- | --- | --- |
-| Qwen3-VL-2B-Instruct (student, no training) | 36.7 | 51.8 | 69.0 | **52.5** | 51.7 |
-| Teacher: GRPO on Qwen3-VL-4B-Instruct, best validation step | 66.4 | 72.4 | 78.0 | **72.3** | 72.0 |
-| GRPO | 55.3 | 64.5 | 72.3 | **64.0** | 63.6 |
-| OPD (sampled tokens) | 51.3 | 63.1 | 72.7 | **62.4** | 61.8 |
-| OPD (full distributions) | 51.8 | 63.8 | 72.9 | **62.8** | 62.3 |
-| VA-OPD | 46.7 | 60.7 | 73.2 | **60.2** | 59.5 |
-| VGS | 49.5 | 61.3 | 72.4 | **61.0** | 60.4 |
-| VCSD (no external teacher) | 2.7 | 16.3 | 35.5 | **18.2** | 17.3 |
+| Method | Math reasoning | Vision-dependent reasoning | Perception and hallucination | Mean of the 3 groups | Mean of the 19 benchmarks | Training time (h) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Qwen3-VL-2B-Instruct (baseline) | 36.7 | 51.8 | 69.0 | 52.5 | 51.7 | – |
+| Teacher: GRPO on Qwen3-VL-4B-Instruct, best validation step | 66.4 | 72.4 | 78.0 | 72.3 | 72.0 | – |
+| GRPO | 55.3 | 64.5 | 72.3 | **64.0** | 63.6 | 21.0 (1.00×) |
+| OPD (sampled tokens) | 51.3 | 63.1 | 72.7 | **62.4** | 61.8 | 23.0 (1.10×) |
+| OPD (full distributions) | 51.8 | 63.8 | 72.9 | **62.8** | 62.3 | 25.2 (1.20×) |
+| VA-OPD | 46.7 | 60.7 | 73.2 | **60.2** | 59.5 | 34.4 (1.64×) |
+| VGS | 49.5 | 61.3 | 72.4 | **61.0** | 60.4 | 35.3 (1.68×) |
+| VCSD (no external teacher) | 2.7 | 16.3 | 35.5 | **18.2** | 17.3 | 40.3 (1.92×) |
+
+**Training time** is the wall-clock time in hours of the training steps on 4 A800 80GB GPUs (606 OPD steps, or
+the 202 GRPO steps of 3 updates each: the same 606 updates of 1,024 responses), with the rollout, the teacher's
+forward passes, the reward and the updates, without the validation runs and checkpoint saves; in parentheses,
+the ratio to GRPO. Some runs shared an 8-GPU node with another run, so differences of a few percent can come
+from the node load. VCSD's time grows as more of its answers run to the 2,048-token limit.
 
 ### Math reasoning
 
 | Method | Geo3K | MathVista | We-Math | MMK12 | MathVerse | MathVision | DynaMath | Avg |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Qwen3-VL-2B-Instruct (student, no training) | 30.9 | 56.6 | 46.8 | 29.6 | 36.7 | 8.7 | 47.2 | 36.7 |
+| Qwen3-VL-2B-Instruct (baseline) | 30.9 | 56.6 | 46.8 | 29.6 | 36.7 | 8.7 | 47.2 | 36.7 |
 | Teacher: GRPO on Qwen3-VL-4B-Instruct, best validation step | 58.4 | 74.1 | 75.2 | 69.3 | 73.9 | 39.9 | 73.7 | 66.4 |
 | GRPO | 45.4 | 65.2 | 68.1 | 52.2 | 64.0 | 29.5 | 62.4 | 55.3 |
 | OPD (sampled tokens) | 41.4 | 61.6 | 63.4 | 48.5 | 57.4 | 24.4 | 62.4 | 51.3 |
@@ -154,7 +159,7 @@ same overall score (the mean of the three group means; All is the mean of the 19
 
 | Method | MathVerse-V | MMMU-Pro | LogicVista | Counting | AI2D | MME (cognition) | Avg |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Qwen3-VL-2B-Instruct (student, no training) | 33.8 | 20.2 | 31.2 | 69.3 | 68.0 | 88.0 | 51.8 |
+| Qwen3-VL-2B-Instruct (baseline) | 33.8 | 20.2 | 31.2 | 69.3 | 68.0 | 88.0 | 51.8 |
 | Teacher: GRPO on Qwen3-VL-4B-Instruct, best validation step | 69.6 | 43.6 | 58.7 | 87.7 | 83.0 | 92.1 | 72.4 |
 | GRPO | 60.4 | 31.8 | 47.3 | 83.2 | 74.6 | 89.6 | 64.5 |
 | OPD (sampled tokens) | 53.2 | 29.0 | 46.6 | 85.7 | 74.1 | 90.0 | 63.1 |
@@ -167,7 +172,7 @@ same overall score (the mean of the three group means; All is the mean of the 19
 
 | Method | POPE | HallusionBench | MMStar | BLINK | MME (perception) | CV-Bench | Avg |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Qwen3-VL-2B-Instruct (student, no training) | 88.2 | 65.2 | 53.9 | 52.6 | 79.3 | 75.1 | 69.0 |
+| Qwen3-VL-2B-Instruct (baseline) | 88.2 | 65.2 | 53.9 | 52.6 | 79.3 | 75.1 | 69.0 |
 | Teacher: GRPO on Qwen3-VL-4B-Instruct, best validation step | 88.8 | 74.0 | 69.6 | 66.3 | 84.0 | 85.2 | 78.0 |
 | GRPO | 88.3 | 67.5 | 58.6 | 57.8 | 81.6 | 80.0 | 72.3 |
 | OPD (sampled tokens) | 88.7 | 67.9 | 62.1 | 57.3 | 81.8 | 78.5 | 72.7 |
@@ -184,17 +189,17 @@ text translation and code reasoning; 260 questions, out of 800) and its percepti
 
 Each method at the step with the best validation reward (`best_global_step` in the run's
 `checkpoint_tracker.json`; MMK12 test every 15 steps), on the 18 benchmarks other than MMK12, as in
-[the RL comparison](../README.md#best-validation-step); **Last step** is the same mean of 18 at the last step
-(606; GRPO: 202).
+[the RLVR comparison](../rlvr_qwen3_vl_4b/README.md#best-validation-step). The last two columns give the same
+mean at the last step (606; GRPO: 202) and the difference between the two, from the rounded values in the table.
 
-| Method | Best step | Math reasoning (without MMK12) | Vision-dependent reasoning | Perception and hallucination | Overall | Last step |
-| --- | --- | --- | --- | --- | --- | --- |
-| GRPO | 202 | 55.8 | 64.5 | 72.3 | **64.2** | 64.2 |
-| OPD (sampled tokens) | 606 | 51.8 | 63.1 | 72.7 | **62.5** | 62.5 |
-| OPD (full distributions) | 600 | 52.1 | 63.6 | 72.7 | **62.8** | 63.0 |
-| VA-OPD | 255 | 52.3 | 62.9 | 72.1 | **62.5** | 60.4 |
-| VGS | 600 | 49.9 | 61.2 | 72.0 | **61.0** | 61.3 |
-| VCSD (no external teacher) | 30 | 43.3 | 55.9 | 71.1 | **56.8** | 18.3 |
+| Method | Best step | Math reasoning (without MMK12) | Vision-dependent reasoning | Perception and hallucination | Mean of the 3 groups | Mean of the 3 groups at the last step | Best − last |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| GRPO | 202 | 55.8 | 64.5 | 72.3 | **64.2** | 64.2 | 0.0 |
+| OPD (sampled tokens) | 606 | 51.8 | 63.1 | 72.7 | **62.5** | 62.5 | 0.0 |
+| OPD (full distributions) | 600 | 52.1 | 63.6 | 72.7 | **62.8** | 63.0 | −0.2 |
+| VA-OPD | 255 | 52.3 | 62.9 | 72.1 | **62.5** | 60.4 | +2.1 |
+| VGS | 600 | 49.9 | 61.2 | 72.0 | **61.0** | 61.3 | −0.3 |
+| VCSD (no external teacher) | 30 | 43.3 | 55.9 | 71.1 | **56.8** | 18.3 | +38.5 |
 
 VCSD's validation reward is highest at step 30 and falls afterwards; at the last step most of its answers run
 to the 2,048-token limit. Its paper trains 90 steps of 32 prompts x 8 responses, about 4% of the 606 updates of

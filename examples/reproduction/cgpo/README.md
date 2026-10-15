@@ -78,7 +78,7 @@ bash scripts/eval.sh checkpoints/CGPO-Reproduce/qwen3_vl_8b_cgpo --suite cgpo
 ```
 
 CGPO is also part of the controlled comparison on Qwen3-VL-4B
-([examples/comparison/](../../comparison/README.md)), where it shares every hyper-parameter with the other
+([examples/comparison/rlvr_qwen3_vl_4b/](../../comparison/rlvr_qwen3_vl_4b/README.md)), where it shares every hyper-parameter with the other
 methods (GCR weight 0.1 there).
 
 Notes:

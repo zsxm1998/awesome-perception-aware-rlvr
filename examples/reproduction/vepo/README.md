@@ -83,7 +83,7 @@ command (e.g. `algorithm.disable_kl=true`) and set `N_GPUS_PER_NODE`, `MODEL_PAT
   module of the official repository is not called during training. We use the described strength,
   `{"std":2.0}`; `{"std":6.928}` reproduces what the official code runs.
 - The 3B setting and the retrained baselines of Table 1 (NoisyRollout, PAPO-DAPO, VPPO, R1-ShareVL,
-  top-40% entropy) are not scripted; see [examples/comparison/](../../comparison/README.md) for a controlled
+  top-40% entropy) are not scripted; see [the RLVR comparison](../../comparison/rlvr_qwen3_vl_4b/README.md) for a controlled
   comparison of the perception-aware methods.
 - **Evaluation** (suite `vepo`) uses the PAPO-Eval protocol (rule-based `\boxed{}` match, avg@8,
   T=1.0) instead of greedy decoding with a gpt-4o-mini judge for MathVista, MathVerse, MathVision

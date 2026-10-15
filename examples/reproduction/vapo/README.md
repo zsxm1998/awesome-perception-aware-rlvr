@@ -85,7 +85,7 @@ bash scripts/eval.sh checkpoints/VAPO-Reproduce/qwen2_5_vl_7b_vapo --suite vapo 
 Checkpoints go to `checkpoints/VAPO-Reproduce/<script name>`. Append `key=value` overrides to the
 command and set `N_GPUS_PER_NODE`, `MODEL_PATH`, `DATA_ROOT`, `LOGGER` or `EXPERIMENT_NAME` in the
 environment. Evaluation is described in [eval/README.md](../../../eval/README.md). The controlled
-comparison runs VAPO as [`examples/comparison/qwen3_vl_4b/vapo.sh`](../../comparison/README.md), on
+comparison runs VAPO as [`examples/comparison/rlvr_qwen3_vl_4b/vapo.sh`](../../comparison/rlvr_qwen3_vl_4b/README.md), on
 ViRL39K with the claims added as a column (`bash scripts/prepare_data.sh comparison` builds
 `virl39k_claims`); the 2,289 multi-image problems have no claims and get the GRPO reward.
 
@@ -150,7 +150,7 @@ About 54% of the claims are correct, so answering "yes" to every probe would be 
 On seed 1 of the 4B model, the mean perception score of the probed responses is 0.19 with the released reading
 and 0.56 without the trailing space. These are untrained models; what the policy answers changes during training.
 
-The reproduction scripts keep the released reading. The comparison (`examples/comparison/qwen3_vl_4b/vapo.sh`)
+The reproduction scripts keep the released reading. The comparison (`examples/comparison/rlvr_qwen3_vl_4b/vapo.sh`)
 uses the question without the trailing space, the best of the three on its model across the three data seeds:
 
 ```bash

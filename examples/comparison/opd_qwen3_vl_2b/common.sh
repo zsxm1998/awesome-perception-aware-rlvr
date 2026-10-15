@@ -5,8 +5,8 @@ THIS_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$THIS_DIR/../common.sh"
 
 # Shared recipe of the on-policy distillation (OPD) comparison: a Qwen3-VL-2B student distilled from the
-# GRPO run of the RL comparison (Qwen3-VL-4B-Instruct after ../qwen3_vl_4b/grpo.sh, at its best validation
-# step) on the data, prompt, optimizer and lengths of that comparison (../qwen3_vl_4b/common.sh). Each update
+# GRPO run of the RLVR comparison (Qwen3-VL-4B-Instruct after ../rlvr_qwen3_vl_4b/grpo.sh, at its best validation
+# step) on the data, prompt, optimizer and lengths of that comparison (../rlvr_qwen3_vl_4b/common.sh). Each update
 # uses one fresh rollout batch (128 prompts x 8), the same number of samples per update and of updates as the
 # RL recipe's 384 x 8 with three updates. There is no reference KL and no entropy term; the task reward is
 # computed for logging only.
@@ -30,7 +30,7 @@ except (OSError, KeyError, ValueError):
     if dry_run:  # the configuration check does not load the teacher
         print(run / "global_step_BEST" / "actor")
         sys.exit(0)
-    sys.exit(f"no GRPO teacher: {run} has no checkpoint_tracker.json; run examples/comparison/qwen3_vl_4b/grpo.sh "
+    sys.exit(f"no GRPO teacher: {run} has no checkpoint_tracker.json; run examples/comparison/rlvr_qwen3_vl_4b/grpo.sh "
              "first, or set TEACHER_PATH")
 actor = run / f"global_step_{step}" / "actor"
 reasons = []

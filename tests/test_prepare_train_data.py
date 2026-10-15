@@ -70,7 +70,7 @@ def test_every_method_group_prepares_the_data_of_its_scripts():
     """`bash scripts/prepare_data.sh <method>` covers every $DATA_ROOT/<dataset>/ its launch scripts read."""
     root = SCRIPT.resolve().parents[2]
     folders = {
-        "comparison": "examples/comparison/qwen3_vl_4b",
+        "comparison": "examples/comparison/rlvr_qwen3_vl_4b",
         "opd_comparison": "examples/comparison/opd_qwen3_vl_2b",
     }
     pattern = re.compile(r"\$\{?DATA_ROOT\}?/([A-Za-z0-9_]+)/")

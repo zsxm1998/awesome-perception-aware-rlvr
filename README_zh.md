@@ -36,8 +36,7 @@ RLVR 能提升大视觉语言模型的推理能力，但它的奖励只检查最
 - **[CGPO](#-cgpo-acm-mm-2026-oral) 官方实现**（ACM MM 2026 Oral）；
 - **[方法复现](#-已复现方法)**：17 个方法（13 个 RLVR、4 个 OPD），各自使用原论文的数据、模型和超参数，
   并附带论文中对比的基线；
-- **[统一设定对比](#-统一设定对比)**：两个对比各用一套统一设定，RLVR 方法（除 DeepEyes 外）在 Qwen3-VL-4B 上
-  对比，OPD 方法以 Qwen3-VL-2B 为学生、以 RLVR 对比中的 GRPO 运行为教师对比；
+- **[统一设定对比](#-统一设定对比)**：两个对比各用一套统一设定，RLVR 方法（除 DeepEyes 外）在 Qwen3-VL-4B 上对比；OPD 方法以 Qwen3-VL-2B 为学生，以经 GRPO 训练的 Qwen3-VL-4B 为教师进行对比；
 - **[一键评测](eval/README.md)**：覆盖这些论文所用评测基准的并集，每个基准都有下载处理脚本，每篇论文都有
   对应的评测套件；
 - **[论文清单](#-论文清单)**：感知导向的 RLVR 与 OPD、基于定位的推理与看图思考（thinking with images），
@@ -74,7 +73,7 @@ RLVR 能提升大视觉语言模型的推理能力，但它的奖励只检查最
 - **2026-10**：OPD：教师模型（冻结模型或策略的 EMA）、基于采样 token 和基于完整下一 token 分布的两种 OPD
   目标，复现 [VA-OPD](examples/reproduction/va_opd/README.md)、[VGS](examples/reproduction/vgs/README.md)、
   [VCSD](examples/reproduction/vcsd/README.md)、[Vision-OPD](examples/reproduction/vision_opd/README.md)，
-  新增 [OPD 统一对比](examples/comparison/opd_qwen3_vl_2b/README.md)，评测新增 ZoomBench、BLINK、MMStar、AI2D、MMMU。
+  新增 [OPD 统一对比](examples/comparison/opd_qwen3_vl_2b/README_zh.md)，评测新增 ZoomBench、BLINK、MMStar、AI2D、MMMU。
 - **2026-10**：🎉 首次发布：[CGPO](#-cgpo-acm-mm-2026-oral)（ACM MM 2026 Oral）官方实现、13 个复现的 RLVR 方法
   （PAPO、VPPO、DVRP、ToR、PGPO、PEPO、CFPO、VEPO、NoisyRollout、VGPO、VAPO、GRIT、DeepEyes）、Qwen3-VL-4B 上的
   统一设定对比、一键评测。
@@ -203,7 +202,7 @@ bash scripts/prepare_eval_data.sh papo       # PAPO 评测套件中的基准
 
 ```bash
 bash examples/reproduction/papo/qwen2_5_vl_7b_grpo_papo.sh                       # PAPO-G，论文设定
-bash examples/comparison/qwen3_vl_4b/cgpo.sh                                      # 统一对比中的 CGPO
+bash examples/comparison/rlvr_qwen3_vl_4b/cgpo.sh                                 # 统一对比中的 CGPO
 N_GPUS_PER_NODE=4 bash examples/reproduction/papo/qwen2_5_vl_7b_grpo.sh trainer.total_epochs=1   # 任意覆盖参数
 ```
 
@@ -240,8 +239,9 @@ python3 scripts/finalize_run.py checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_pa
 .
 ├── examples/
 │   ├── reproduction/<method>/   # 各论文原设定：common.sh（公共参数）+ 每个实验一个脚本
-│   ├── comparison/qwen3_vl_4b/  # 统一设定对比：每个方法一个脚本，共用 common.sh
-│   ├── comparison/opd_qwen3_vl_2b/  # OPD 的统一设定对比
+│   ├── comparison/              # 统一设定对比：索引页，每个对比一个目录
+│   │   ├── rlvr_qwen3_vl_4b/    #   RLVR：每个方法一个脚本，共用 common.sh
+│   │   └── opd_qwen3_vl_2b/     #   OPD：每个方法一个脚本，共用 common.sh
 │   ├── config.yaml              # 基础训练配置
 │   ├── reward_function/         # 奖励函数
 │   └── format_prompt/、system_prompt/、chat_template/
@@ -261,18 +261,12 @@ token 选择、优势缩放、辅助损失和额外奖励；OPD 另有教师和�
 
 ## 📊 统一设定对比
 
-两个对比各用一套统一设定训练已复现的方法，并在同样的 19 项基准上评测（`comparison` 套件，分三组：数学推理、
-依赖视觉的推理、感知与幻觉）：
+两个对比各用一套统一设定训练已复现的方法，并在同样的 19 项基准上评测，分为三组：数学推理、依赖视觉的推理、感知与幻觉。[examples/comparison/](examples/comparison/README_zh.md) 列出了这两个对比，并说明了[这些结果能说明什么、不能说明什么](examples/comparison/README_zh.md#关于结果的说明)。
 
-- **RLVR**（[README](examples/comparison/README.md) · [中文](examples/comparison/README_zh.md)）：除 DeepEyes 外的
-  所有 RLVR 方法（[原因](examples/comparison/README_zh.md#为什么不包含-deepeyes)）在 Qwen3-VL-4B-Instruct 上训练，
-  使用相同的数据（ViRL39K / MMK12）和相同的 GRPO 超参数，只有方法相关的参数不同，各方法沿用其论文中的图像扰动方式。
-- **OPD**（[README](examples/comparison/opd_qwen3_vl_2b/README.md)）：两种基础 OPD 目标、VA-OPD、VGS、VCSD 以
-  Qwen3-VL-2B 为学生、以 RLVR 对比中的 GRPO 运行为教师（VCSD 改为从学生自身的 EMA 蒸馏），并与同一学生上的 GRPO
-  对照，使用相同的数据、训练量和评测；Vision-OPD 需要区域标注，这份数据没有。
+- **[RLVR](examples/comparison/rlvr_qwen3_vl_4b/README_zh.md)**：除 DeepEyes 外的所有 RLVR 方法（[原因](examples/comparison/rlvr_qwen3_vl_4b/README_zh.md#为什么不包含-deepeyes)）在 Qwen3-VL-4B-Instruct 上训练，使用相同的数据（ViRL39K / MMK12）和相同的 GRPO 超参数，只有方法相关的参数不同，各方法沿用其论文中的图像扰动方式。
+- **[OPD](examples/comparison/opd_qwen3_vl_2b/README_zh.md)**：两种基础 OPD 目标、VA-OPD、VGS、VCSD 以 Qwen3-VL-2B 为学生，以经 GRPO 训练的 Qwen3-VL-4B 为教师（VCSD 改为从学生自身的 EMA 蒸馏），并与同一学生上的 GRPO 对照，使用相同的数据、训练量和评测；Vision-OPD 需要区域标注，这份数据没有。
 
-这些 README 给出每个方法在各组和各基准上的分数（最后一步和验证最优步；RLVR 对比还给出训练时长），以及
-[这些结果能说明什么、不能说明什么](examples/comparison/README_zh.md#关于结果的说明)。
+每个对比的 README 给出每个方法在各组和各基准上的分数（最后一步和验证最优步）以及训练时长。
 
 ## 📈 评测
 

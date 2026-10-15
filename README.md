@@ -40,8 +40,8 @@ This repository provides
 - **[Reproductions](#-reproduced-methods)** of 17 methods (13 RLVR and 4 OPD) with each paper's own data,
   model and hyper-parameters, plus the baselines they compare against;
 - **[Controlled comparisons](#-controlled-comparison)** under one shared setting each: the RLVR methods
-  except DeepEyes on Qwen3-VL-4B, and the OPD methods on a Qwen3-VL-2B student taught by the RLVR
-  comparison's GRPO run;
+  except DeepEyes on Qwen3-VL-4B, and the OPD methods on a Qwen3-VL-2B student with a GRPO-trained
+  Qwen3-VL-4B as the teacher;
 - **[One-click evaluation](eval/README.md)** on the union of the benchmarks used by these papers, with
   per-benchmark download scripts and per-paper suites;
 - a **[paper list](#-paper-list)** of perception-aware RLVR and OPD, grounded reasoning and thinking
@@ -220,7 +220,7 @@ If `huggingface.co` is slow or blocked, set `HF_ENDPOINT=https://hf-mirror.com`.
 
 ```bash
 bash examples/reproduction/papo/qwen2_5_vl_7b_grpo_papo.sh                       # PAPO-G, paper setting
-bash examples/comparison/qwen3_vl_4b/cgpo.sh                                      # CGPO in the controlled comparison
+bash examples/comparison/rlvr_qwen3_vl_4b/cgpo.sh                                 # CGPO in the controlled comparison
 N_GPUS_PER_NODE=4 bash examples/reproduction/papo/qwen2_5_vl_7b_grpo.sh trainer.total_epochs=1   # any override
 ```
 
@@ -263,8 +263,9 @@ finalized runs.
 .
 ├── examples/
 │   ├── reproduction/<method>/   # paper settings: common.sh (shared args) + one script per run
-│   ├── comparison/qwen3_vl_4b/  # controlled comparison: one script per method, identical common.sh
-│   ├── comparison/opd_qwen3_vl_2b/  # controlled comparison of OPD
+│   ├── comparison/              # controlled comparisons: an index and one directory per comparison
+│   │   ├── rlvr_qwen3_vl_4b/    #   RLVR: one script per method, shared common.sh
+│   │   └── opd_qwen3_vl_2b/     #   OPD: one script per method, shared common.sh
 │   ├── config.yaml              # base training config
 │   ├── reward_function/         # reward functions
 │   └── format_prompt/, system_prompt/, chat_template/
@@ -287,22 +288,22 @@ distillation losses (`distillation.py`). See
 
 ## 📊 Controlled comparison
 
-Two comparisons train the reproduced methods in one shared setting each and evaluate them on the same
-19 benchmarks (the `comparison` suite, in three groups: math reasoning, vision-dependent reasoning, and
-perception and hallucination):
+Two comparisons train the reproduced methods in one shared setting each and evaluate them on the same 19
+benchmarks in three groups (math reasoning, vision-dependent reasoning, and perception and hallucination).
+[examples/comparison/](examples/comparison/README.md) ([中文](examples/comparison/README_zh.md)) lists them and
+explains [what the results can and cannot say](examples/comparison/README.md#about-the-results).
 
-- **RLVR** ([README](examples/comparison/README.md) · [中文](examples/comparison/README_zh.md)): every
-  RLVR method except DeepEyes ([why](examples/comparison/README.md#why-deepeyes-is-not-included)) on
-  Qwen3-VL-4B-Instruct, with the same data (ViRL39K / MMK12) and the same GRPO hyper-parameters; only the
-  method-specific arguments differ, and each method keeps the image perturbation of its paper.
-- **OPD** ([README](examples/comparison/opd_qwen3_vl_2b/README.md)): the two base OPD objectives, VA-OPD,
-  VGS and VCSD on a Qwen3-VL-2B student, with the RLVR comparison's GRPO run as the teacher (VCSD distills
-  from an EMA of the student instead), next to GRPO on the same student, with the same data, budget and
-  evaluation; Vision-OPD needs region annotations, which this data does not have.
+- **[RLVR](examples/comparison/rlvr_qwen3_vl_4b/README.md)**: every RLVR method except DeepEyes
+  ([why](examples/comparison/rlvr_qwen3_vl_4b/README.md#why-deepeyes-is-not-included)) on Qwen3-VL-4B-Instruct,
+  with the same data (ViRL39K / MMK12) and the same GRPO hyper-parameters; only the method-specific arguments
+  differ, and each method keeps the image perturbation of its paper.
+- **[OPD](examples/comparison/opd_qwen3_vl_2b/README.md)**: the two base OPD objectives, VA-OPD, VGS and VCSD on a
+  Qwen3-VL-2B student with a GRPO-trained Qwen3-VL-4B as the teacher (VCSD distills from an EMA of the student
+  instead), next to GRPO on the same student, with the same data, budget and evaluation; Vision-OPD needs
+  region annotations, which this data does not have.
 
-The READMEs give every method's scores per group and per benchmark, at the last and at the best
-validation step (the RLVR one also the training time), and [what the results can and cannot
-say](examples/comparison/README.md#about-the-results).
+The README of each comparison gives every method's scores per group and per benchmark, at the last and at the
+best validation step, and its training time.
 
 ## 📈 Evaluation
 

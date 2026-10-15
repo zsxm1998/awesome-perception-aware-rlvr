@@ -402,7 +402,7 @@ method's training from these flags or suite defaults:
 | PEPO (Geometry3K setting) | `--format-prompt examples/format_prompt/pepo.jinja` (suite `pepo_geometry`) |
 | CGPO | `--format-prompt examples/format_prompt/xml_grounded_reasoning_v2.jinja` (suite `cgpo`) |
 | GRIT (`examples/reproduction/grit`) | `--format-prompt examples/format_prompt/grit.jinja --system-prompt none --min-pixels 3136 --max-pixels 200704` (suite `grit`) |
-| GRIT in the comparison (`examples/comparison/qwen3_vl_4b/grit.sh`) | `--format-prompt none --system-prompt examples/system_prompt/grit_GR.txt`; on the GRIT sets with `--benchmarks grit_vsr,grit_tallyqa,grit_gqa,ovdeval_position`, not `--suite grit` |
+| GRIT in the comparison (`examples/comparison/rlvr_qwen3_vl_4b/grit.sh`) | `--format-prompt none --system-prompt examples/system_prompt/grit_GR.txt`; on the GRIT sets with `--benchmarks grit_vsr,grit_tallyqa,grit_gqa,ovdeval_position`, not `--suite grit` |
 | DeepEyes, Qwen2.5-VL (`qwen2_5_vl_7b_grpo_deepeyes.sh`, DeepEyes' own prompts) | `--interaction-mode agentic --agent-prompt-style official` (suite `deepeyes` plus `--agent-prompt-style official`) |
 | VA-OPD (`examples/reproduction/va_opd`) | `--format-prompt examples/format_prompt/math.jinja --min-pixels 262144 --max-pixels 4194304` (suite `va_opd`) |
 | VGS (`examples/reproduction/vgs`) | `--format-prompt none --system-prompt examples/system_prompt/vgs.txt --min-pixels 262144 --max-pixels 4194304` (suite `vgs`) |

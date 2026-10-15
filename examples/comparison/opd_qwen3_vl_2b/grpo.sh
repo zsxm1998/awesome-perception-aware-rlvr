@@ -2,9 +2,9 @@
 set -euo pipefail
 
 THIS_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-source "$THIS_DIR/../qwen3_vl_4b/common.sh"
+source "$THIS_DIR/../rlvr_qwen3_vl_4b/common.sh"
 
-# RL reference: the GRPO recipe of the RL comparison (../qwen3_vl_4b/grpo.sh) with the 2B student,
+# RLVR reference: the GRPO recipe of the RLVR comparison (../rlvr_qwen3_vl_4b/grpo.sh) with the 2B student,
 # logged in the OPD comparison's project.
 pr_default MODEL_PATH "Qwen/Qwen3-VL-2B-Instruct"
 pr_default EXPERIMENT_NAME "grpo"
