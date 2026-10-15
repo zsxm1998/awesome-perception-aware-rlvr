@@ -7,9 +7,10 @@ reproduction results, bug reports and documentation fixes.
 
 ## Ways to contribute
 
-- **Add a paper to the list.** Edit the tables in `README.md` and `README_zh.md` (newest first): arXiv
-  link, first author, venue only if it is confirmed by the arXiv comments, OpenReview or the
-  official repository, code link and a one-line key idea.
+- **Add a paper to the list.** Add a row to the table of its main training stage (see "Reproduced
+  methods" in the README) in `README.md` and `README_zh.md`, newest first: arXiv link, first author,
+  venue only if it is confirmed by the arXiv comments, OpenReview or the official repository, code link
+  and a one-line key idea.
 - **Add a method.** Follow [docs/add_method.md](../docs/add_method.md). A new method needs config
   fields with validation, unit tests, a `examples/reproduction/<method>/` directory with baseline and method
   scripts, and a README that states the differences from the official recipe.

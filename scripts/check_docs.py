@@ -17,8 +17,8 @@
     python scripts/check_docs.py --fix    # also rewrite the paper-count badges
 
 Checks: the "Papers" / "Reproduced" badges match the lists (the tables of "Reproduced methods" and
-of "Paper list"), README.md and README_zh.md list the same papers, every table of the paper list is
-sorted newest first and no paper appears twice, and every relative Markdown link or image points to
+of "Paper list"), README.md and README_zh.md list the same papers, every table of the paper list (under a
+level-3 or level-4 heading) is sorted newest first and no paper appears twice, and every relative Markdown link or image points to
 an existing file (and, with ``#anchor``, to an existing heading).
 """
 
@@ -91,7 +91,7 @@ def check_paper_list(fix: bool) -> list[str]:
         reproduced = section(text, 2, reproduced_title)
         n_reproduced = sum(1 for line in reproduced.splitlines() if METHOD_ROW.match(line))
         n_others = 0
-        for table in re.split(r"(?m)^### ", paper_list)[1:]:
+        for table in re.split(r"(?m)^#{3,4} ", paper_list)[1:]:
             title = table.splitlines()[0]
             dates = [ROW.match(line).group(1) for line in table.splitlines() if ROW.match(line)]
             n_others += len(dates)

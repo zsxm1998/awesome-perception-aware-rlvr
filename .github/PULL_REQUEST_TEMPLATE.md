@@ -29,7 +29,7 @@
 
 **Paper list**
 
-- [ ] Added to both `README.md` and `README_zh.md`, newest first: arXiv link, first author, venue (only if confirmed by the arXiv comments, OpenReview or the official repository), code link and a one-line key idea
+- [ ] Added to both `README.md` and `README_zh.md`, in the table of its main training stage, newest first: arXiv link, first author, venue (only if confirmed by the arXiv comments, OpenReview or the official repository), code link and a one-line key idea
 - [ ] `python scripts/check_docs.py --fix` passes (it also updates the paper-count badges)
 
 **Code**

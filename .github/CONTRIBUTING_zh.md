@@ -6,7 +6,7 @@
 
 ## 贡献方式
 
-- **补充论文。** 在 `README.md` 和 `README_zh.md` 的清单中按时间倒序各加一行：arXiv 链接、第一作者、会议
+- **补充论文。** 在 `README.md` 和 `README_zh.md` 中，按论文主要改动所在的训练环节（见 README 的“已复现方法”）找到对应的表，按时间倒序各加一行：arXiv 链接、第一作者、会议
   （仅当 arXiv 备注、OpenReview 或官方仓库能确认时才写）、代码链接和一句话核心思路。
 - **新增方法。** 参考 [docs/add_method.md](../docs/add_method.md)。新方法需要带校验的配置项、单元测试、
   `examples/reproduction/<method>/` 目录（基线与方法脚本），以及说明与官方配方差异的 README。

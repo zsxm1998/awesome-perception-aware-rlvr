@@ -50,8 +50,9 @@ All switches are fields of `AlgorithmConfig` in `verl/trainer/config.py`; see
    `scripts/data/prepare_train_data.py`; if it uses new benchmarks, follow
    [eval/README.md](../eval/README.md#adding-a-new-benchmark) and add a suite for the paper.
 7. **Docs.** Add `examples/reproduction/<method>/README.md` (paper, official code, setting, differences
-   from the official implementation, expected numbers) and a row to the method table in the
-   top-level README.
+   from the official implementation, expected numbers) and a row to the RLVR or OPD table of
+   "Reproduced methods" in both top-level READMEs, with the training stages it changes (the main one first),
+   next to the methods of the same main stage.
 
 ## Launcher conventions
 
