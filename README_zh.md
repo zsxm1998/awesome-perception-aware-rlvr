@@ -13,7 +13,7 @@ OPD：VA-OPD · VGS · VCSD · Vision-OPD<br>
 [English](README.md) | [简体中文](README_zh.md)
 
 [![Awesome](https://awesome.re/badge.svg)](https://github.com/sindresorhus/awesome)
-[![Papers](https://img.shields.io/badge/Papers-95-blue)](#-论文清单)
+[![Papers](https://img.shields.io/badge/Papers-125-blue)](#-论文清单)
 [![Reproduced](https://img.shields.io/badge/Reproduced-18-brightgreen)](#-已复现方法)
 [![CGPO](https://img.shields.io/badge/CGPO-ACM%20MM%202026%20Oral-8A2BE2)](https://doi.org/10.1145/3767308.3835969)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -40,7 +40,7 @@ RLVR 能提升大视觉语言模型的推理能力，但它的奖励只检查最
   对比，OPD 方法以 Qwen3-VL-2B 为学生、以 RLVR 对比中的 GRPO 运行为教师对比；
 - **[一键评测](eval/README.md)**：覆盖这些论文所用评测基准的并集，每个基准都有下载处理脚本，每篇论文都有
   对应的评测套件；
-- **[论文清单](#-论文清单)**：感知导向的 RLVR、基于定位的推理与看图思考（thinking with images），
+- **[论文清单](#-论文清单)**：感知导向的 RLVR 与 OPD、基于定位的推理与看图思考（thinking with images），
   以及这一方向常用的评测基准。
 
 所有方法共用同一个训练框架（[EasyR1](https://github.com/hiyouga/EasyR1) 的分支），
@@ -69,7 +69,8 @@ RLVR 能提升大视觉语言模型的推理能力，但它的奖励只检查最
 
 ## 🔥 更新
 
-- **2026-10**：两个[统一设定对比](#-统一设定对比)的结果，每个方法给出最后一步和验证最优步。
+- **2026-10**：两个[统一设定对比](#-统一设定对比)的结果，每个方法给出最后一步和验证最优步；[论文清单](#-论文清单)
+  新增 30 篇感知导向的 OPD 论文。
 - **2026-10**：OPD：教师模型（冻结模型或策略的 EMA）、基于采样 token 和基于完整下一 token 分布的两种 OPD
   目标，复现 [VA-OPD](examples/reproduction/va_opd/README.md)、[VGS](examples/reproduction/vgs/README.md)、
   [VCSD](examples/reproduction/vcsd/README.md)、[Vision-OPD](examples/reproduction/vision_opd/README.md)，
@@ -319,7 +320,7 @@ InternVL）不受影响。设置 `worker.actor.model.plain_think_tokens=false`
 
 ## 📚 论文清单
 
-以下条目对照 arXiv、OpenReview 和官方仓库核实（2026-10-01）；只有在一手来源
+以下条目对照 arXiv、OpenReview 和官方仓库核实（2026-10-01；感知导向的 OPD 论文于 2026-10-15）；只有在一手来源
 确认时才标注会议（来源见 [docs/paper_list_sources.md](docs/paper_list_sources.md)，BibTeX 见
 [docs/paper_list.bib](docs/paper_list.bib)）。按时间倒序排列。本仓库实现的方法列在[已复现方法](#-已复现方法)中。
 欢迎提交 PR 补充论文。
@@ -356,6 +357,43 @@ InternVL）不受影响。设置 `worker.actor.model.plain_think_tokens=false`
 | 2025-06 | [Revisiting Visual Understanding in Multimodal Reasoning through a Lens of Image Perturbation](https://arxiv.org/abs/2506.09736)<br>Yuting Li et al. · `2506.09736` | arXiv | [GitHub](https://github.com/YutingLi0606/Vision-Matters) | **Vision-Matters**: Distractor concatenation, dominance-preserving mixup and random rotation perturbations plugged into SFT, DPO or GRPO. |
 | 2025-06 | [Perception-R1: Advancing Multimodal Reasoning Capabilities of MLLMs via Visual Perception Reward](https://arxiv.org/abs/2506.07218)<br>Tong Xiao et al. · `2506.07218` | ICLR 2026 | [GitHub](https://github.com/tongxiao2002/Perception-R1) | **Perception-R1 (Xiao et al.)**: Judging LLM scores consistency between responses and visual annotations as a visual perception reward in RLVR. |
 | 2025-05 | [Visionary-R1: Mitigating Shortcuts in Visual Reasoning with Reinforcement Learning](https://arxiv.org/abs/2505.14677)<br>Jiaer Xia et al. · `2505.14677` | TMLR | [GitHub](https://github.com/maifoundations/Visionary-R1) | **Visionary-R1**: Caption-reason-answer output format trained with pure RL to mitigate shortcut learning. |
+
+### 🧑‍🏫 感知导向的 OPD
+
+面向大视觉语言模型的 OPD，其教师、目标或 token 权重由视觉证据决定：教师看到图像的特权视图、不同视图之间的对比，或每个 token 的视觉依赖。已复现的 4 个 OPD 方法见[已复现方法](#-已复现方法)。
+
+| Date | Paper | Venue | Code | Key idea |
+|---|---|---|---|---|
+| 2026-10 | [VC-OPD: Visual Counterfactual On-Policy Distillation for Grounded Vision-Language Reasoning](https://arxiv.org/abs/2610.14939)<br>Jiahe Feng · `2610.14939` | arXiv | - | **VC-OPD**: The teacher scores each student prefix on the original and on a counterfactual image with the instance evidence corrupted; the gap reweights the distillation toward image-dependent tokens. |
+| 2026-10 | [CV-OPD: Contrastive Vision On-policy Distillation](https://arxiv.org/abs/2610.13264)<br>Haowei Wang et al. · `2610.13264` | arXiv | - | **CV-OPD**: Compares the teacher's distributions under a positive and a negative crop on the same student prefix and adds a contrastive term, so that the student relies on the visual evidence. |
+| 2026-10 | [Distilling Routed 3D Privilege for Spatial Reasoning in Vision-Language Models](https://arxiv.org/abs/2610.12355)<br>Hongxing Li et al. · `2610.12355` | arXiv | [GitHub](https://github.com/ZJU-REAL/GPD) | **GPD**: Depth, semantic and bird's-eye-view cues rendered as text are routed to the self-teacher as privilege for spatial reasoning; a privileged KL on incorrect trajectories augments GRPO. |
+| 2026-10 | [Where-OPD: Spatially Guided On-Policy Self-Distillation of MLLMs with Synthetic Scenes](https://arxiv.org/abs/2610.02117)<br>Sophia Sirko-Galouchenko et al. · `2610.02117` | arXiv | [GitHub](https://github.com/sirkosophia/Where-OPD) | **Where-OPD**: The self-teacher receives textual, spatially grounded guidance on the visual elements a query needs, from procedurally generated scenes with known object positions. |
+| 2026-09 | [LEGO-OPD: Factorized Teacher Composition for Multimodal On-Policy Distillation](https://arxiv.org/abs/2610.00333)<br>Jaeyun Shin et al. · `2610.00333` | arXiv | - | **LEGO-OPD**: Composes a language-expert prior and a grounding-expert factor into one teacher distribution, so the visual grounding signal transfers without the VLM teacher's language prior. |
+| 2026-09 | [Is Better Teacher Supervision Enough? Unlocking Student-side Learning in Multimodal On-Policy Distillation](https://arxiv.org/abs/2609.39120)<br>Siyuan Liu et al. · `2609.39120` | arXiv | [GitHub](https://github.com/Sirilaw/S-OPD) | **S-OPD**: Strengthens student-side perception: contrasts the student under the original and a masked image with teacher-based token gating, and aligns it under noise-perturbed images. |
+| 2026-09 | [Distill the Visual Evidence, Not Just the Answer: Cross-World On-Policy Distillation for Vision-Language Models](https://arxiv.org/abs/2609.38777)<br>Yuanhao Sun et al. · `2609.38777` | arXiv | [GitHub](https://github.com/baokou-fw2/CWAD) | **CW-OPD**: Builds two visual worlds that differ in answer-critical evidence; the student distills the teacher's cross-world change of response, not only its answer. |
+| 2026-09 | [RS-OPSD: Reliable Privileged On-Policy-Self-Distillation for Ultra-High-Resolution Remote Sensing VQA](https://arxiv.org/abs/2609.38072)<br>Chengjie Jiang et al. · `2609.38072` | arXiv | - | **RS-OPSD**: Zoomed evidence crops as the self-teacher's privilege for ultra-high-resolution remote sensing VQA, with safeguards against context loss and unreliable teachers (GeoEvidence-6K). |
+| 2026-09 | [On-Policy Visual Evidence Distillation](https://arxiv.org/abs/2609.36838)<br>Shaohang Wei et al. · `2609.36838` | arXiv | [GitHub](https://github.com/sylvain-wei/ReVuE) | **ReVuE**: OPD for visual agents that interleave reasoning with image operations; corrections target the failing stage: acquiring, reading or grounding the evidence. |
+| 2026-09 | [Evidence-Aligned Multimodal On-Policy Self-Distillation for Fine-Grained Visual Understanding](https://arxiv.org/abs/2609.34672)<br>Nanxing Hu et al. · `2609.34672` | arXiv | - | **EAD**: Keeps the crop-conditioned teacher as the target but weights its corrections by a separate evidence reference that removes model-state and lost-context effects. |
+| 2026-09 | [MM-OPD: Towards One More Bottleneck Between Perception and Reasoning](https://arxiv.org/abs/2609.32690)<br>Jintao Tong et al. · `2609.32690` | arXiv | - | **MM-OPD**: A frozen self-teacher also sees a caption or the generating code of the image (a symbolic view); residual token targets correct the image-conditioned prediction toward the right evidence. |
+| 2026-09 | [Progressive-View On-Policy Distillation for Regional-to-Global Transfer in Multimodal LLMs](https://arxiv.org/abs/2609.32333)<br>Shanfeng Huang et al. · `2609.32333` | arXiv | - | **PVD**: Progressive views move the student from the region crop to the full image through a padded crop; a regional-advantage weight reallocates the token supervision. |
+| 2026-09 | [BAS-OPD: Budget-Aware Selective On-Policy Self-Distillation for Fine-Grained Multimodal Perception](https://arxiv.org/abs/2609.25891)<br>Zihan Chen et al. · `2609.25891` | arXiv | - | **BAS-OPD**: Selects which rollouts query the privileged-view teacher under a budget (random, uncertainty-based or a learned utility) for fine-grained perception. |
+| 2026-09 | [OPD-Aha: From Linguistic Momentum to Visual Reflection in Multimodal On-Policy Distillation](https://arxiv.org/abs/2609.16459)<br>Chenhao Qiu et al. · `2609.16459` | arXiv | [GitHub](https://github.com/Echochef/OPD-Aha) | **OPD-Aha**: Reconstructs the target from the teacher's preference with the real image over a visual null, so that the student learns to reflect when its reasoning contradicts the image. |
+| 2026-08 | [ArmorOCR: Grounded Adversarial Visual Perception via Observation-Transferred Self-Distillation](https://arxiv.org/abs/2608.20122)<br>Linhan Cao et al. · `2608.20122` | arXiv | [GitHub](https://github.com/ant-research/ArmorOCR) | **ArmorOCR**: Self-distillation from privileged transformed observations for adversarial OCR, then GRPO for grounded OCR; introduces the AdvSpot benchmark. |
+| 2026-08 | [Self-Supervised Visual On-Policy Distillation](https://arxiv.org/abs/2608.14144)<br>Yijiang Li et al. · `2608.14144` | arXiv | - | **S²VOPD**: Removes information from the student instead of adding it to the teacher: the teacher sees the original image, the student a strongly augmented view; no annotations, rewards or stronger teacher. |
+| 2026-08 | [Perception Before Supervision: Self-Contained Visual Distillation from Counterfactual Blind Spots](https://arxiv.org/abs/2608.09931)<br>Shravan Venkatraman et al. · `2608.09931` | BMVC 2026 | [GitHub](https://github.com/mbzuai-oryx/CVPD) | **CVPD**: Finds visual blind spots in the model's own responses (zooming into a region sharpens the answer, removing it changes nothing) and distills them without external supervision. |
+| 2026-08 | [ADOPD: Reference-Privileged On-Policy Distillation for MLLM-Based Industrial Anomaly Detection](https://arxiv.org/abs/2608.09789)<br>Jingtai He et al. · `2608.09789` | arXiv | [GitHub](https://github.com/withTai/ADOPD) | **ADOPD**: A reference-privileged teacher for industrial anomaly detection; its likelihood gap between matched and mismatched references calibrates each response's weight. |
+| 2026-08 | [OPD-V: Visual On-Policy Self-Distillation with Modality Balance](https://arxiv.org/abs/2608.05131)<br>Aniri et al. · `2608.05131` | arXiv | [GitHub](https://github.com/aniri15/OPD-V) | **OPD-V**: A positive (zoom-in) and a negative (masked) self-teacher; their logit margin defines a modality-balance trust region for selective distillation. |
+| 2026-08 | [Distill What the Student Can See: Fisher-Projected On-Policy Distillation for Vision-Language Models](https://arxiv.org/abs/2608.01263)<br>Leyan Xue et al. · `2608.01263` | arXiv | - | **FP-OPD**: Distills only the teacher corrections the student can realize, projecting the teacher-student gap onto the student's visual tangent space estimated from image perturbations. |
+| 2026-07 | [VAD: Attributing Visual Evidence for Target Reconstruction in Multimodal On-Policy Distillation](https://arxiv.org/abs/2607.28590)<br>Kangning Zhang et al. · `2607.28590` | arXiv | [GitHub](https://github.com/DeepExperience/VAD_Multimodal_OPD) | **VAD**: The teacher scores each prefix with the evidence crop present and degraded; only the part of its correction along this visual direction forms the target. |
+| 2026-07 | [Correcting What You Cannot See: Credit Assignment for Perception Distillation in Multimodal Reasoners](https://arxiv.org/abs/2607.28336)<br>Feng Xiong et al. · `2607.28336` | arXiv | - | **PCD**: Strengthens distillation only where downstream failure and teacher-student disagreement both point to a correctable perception error, with separated perception and reasoning rollouts. |
+| 2026-07 | [RP-OPSD: Resolution-Privileged On-Policy Self-Distillation for Multimodal Large Language Models](https://arxiv.org/abs/2607.24447)<br>Qihui Zhu et al. · `2607.24447` | arXiv | [GitHub](https://github.com/sansanyuchen/RP-OPSD) | **RP-OPSD**: Resolution as privilege: the student samples from a low-resolution image and the self-teacher scores with the original resolution. |
+| 2026-07 | [Self-Boosting Vision-Language Models with Noisy Student On-Policy Self-Distillation](https://arxiv.org/abs/2607.23125)<br>Shuai Wang et al. · `2607.23125` | arXiv | - | **NOPD**: Noisy-student self-distillation: the model learns on corrupted inputs from its own clean-input predictions, without external models or answers. |
+| 2026-07 | [Med-OPD: Improving Medical Vision-Language Models via Evidence-Aware On-Policy Distillation](https://arxiv.org/abs/2607.16303)<br>Yunhang Qian et al. · `2607.16303` | arXiv | [GitHub](https://github.com/yunhang8658/MedOPD) | **Med-OPD**: A medical evidence advantage from a teacher counterfactual focuses distillation on the diagnosis-critical, evidence-dependent tokens of medical VLMs. |
+| 2026-06 | [V-Zero: Answer-Label-Free On-Policy Distillation with Contrastive Evidence Gating for Fine-Grained Visual Reasoning](https://arxiv.org/abs/2606.25319)<br>Haoxiang Sun et al. · `2606.25319` | arXiv | [GitHub](https://github.com/eVI-group-SCU/V-Zero) | **V-Zero**: Answer-label-free OPD for fine-grained visual reasoning: a question-relevant crop and a negative view gate the token-level distillation. |
+| 2026-06 | [Seeing Before Reasoning: Decoupling Perception and Reasoning for Shortcut-Resilient Multimodal On-Policy Self-Distillation](https://arxiv.org/abs/2606.19120)<br>Sihan Wang et al. · `2606.19120` | arXiv | - | **ViGOS**: The student describes the image before reasoning; an image-only perception teacher supervises the description and a privileged teacher the reasoning, against reference-answer shortcuts. |
+| 2026-06 | [Thinking Without Images: Internalizing Visual Manipulation with On-Policy Self-Distillation](https://arxiv.org/abs/2606.08719)<br>Yishuo Cai et al. · `2606.08719` | arXiv | [GitHub](https://github.com/walkeralan123/Imagine-OPD) | **Imagine-OPD**: A teacher with zoomed evidence views supervises the student's imagined zoom-in reasoning, internalizing thinking with images without tool calls. |
+| 2026-06 | [Learning Visual Spatial Planning from Symbolic State via Modality-Gap-Aware Self-Distillation](https://arxiv.org/abs/2606.06076)<br>Haocheng Luo et al. · `2606.06076` | arXiv | [GitHub](https://github.com/Oranger-l/MGSD) | **MGSD**: Self-distillation guided by the symbolic state for visual spatial planning, after a grounding cold start; inference uses the image only. |
+| 2026-06 | [ViCuR: Visual Cues as Recoverable Privilege for Multimodal On-Policy Distillation](https://arxiv.org/abs/2606.05718)<br>Kanghui Tian et al. · `2606.05718` | arXiv | [GitHub](https://github.com/tiankanghui/ViCuR) | **ViCuR**: Replaces answer-side privilege with query-related visual cues and adds a cue recovery module, so the student can recover the cues from its own input. |
 
 ### 🔍 基于定位的推理与看图思考
 

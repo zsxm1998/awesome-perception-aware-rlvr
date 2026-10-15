@@ -1,6 +1,6 @@
 # Paper list: verification notes
 
-The paper list in the README was verified on 2026-10-01; the four on-policy distillation papers (VA-OPD, VGS, VCSD, Vision-OPD) were added on 2026-10-04. This page records how each entry was checked and where each venue comes from.
+The paper list in the README was verified on 2026-10-01; the four on-policy distillation papers (VA-OPD, VGS, VCSD, Vision-OPD) were added on 2026-10-04. The 30 papers of "Perception-aware OPD" were added on 2026-10-15: candidates from the image-domain list of [Awesome-Multimodal-OPD](https://github.com/Jingchensun/Awesome-Multimodal-OPD) and an arXiv search (abstracts mentioning on-policy (self-)distillation and vision), kept when the teacher, the target or the token weights come from visual evidence; each arXiv page and code link was checked on that day as below. This page records how each entry was checked and where each venue comes from.
 
 ## Notes on verification
 
@@ -17,6 +17,8 @@ The paper list in the README was verified on 2026-10-01; the four on-policy dist
   - **VEPO** (2606.03937): a co-author homepage reports EMNLP 2026 Findings. No allowed source confirms it, so the table keeps `arXiv`.
   - **VGS** (2606.00564): the abstract announces `github.com/hee-suk-yoon/Decomposed_OPD`, but the repository holds only a README, so Code is `-`. The arXiv comment says "ICML 2026 Spotlight", and the paper is on the ICML 2026 list of spotlight posters.
   - **VA-OPD** (2605.21924): no code, and no venue in the arXiv comments or on OpenReview, so the entry says `arXiv`.
+  - **MM-OPD** (2609.32690): `github.com/TungChintao/MM-OPD` holds only a README ("Code will be coming soon"), so Code is `-`.
+  - **S²VOPD** (2608.14144) and **ViGOS** (2606.19120) link only project pages, so Code is `-`.
   - **Vision-OPD** (2605.18740): NeurIPS 2026 is stated in the official repo README; the paper itself uses the NeurIPS preprint style and states no venue.
   - **PRPO** (2606.08708): third-party aggregators list it as a NeurIPS 2026 poster. OpenReview shows only a CoRR record, so the table keeps `arXiv`.
   - **Visual-ARFT** shares the Visual-RFT repository (`Visual-ARFT/` subfolder). **MMMU-Pro** lives in the MMMU repository (`mmmu-pro/` subfolder).
@@ -24,6 +26,7 @@ The paper list in the README was verified on 2026-10-01; the four on-policy dist
 
 <details><summary>Per-entry venue sources</summary>
 
+- CVPD (`2608.09931`): BMVC 2026, from arXiv comments
 - TPAE (`2609.39168`): ACM MM 2026, from arXiv comments
 - Evidence-RL (CED) (`2608.08021`): NeurIPS 2026, from official repo README
 - VGS (`2606.00564`): ICML 2026 (Spotlight), from arXiv comments; ICML 2026 spotlight posters
