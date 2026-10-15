@@ -54,6 +54,7 @@ bash scripts/prepare_eval_data.sh vppo deepeyes          # suites
 bash scripts/prepare_eval_data.sh all                    # every non-optional benchmark (~16 GB on disk)
 bash scripts/prepare_eval_data.sh refcoco                # optional: RefCOCO family (~0.5 GB)
 bash scripts/prepare_eval_data.sh seed_bench             # optional: SEED-Bench (27 GB download, ~25 GB on disk)
+bash scripts/prepare_eval_data.sh zerobench_sub          # optional: ZeroBench sub-questions (gated, see below)
 python -m eval.prepare papo --data-root /data/eval       # same CLI as a module (from the repo root)
 ```
 
@@ -69,8 +70,11 @@ python -m eval.prepare papo --data-root /data/eval       # same CLI as a module 
   the ~4k images that the GRIT and RefCOCO sets reference are downloaded instead of the full
   archives. A failed benchmark does not stop the others: the command exits with a non-zero
   status and re-running it resumes.
-- `all` leaves out the optional benchmarks (RefCOCO and SEED-Bench, which is ~27 GB);
-  `--include-optional` adds them.
+- `all` leaves out the optional benchmarks (RefCOCO, SEED-Bench, which is ~27 GB, and the
+  ZeroBench sub-questions); `--include-optional` adds them.
+- ZeroBench (`jonathan-roberts1/zerobench`) is a gated dataset: accept its terms once on the
+  dataset page with your Hugging Face account (they ask not to publish the answers or train on
+  the data), log in (`hf auth login` or `HF_TOKEN`), then prepare `zerobench_sub`.
 - Before a benchmark that needs more than 2 GB is downloaded, the free space of the data-root
   filesystem is checked against its requirement (temporary archives included; see `--list`)
   and the command stops with a clear message when it is short (`--skip-space-check` to
@@ -107,7 +111,7 @@ repository is prompted as it was trained, and explicit flags always win (see [Pr
 | `grit` | grit_vsr, grit_tallyqa, grit_gqa, ovdeval_position | GRIT Table 1 (GRIT judges answers with GPT-4o, we use relaxed exact match); defaults follow GRIT's evaluation, for models trained with GRIT's prompt: its prompt (`grit.jinja`, no system prompt), the bare question (`--grounding-instruction none`; elsewhere a box instruction is appended to these sets) and 3,136–200,704 pixels. Evaluate other models on these sets with `--benchmarks grit_vsr,grit_tallyqa,grit_gqa,ovdeval_position` and their own prompt flags |
 | `deepeyes` | vstar, hrbench_4k, hrbench_8k, mme_realworld_lite, pope | DeepEyes Tables 1-3; default: agentic DeepEyes inference (see [Agentic evaluation](#agentic-evaluation-deepeyes)) |
 | `va_opd` | wemath, mathvista, mathverse, hallusionbench, ai2d, mmmu_val, mmstar | VA-OPD Table 1 without OCRBench (not available); the paper reports avg@8 at T=1.0 with official scoring and a GPT-4o judge where applicable, for the best checkpoint; our math sets are avg@8, the other four greedy by default (`--temperature 1.0 --num-samples 8` for avg@8; HallusionBench scores the first sample only); our MathVerse holds the 2,180 multiple-choice testmini questions with an image; defaults: the training prompt (`math.jinja`) and image size |
-| `vgs` | mathvision, mathverse_v, logicvista, mmmu_pro | VGS Table 1, the 4 of 7 benchmarks available (no VisualPuzzles, VlmsAreBlind); the paper reports Acc@1 (greedy) and Acc@16 (T=1); our MathVerse-V and MMMU-Pro come from PAPO-Eval and differ from the subsets the VGS authors use (MathVerse VD / VO multiple choice, 4-option MMMU-Pro); defaults: the training prompt (VGS' system prompt), image size and answer reading (`--answer-protocol vgs`) |
+| `vgs` | mathvision, mathverse_v, logicvista, mmmu_pro | VGS Table 1, 4 of its 7 benchmarks (VisualPuzzles, `visualpuzzles`, is not in the suite; VlmsAreBlind is not available); the paper reports Acc@1 (greedy) and Acc@16 (T=1); our MathVerse-V and MMMU-Pro come from PAPO-Eval and differ from the subsets the VGS authors use (MathVerse VD / VO multiple choice, 4-option MMMU-Pro); defaults: the training prompt (VGS' system prompt), image size and answer reading (`--answer-protocol vgs`) |
 | `vcsd` | blink, mmstar, vstar, mathvista, hrbench_4k, hrbench_8k, hallusionbench | VCSD Table 1; the paper's HallusionBench score is (aAcc+fAcc+qAcc)/3 (`aqf_mean` in the details) and its Acc. the mean of the seven scores; decoding and scoring are not given in the paper (we use greedy rule-based scoring, MathVista avg@8); defaults: the training prompt (the bare problem), chat template, tokenizer and image size |
 | `vision_opd` | vstar, zoombench, hrbench_4k, hrbench_8k, mme_realworld_lite, mmstar, pope | Vision-OPD Table 1 + holdout set of Table 2; the paper uses the full MME-RealWorld EN/CN (we have the lite version) and a gpt-oss-120b judge; MMVP is not available and CV-Bench is not in the suite (`--benchmarks cvbench` adds it); defaults: the training prompt (the dataset prompt, no system prompt), the non-thinking chat template and the image size (65,536-16,777,216 pixels) |
 | `cgpo` | = `papo` | CGPO natural-image reproduction (trained on ViRL39K); default prompt `xml_grounded_reasoning_v2.jinja` |
@@ -162,6 +166,8 @@ temperature 1.0, top_p 1.0 and 2048 new tokens; "greedy" = 1 sample at temperatu
 | `mmmu_pro` | MMMU-Pro (vision setting) | `PAPO-Galaxy/PAPO_eval` | 1730 | boxed exact match | avg@8 | PAPO, VPPO, PGPO, PEPO, CFPO, CGPO, VGS, VGPO |
 | `dynamath` | DynaMath (verifiable subset) | `chamber111/VPPO-Eval` | 3666 | boxed exact match | avg@8 | VPPO, PGPO |
 | `mathvision` | MathVision (verifiable subset) | `chamber111/VPPO-Eval` | 2907 | boxed exact match | avg@8 | VPPO, PGPO, VEPO, NoisyRollout, ToR, VGS |
+| `visualpuzzles` | VisualPuzzles (four-option puzzles; 499 with option texts, 669 with the options in the image) | `neulab/VisualPuzzles` | 1168 | accuracy over all questions (per reasoning category in details) | greedy | S-OPD |
+| `zerobench_sub` | ZeroBench sub-questions (open answers, one or more images; optional, gated) | `jonathan-roberts1/zerobench` | 334 | ZeroBench exact match on the final answer (VLMEvalKit's containment in details) | greedy | S-OPD |
 | `pope` | POPE random/popular/adversarial | `lmms-lab/POPE` | 9000 | macro F1 over the 3 splits (accuracy in details) | greedy | CFPO, DeepEyes, Vision-OPD |
 | `hallusionbench` | HallusionBench (image questions) | `lmms-lab/HallusionBench` | 951 | question accuracy aAcc (fAcc, qAcc and their mean `aqf_mean` in details) | greedy | VEPO, NoisyRollout, ToR, VA-OPD, VCSD |
 | `mme` | MME | `lmms-lab/MME` | 2374 | total score (acc + acc+); /2800 in averages | greedy (PGPO averages 8 samples) | PGPO |
@@ -193,8 +199,8 @@ temperature 1.0, top_p 1.0 and 2048 new tokens; "greedy" = 1 sample at temperatu
 | `refcocog_val` | RefCOCOg val (optional) | `PaDT-MLLM/RefCOCO` + COCO train2014 | 4896 | Acc@0.5 IoU | greedy | DeepEyes |
 
 Not included: the medical benchmarks of DVRP, LISA grounding and the few-shot / puzzle tasks
-of PEPO, GRIT's GPT-judged MathVista/MME subsets, OCRBench (VA-OPD), VisualPuzzles and
-VlmsAreBlind (VGS), MMVP and the full MME-RealWorld EN/CN sets (Vision-OPD).
+of PEPO, GRIT's GPT-judged MathVista/MME subsets, OCRBench (VA-OPD), VlmsAreBlind (VGS), MMVP
+and the full MME-RealWorld EN/CN sets (Vision-OPD).
 
 ### Scoring protocols
 
@@ -298,6 +304,40 @@ VlmsAreBlind (VGS), MMVP and the full MME-RealWorld EN/CN sets (Vision-OPD).
   outputs, reported in a Vision-OPD issue), so ZoomBench numbers are comparable within this
   harness rather than digit-for-digit with the papers. One multiple-choice item has the gold
   letter D for the options A and B.
+- **VisualPuzzles (`mcq`)** writes the options of the 499 questions with option texts as
+  `(A)`-`(D)` lines; the 669 questions whose options are drawn in the image get the official
+  line "Options: Choose from (A) (B) (C) (D) in the image." instead. Both end with the letter
+  instruction of MMStar in place of the official chain-of-thought instruction ("Solve the
+  multiple-choice question ... The last line of your response should be of the following
+  format: 'Answer: $LETTER' ..."), since the format prompt asks for the reasoning and the final
+  answer. The letter is read with the letter extraction of V\* (a closing `Answer: C` line is
+  read too). The official evaluation (`lmms-eval/lmms_eval/tasks/VisualPuzzles/utils.py` of
+  neulab/VisualPuzzles) takes the last option letter after `Answer:`, then other letter
+  patterns and the option texts, and finally a random letter; VLMEvalKit takes the last
+  `Answer: X` and counts any other response as wrong. Here an answer without a recognizable
+  letter is wrong. The primary metric is the accuracy over all 1,168 questions (the official
+  score); `accuracy_by_category` holds the five reasoning categories (algorithmic, analogical,
+  deductive, inductive, spatial). The official lmms-eval task generates up to 4,096 tokens, the
+  registry 2,048 as for the other benchmarks.
+- **ZeroBench sub-questions (`zerobench`)** ask the bare `question_text` with all images of the
+  question (one or more, in dataset order) before it. The official evaluation (the example code
+  in the README of jonathan-roberts1/zerobench) lowercases the response, takes the content of
+  its last `{...}` (`re.findall(r"\{(.*?)\}", ...)[-1]`, empty when there is none) and counts
+  it correct when it equals the stripped reference, ignoring case
+  (`parsed_answer[:len(ground_truth)].lower() == ground_truth.strip().lower() and
+  len(parsed_answer) == len(ground_truth.strip())`); there is no other normalization, no partial
+  credit and no judge. We apply this comparison to the final answer as the reasoning benchmarks
+  read it (a `\boxed{}` instead of the curly braces of the official prompt): the content of the
+  last `\boxed{}`, else of the last `<answer>` block, after the whitespace around `<`, `>` and `/`
+  is removed (`mathruler`'s `extract_boxed_content`, which also strips the content); the
+  reference gets the same whitespace removal. Compared with the official braces, nested braces
+  are kept (`\boxed{\frac{1}{2}}` reads `\frac{1}{2}`, the official regex `2`), braces written
+  after the box are ignored, spaces just inside the box do not count, an `<answer>` block counts
+  and bare braces without `\boxed` do not. VLMEvalKit's `ZEROBench.evaluate`, the scoring of the
+  S-OPD numbers, reads the same braces as the official code but counts an answer correct when it
+  contains the reference; that reading of our answers is `vlmevalkit_containment_accuracy` in
+  the details. The prepare step downloads the dataset's `main` branch (v3, December 2025, which
+  reworded three sub-questions); VLMEvalKit's copy was added in June 2025 and has not changed.
 - **C-VQA-Real / MARS-Bench / TextVQA (`cfpo_match`)** reproduce CFPO's
   `Counterfactual-Eval/inference_eval.py`: the last `\boxed{}` is extracted with
   `mathruler.grader.extract_boxed_content` (the whole response when there is no box) and

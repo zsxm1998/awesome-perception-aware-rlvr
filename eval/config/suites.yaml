@@ -220,7 +220,8 @@ suites:
       multiple-choice 432 / 436, LogicVista 448, MMMU-Pro 4-option 1,592): `mathvision` is
       VPPO-Eval's 2,907-item verifiable subset, `mathverse_v` is PAPO-Eval's 1,308-item
       vision-dependent split (one score), `logicvista` has 447 items and `mmmu_pro` is
-      PAPO-Eval's 1,730-item vision setting. VisualPuzzles and VlmsAreBlind are not available.
+      PAPO-Eval's 1,730-item vision setting. VisualPuzzles (`visualpuzzles`) is not in the suite;
+      VlmsAreBlind is not available.
       The decoding defaults are PAPO-Eval's (avg@8, T=1.0); add `--temperature 0 --num-samples
       1` for Acc@1 or `--num-samples 16` for Acc@16.
 

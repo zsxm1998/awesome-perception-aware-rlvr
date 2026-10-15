@@ -46,6 +46,7 @@ from easyr1_eval.scorers import (  # noqa: E402
     score_pope,
     score_refcoco,
     score_seed_bench,
+    score_zerobench,
     score_zoombench,
 )
 
@@ -165,6 +166,12 @@ ZOOMBENCH_ROWS = [
     },
 ]
 
+ZEROBENCH_ROWS = [
+    {"sample_id": "zb1", "target": "7", "responses": ["\\boxed{7}", "\\boxed{7 kg}"]},
+    {"sample_id": "zb2", "target": "Blue", "responses": ["<answer>blue</answer>"]},
+    {"sample_id": "zb3", "target": "3", "responses": ["no answer"]},
+]
+
 REFCOCO_ROWS = [
     {
         "sample_id": "r1",
@@ -259,6 +266,7 @@ GROUNDING_IOU_ROWS = [
         ("mcq", score_mcq, MCQ_ROWS, {"aggregate": "category_mean"}),
         ("mmmu", score_mmmu, MMMU_ROWS, {}),
         ("zoombench", score_zoombench, ZOOMBENCH_ROWS, {}),
+        ("zerobench", score_zerobench, ZEROBENCH_ROWS, {}),
         ("refcoco", score_refcoco, REFCOCO_ROWS, {}),
         ("pope", score_pope, POPE_ROWS, {}),
         ("mme", score_mme, MME_ROWS, {}),

@@ -15,8 +15,8 @@
 
 Targets are benchmark keys (eval/config/benchmarks.yaml), suite names
 (eval/config/suites.yaml) or ``all`` (every non-optional benchmark; add
-``--include-optional`` for RefCOCO and SEED-Bench). Already prepared benchmarks are
-skipped unless ``--force`` is given. Downloads use the Hugging Face Hub; set
+``--include-optional`` for RefCOCO, SEED-Bench and the gated ZeroBench sub-questions). Already
+prepared benchmarks are skipped unless ``--force`` is given. Downloads use the Hugging Face Hub; set
 ``HF_ENDPOINT=https://hf-mirror.com`` if huggingface.co is slow or blocked.
 """
 

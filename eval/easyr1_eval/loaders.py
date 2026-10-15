@@ -64,6 +64,8 @@ def load_samples(spec: BenchmarkSpec, data_root: Path, limit: int | None = None)
         "cvbench": load_cvbench,
         "ai2d": load_ai2d,
         "mmmu": load_mmmu,
+        "visualpuzzles": load_visualpuzzles,
+        "zerobench": load_zerobench,
         "vstar": load_vstar,
         "hrbench": load_hrbench,
         "mme_realworld": load_mme_realworld,
@@ -843,6 +845,92 @@ def load_mmmu(spec: BenchmarkSpec, data_root: Path, limit: int | None = None) ->
                         "subfield": str(row.get("subfield")),
                         "question_type": question_type,
                         "topic_difficulty": str(row.get("topic_difficulty")),
+                        "row_index": int(index),
+                        "question": question,
+                    },
+                )
+            )
+    return samples
+
+
+# ---------------------------------------------------------------------------
+# Reasoning benchmarks of the S-OPD table (VisualPuzzles, ZeroBench sub-questions)
+# ---------------------------------------------------------------------------
+
+# The line of the official prompts (the neulab/VisualPuzzles lmms-eval task, VLMEvalKit) for the questions whose
+# options are drawn in the image.
+VISUALPUZZLES_IMAGE_OPTIONS = "Options: Choose from (A) (B) (C) (D) in the image."
+
+
+def load_visualpuzzles(spec: BenchmarkSpec, data_root: Path, limit: int | None = None) -> list[EvalSample]:
+    """VisualPuzzles (neulab, its only split ``train``): 1,168 four-option puzzles with one image each.
+
+    A question with option texts gets ``(A)``-``(D)`` option lines; a question whose options are drawn in the
+    image (``options`` is null) gets the official ``VISUALPUZZLES_IMAGE_OPTIONS`` line instead. Both end with
+    the letter instruction. ``category`` is the reasoning category.
+    """
+    samples = []
+    for path in _expand_paths(spec, data_root):
+        df = pd.read_parquet(path)
+        for index, row in df.iterrows():
+            if limit is not None and len(samples) >= limit:
+                return samples
+            question = str(row["question"]).strip()
+            options = [] if _is_missing(row["options"]) else [str(option).strip() for option in row["options"]]
+            if options:
+                prompt = _mcq_prompt(question, options)
+            else:
+                prompt = f"{question}\n{VISUALPUZZLES_IMAGE_OPTIONS}\n{MCQ_LETTER_SUFFIX}"
+            samples.append(
+                EvalSample(
+                    benchmark=spec.key,
+                    sample_id=str(row["id"]),
+                    prompt=prompt,
+                    target=str(row["answer"]).strip().upper(),
+                    images=[_decode_image(row["image"])],
+                    extra_info={"options": options},
+                    metadata={
+                        "category": str(row["category"]),
+                        "difficulty": str(row["difficulty"]),
+                        "options_in_image": not options,
+                        "row_index": int(index),
+                        "question": question,
+                    },
+                )
+            )
+    return samples
+
+
+def load_zerobench(spec: BenchmarkSpec, data_root: Path, limit: int | None = None) -> list[EvalSample]:
+    """ZeroBench sub-questions (``zerobench_subquestions``): open questions with one or more images each.
+
+    The prompt is the bare ``question_text``; the images are ``question_images_decoded`` in dataset order (the
+    runner puts them before the text, as the official example and VLMEvalKit do). The target is
+    ``question_answer`` as released (the scorer strips it, as the official code does). ``main_question`` is the
+    ZeroBench question a sub-question belongs to (``question_id`` up to the first ``_``).
+    """
+    samples = []
+    for path in _expand_paths(spec, data_root):
+        df = pd.read_parquet(path)
+        for index, row in df.iterrows():
+            if limit is not None and len(samples) >= limit:
+                return samples
+            question_id = str(row["question_id"])
+            question = str(row["question_text"]).strip()
+            images = row["question_images_decoded"]
+            images = [_decode_image(image) for image in (images.tolist() if hasattr(images, "tolist") else images)]
+            if not images:
+                raise ValueError(f"{path}: question {question_id} has no image")
+            samples.append(
+                EvalSample(
+                    benchmark=spec.key,
+                    sample_id=question_id,
+                    prompt=question,
+                    target=str(row["question_answer"]),
+                    images=images,
+                    metadata={
+                        "main_question": question_id.split("_", 1)[0],
+                        "image_count": len(images),
                         "row_index": int(index),
                         "question": question,
                     },
