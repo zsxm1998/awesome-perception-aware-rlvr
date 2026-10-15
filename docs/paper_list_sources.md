@@ -1,6 +1,6 @@
 # Paper list: verification notes
 
-The paper list in the README was verified on 2026-10-01; the four on-policy distillation papers (VA-OPD, VGS, VCSD, Vision-OPD) were added on 2026-10-04. The 30 papers of "Perception-aware OPD" were added on 2026-10-15: candidates from the image-domain list of [Awesome-Multimodal-OPD](https://github.com/Jingchensun/Awesome-Multimodal-OPD) and an arXiv search (abstracts mentioning on-policy (self-)distillation and vision), kept when the teacher, the target or the token weights come from visual evidence; each arXiv page and code link was checked on that day as below. This page records how each entry was checked and where each venue comes from.
+The paper list in the README was verified on 2026-10-01; the four on-policy distillation papers (VA-OPD, VGS, VCSD, Vision-OPD) were added on 2026-10-04. The 30 papers of "Perception-aware OPD" were added on 2026-10-15: candidates from the image-domain list of [Awesome-Multimodal-OPD](https://github.com/Jingchensun/Awesome-Multimodal-OPD) and an arXiv search (abstracts mentioning on-policy (self-)distillation and vision), kept when the teacher, the target or the token weights come from visual evidence; each arXiv page and code link was checked on that day as below. One of them, S-OPD (2609.39120), was reproduced afterwards and moved to "Reproduced methods" on the same day. This page records how each entry was checked and where each venue comes from.
 
 ## Notes on verification
 

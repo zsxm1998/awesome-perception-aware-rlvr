@@ -2,10 +2,10 @@
 
 One-command evaluation of the base models and checkpoints produced by this repository.
 The harness covers the benchmarks used by the reproduced papers (PAPO, VPPO, DVRP, ToR,
-PGPO, PEPO, CFPO, VEPO, NoisyRollout, VGPO, GRIT, DeepEyes, VA-OPD, VGS, VCSD, Vision-OPD) and CGPO, downloads
-them from public sources, runs inference with vLLM on all visible GPUs, and scores every
-benchmark with a documented, rule-based protocol (an LLM judge is only used for MM-Vet and,
-optionally, GQA).
+PGPO, PEPO, CFPO, VEPO, NoisyRollout, VGPO, GRIT, DeepEyes, VA-OPD, VGS, VCSD, Vision-OPD,
+S-OPD) and CGPO, downloads them from public sources, runs inference with vLLM on all visible
+GPUs, and scores every benchmark with a documented, rule-based protocol (an LLM judge is only
+used for MM-Vet and, optionally, GQA).
 
 ```
 eval/
@@ -112,6 +112,7 @@ repository is prompted as it was trained, and explicit flags always win (see [Pr
 | `deepeyes` | vstar, hrbench_4k, hrbench_8k, mme_realworld_lite, pope | DeepEyes Tables 1-3; default: agentic DeepEyes inference (see [Agentic evaluation](#agentic-evaluation-deepeyes)) |
 | `va_opd` | wemath, mathvista, mathverse, hallusionbench, ai2d, mmmu_val, mmstar | VA-OPD Table 1 without OCRBench (not available); the paper reports avg@8 at T=1.0 with official scoring and a GPT-4o judge where applicable, for the best checkpoint; our math sets are avg@8, the other four greedy by default (`--temperature 1.0 --num-samples 8` for avg@8; HallusionBench scores the first sample only); our MathVerse holds the 2,180 multiple-choice testmini questions with an image; defaults: the training prompt (`math.jinja`) and image size |
 | `vgs` | mathvision, mathverse_v, logicvista, mmmu_pro | VGS Table 1, 4 of its 7 benchmarks (VisualPuzzles, `visualpuzzles`, is not in the suite; VlmsAreBlind is not available); the paper reports Acc@1 (greedy) and Acc@16 (T=1); our MathVerse-V and MMMU-Pro come from PAPO-Eval and differ from the subsets the VGS authors use (MathVerse VD / VO multiple choice, 4-option MMMU-Pro); defaults: the training prompt (VGS' system prompt), image size and answer reading (`--answer-protocol vgs`) |
+| `s_opd` | mathverse, mathvista, mathvision, wemath, logicvista, visualpuzzles, zerobench_sub, mmmu_val | S-OPD Table 1; the paper uses VLMEvalKit with greedy decoding and a Qwen3-30B-A3B model for answer extraction and grading, and VLMEvalKit's sets (full MathVision, We-Math's Core strict score); we score with rules, the math sets avg@8 by default (`--temperature 0 --num-samples 1` for greedy); ZeroBench is gated; defaults: the training prompt (`math.jinja` and the system prompt "You are a helpful assistant.") and image size (65,536-16,777,216 pixels) |
 | `vcsd` | blink, mmstar, vstar, mathvista, hrbench_4k, hrbench_8k, hallusionbench | VCSD Table 1; the paper's HallusionBench score is (aAcc+fAcc+qAcc)/3 (`aqf_mean` in the details) and its Acc. the mean of the seven scores; decoding and scoring are not given in the paper (we use greedy rule-based scoring, MathVista avg@8); defaults: the training prompt (the bare problem), chat template, tokenizer and image size |
 | `vision_opd` | vstar, zoombench, hrbench_4k, hrbench_8k, mme_realworld_lite, mmstar, pope | Vision-OPD Table 1 + holdout set of Table 2; the paper uses the full MME-RealWorld EN/CN (we have the lite version) and a gpt-oss-120b judge; MMVP is not available and CV-Bench is not in the suite (`--benchmarks cvbench` adds it); defaults: the training prompt (the dataset prompt, no system prompt), the non-thinking chat template and the image size (65,536-16,777,216 pixels) |
 | `cgpo` | = `papo` | CGPO natural-image reproduction (trained on ViRL39K); default prompt `xml_grounded_reasoning_v2.jinja` |
@@ -156,16 +157,16 @@ temperature 1.0, top_p 1.0 and 2048 new tokens; "greedy" = 1 sample at temperatu
 | Key | Benchmark | Source (HF) | #Samples | Primary metric | Decoding | Used by |
 |---|---|---|---:|---|---|---|
 | `geo3k` | Geometry3K test | `PAPO-Galaxy/PAPO_eval` | 601 | boxed exact match, mean acc@k | avg@8 | PAPO, VPPO, DVRP, PGPO, PEPO, CFPO, VEPO, NoisyRollout, CGPO, VGPO |
-| `mathvista` | MathVista testmini | `PAPO-Galaxy/PAPO_eval` | 1000 | boxed exact match | avg@8 | PAPO, DVRP, PEPO, VEPO, NoisyRollout, ToR, CGPO, VA-OPD, VCSD, VGPO |
-| `wemath` | We-Math | `PAPO-Galaxy/PAPO_eval` | 1740 | boxed exact match | avg@8 | PAPO, VPPO, DVRP, PEPO, CFPO, VEPO, NoisyRollout, ToR, CGPO, VA-OPD, VGPO |
+| `mathvista` | MathVista testmini | `PAPO-Galaxy/PAPO_eval` | 1000 | boxed exact match | avg@8 | PAPO, DVRP, PEPO, VEPO, NoisyRollout, ToR, CGPO, VA-OPD, VCSD, VGPO, S-OPD |
+| `wemath` | We-Math | `PAPO-Galaxy/PAPO_eval` | 1740 | boxed exact match | avg@8 | PAPO, VPPO, DVRP, PEPO, CFPO, VEPO, NoisyRollout, ToR, CGPO, VA-OPD, VGPO, S-OPD |
 | `mmk12` | MMK12 test | `PAPO-Galaxy/PAPO_eval` | 2000 | boxed exact match | avg@8 | PAPO, VPPO, DVRP, PGPO, CFPO, VEPO, CGPO, VGPO |
-| `mathverse` | MathVerse testmini (multi-choice) | `PAPO-Galaxy/PAPO_eval` | 2180 | boxed exact match | avg@8 | PAPO, VPPO, DVRP, PGPO, PEPO, CFPO, VEPO, NoisyRollout, ToR, CGPO, VA-OPD, VGPO |
+| `mathverse` | MathVerse testmini (multi-choice) | `PAPO-Galaxy/PAPO_eval` | 2180 | boxed exact match | avg@8 | PAPO, VPPO, DVRP, PGPO, PEPO, CFPO, VEPO, NoisyRollout, ToR, CGPO, VA-OPD, VGPO, S-OPD |
 | `mathverse_v` | MathVerse vision-dependent | `PAPO-Galaxy/PAPO_eval` | 1308 | boxed exact match | avg@8 | PAPO, DVRP, PGPO, CGPO, VGS, VGPO |
-| `logicvista` | LogicVista | `PAPO-Galaxy/PAPO_eval` | 447 | boxed exact match | avg@8 | PAPO, VPPO, PGPO, PEPO, CFPO, CGPO, VGS, VGPO |
+| `logicvista` | LogicVista | `PAPO-Galaxy/PAPO_eval` | 447 | boxed exact match | avg@8 | PAPO, VPPO, PGPO, PEPO, CFPO, CGPO, VGS, VGPO, S-OPD |
 | `clevr_count` | Counting (PAPO's "SuperClevr counting" column) | `PAPO-Galaxy/PAPO_eval` | 200 | boxed exact match | avg@8 | PAPO, PEPO, CGPO, VGPO |
 | `mmmu_pro` | MMMU-Pro (vision setting) | `PAPO-Galaxy/PAPO_eval` | 1730 | boxed exact match | avg@8 | PAPO, VPPO, PGPO, PEPO, CFPO, CGPO, VGS, VGPO |
 | `dynamath` | DynaMath (verifiable subset) | `chamber111/VPPO-Eval` | 3666 | boxed exact match | avg@8 | VPPO, PGPO |
-| `mathvision` | MathVision (verifiable subset) | `chamber111/VPPO-Eval` | 2907 | boxed exact match | avg@8 | VPPO, PGPO, VEPO, NoisyRollout, ToR, VGS |
+| `mathvision` | MathVision (verifiable subset) | `chamber111/VPPO-Eval` | 2907 | boxed exact match | avg@8 | VPPO, PGPO, VEPO, NoisyRollout, ToR, VGS, S-OPD |
 | `visualpuzzles` | VisualPuzzles (four-option puzzles; 499 with option texts, 669 with the options in the image) | `neulab/VisualPuzzles` | 1168 | accuracy over all questions (per reasoning category in details) | greedy | S-OPD |
 | `zerobench_sub` | ZeroBench sub-questions (open answers, one or more images; optional, gated) | `jonathan-roberts1/zerobench` | 334 | ZeroBench exact match on the final answer (VLMEvalKit's containment in details) | greedy | S-OPD |
 | `pope` | POPE random/popular/adversarial | `lmms-lab/POPE` | 9000 | macro F1 over the 3 splits (accuracy in details) | greedy | CFPO, DeepEyes, Vision-OPD |
@@ -183,7 +184,7 @@ temperature 1.0, top_p 1.0 and 2048 new tokens; "greedy" = 1 sample at temperatu
 | `blink` | BLINK val (14 subtasks, 1-4 images) | `BLINK-Benchmark/BLINK` | 1901 | accuracy over all questions (per subtask in details) | greedy | VCSD |
 | `cvbench` | CV-Bench (2D: ADE20K and COCO count and relation; 3D: Omni3D depth and distance) | `nyu-visionx/CV-Bench` | 2638 | the dataset card's overall score: mean of the 2D accuracy (mean of ADE20K and COCO) and the 3D accuracy | greedy | Vision-OPD (holdout) |
 | `ai2d` | AI2D test | `lmms-lab/ai2d` | 3088 | accuracy | greedy | VA-OPD |
-| `mmmu_val` | MMMU validation (847 multiple-choice, 53 open) | `lmms-lab/MMMU` | 900 | accuracy over all questions (by question type, discipline and subject in details) | greedy | VA-OPD |
+| `mmmu_val` | MMMU validation (847 multiple-choice, 53 open) | `lmms-lab/MMMU` | 900 | accuracy over all questions (by question type, discipline and subject in details) | greedy | VA-OPD, S-OPD |
 | `vstar` | V* Bench | `craigwu/vstar_bench` | 191 | accuracy over all questions | greedy | DeepEyes, VCSD, Vision-OPD |
 | `hrbench_4k` | HR-Bench 4K | `DreamMr/HR-Bench` | 800 | mean of FSP and FCP accuracy | greedy | DeepEyes, VCSD, Vision-OPD |
 | `hrbench_8k` | HR-Bench 8K | `DreamMr/HR-Bench` | 800 | mean of FSP and FCP accuracy | greedy | DeepEyes, VCSD, Vision-OPD |
@@ -448,6 +449,7 @@ method's training from these flags or suite defaults:
 | VGS (`examples/reproduction/vgs`) | `--format-prompt none --system-prompt examples/system_prompt/vgs.txt --min-pixels 262144 --max-pixels 4194304` (suite `vgs`) |
 | VCSD (`examples/reproduction/vcsd`) | `--format-prompt none --chat-template examples/chat_template/qwen_no_thinking.jinja --plain-think-tokens false --min-pixels 262144 --max-pixels 4194304` (suite `vcsd`) |
 | Vision-OPD (`examples/reproduction/vision_opd`) | `--format-prompt none --system-prompt none --chat-template examples/chat_template/qwen_no_thinking.jinja --min-pixels 65536 --max-pixels 16777216` (suite `vision_opd`) |
+| S-OPD (`examples/reproduction/s_opd`) | `--system-prompt examples/system_prompt/helpful_assistant.txt --format-prompt examples/format_prompt/math.jinja --min-pixels 65536 --max-pixels 16777216` (suite `s_opd`) |
 | DeepEyes, rewritten prompt (Qwen3-VL and `*_native.sh`) | `--interaction-mode agentic --system-prompt examples/system_prompt/deepeyes.txt` (suite `deepeyes`; `deepeyes_pixel.txt` is picked for Qwen2-VL / Qwen2.5-VL) |
 
 ## LLM judge

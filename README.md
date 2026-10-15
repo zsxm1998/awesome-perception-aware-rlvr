@@ -5,7 +5,7 @@
 **Unified reproductions, controlled comparisons and one-click evaluation for perception-aware reinforcement learning with verifiable rewards (RLVR) and on-policy distillation (OPD) of large vision-language models, plus a curated paper list.**
 
 RLVR: PAPO · VPPO · DVRP · ToR · PGPO · PEPO · CFPO · VEPO · NoisyRollout · VGPO · VAPO · GRIT · DeepEyes · CGPO<br>
-OPD: VA-OPD · VGS · VCSD · Vision-OPD<br>
+OPD: VA-OPD · VGS · VCSD · Vision-OPD · S-OPD<br>
 in one EasyR1 codebase with 30+ benchmarks
 
 🌟 **Official repository of [CGPO](#-cgpo-acm-mm-2026-oral) (ACM MM 2026 Oral)** 🌟
@@ -14,7 +14,7 @@ in one EasyR1 codebase with 30+ benchmarks
 
 [![Awesome](https://awesome.re/badge.svg)](https://github.com/sindresorhus/awesome)
 [![Papers](https://img.shields.io/badge/Papers-125-blue)](#-paper-list)
-[![Reproduced](https://img.shields.io/badge/Reproduced-18-brightgreen)](#-reproduced-methods)
+[![Reproduced](https://img.shields.io/badge/Reproduced-19-brightgreen)](#-reproduced-methods)
 [![CGPO](https://img.shields.io/badge/CGPO-ACM%20MM%202026%20Oral-8A2BE2)](https://doi.org/10.1145/3767308.3835969)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Built on EasyR1](https://img.shields.io/badge/built%20on-EasyR1-orange)](https://github.com/hiyouga/EasyR1)
@@ -37,7 +37,7 @@ letting the model teach itself with a privileged view of the image.
 This repository provides
 
 - the **official implementation of [CGPO](#-cgpo-acm-mm-2026-oral)** (ACM MM 2026 Oral);
-- **[Reproductions](#-reproduced-methods)** of 17 methods (13 RLVR and 4 OPD) with each paper's own data,
+- **[Reproductions](#-reproduced-methods)** of 18 methods (13 RLVR and 5 OPD) with each paper's own data,
   model and hyper-parameters, plus the baselines they compare against;
 - **[Controlled comparisons](#-controlled-comparison)** under one shared setting each: the RLVR methods
   except DeepEyes on Qwen3-VL-4B, and the OPD methods on a Qwen3-VL-2B student with a GRPO-trained
@@ -75,6 +75,10 @@ so they can be combined, compared and extended with a few configuration switches
 
 ## 🔥 News
 
+- **2026-10**: A reproduction of [S-OPD](examples/reproduction/s_opd/README.md) (two student-side terms for OPD:
+  a teacher-gated contrast with a masked image and agreement with a noisy one), S-OPD in the
+  [OPD comparison](examples/comparison/opd_qwen3_vl_2b/README.md), and VisualPuzzles and ZeroBench
+  (sub-questions) in the evaluation.
 - **2026-10**: Results of both [controlled comparisons](#-controlled-comparison), every method at its last
   and at its best validation step, and 30 perception-aware OPD papers in the [paper list](#-paper-list).
 - **2026-10**: OPD: a teacher model (a frozen model or an EMA of the policy), OPD from sampled tokens and on
@@ -91,7 +95,7 @@ so they can be combined, compared and extended with a few configuration switches
 
 - [x] Results of the two controlled comparisons (RLVR on Qwen3-VL-4B, OPD on Qwen3-VL-2B).
 - [x] OPD next to GRPO and DAPO (a teacher model, OPD from sampled tokens and on the full distributions),
-  with VA-OPD, VGS, VCSD and Vision-OPD.
+  with VA-OPD, VGS, VCSD, Vision-OPD and S-OPD.
 - [x] More single-turn methods in the controlled comparison: NoisyRollout, VGPO and VAPO.
 - [ ] A grounded-reasoning comparison on data with evidence boxes: TreeVGR, DeFacto and iVGR next to
   GRIT and CGPO.
@@ -177,6 +181,7 @@ A teacher (another model or the student itself) scores the student's own rollout
 | [**VCSD**](examples/reproduction/vcsd/README.md) | **Distillation target** | [Visual Contrastive Self-Distillation](https://arxiv.org/abs/2607.21556)<br>Yijun Liang et al. · `2607.21556` | arXiv | [GitHub](https://github.com/joliang17/VCSD) | Self-distillation from an EMA teacher: the original-image distribution sharpened by its contrast with a black image is the forward-KL target; no answers or rewards. | Qwen3-VL-2B/4B/8B, Qwen3.5-2B/4B/9B, EMA self-teacher, ViRL39K |
 | [**VGS**](examples/reproduction/vgs/README.md) | **Distillation target** · Auxiliary objectives | [Decomposed On-Policy Distillation for Vision-Language Reasoning: Steering Gradients for Visual Grounding](https://arxiv.org/abs/2606.00564)<br>Hee Suk Yoon et al. · `2606.00564` | ICML 2026 (Spotlight) | - | Splits the teacher into a language prior and a visual gain: besides the reverse KL, the student matches its own text-only distribution times the teacher's image-over-text ratio. | Qwen3-VL-2B / 4B students, GRPO-trained Qwen3-VL-8B teacher, Vision-SR1-47K |
 | [**VA-OPD**](examples/reproduction/va_opd/README.md) | **Credit assignment** | [Visual-Advantage On-Policy Distillation for Vision-Language Models](https://arxiv.org/abs/2605.21924)<br>Ruiqi Liu et al. · `2605.21924` | arXiv | - | Weights the distillation by the teacher's visual advantage (its log-probability with the image beyond a pixelated copy), per response and per token. | Qwen3-VL-2B student, 4B / 8B / 32B teachers, Geometry3K / ViRL39K |
+| [**S-OPD**](examples/reproduction/s_opd/README.md) | **Auxiliary objectives** | [Is Better Teacher Supervision Enough? Unlocking Student-side Learning in Multimodal On-Policy Distillation](https://arxiv.org/abs/2609.39120)<br>Siyuan Liu et al. · `2609.39120` | arXiv | [GitHub](https://github.com/Sirilaw/S-OPD) | Adds two student-side terms to OPD from sampled tokens: pushes the student's prediction on the image away from that on a masked copy at the tokens whose teacher log-probability the mask lowers, and pulls it toward that on a noisy copy. | Qwen3-VL-2B / 4B students, Qwen3-VL-8B or GRPO-trained 8B teacher, ViRL39K / Geometry3K |
 
 The upstream EasyR1 algorithms (GRPO, DAPO, GSPO, CISPO, SAPO, REINFORCE++, RLOO, ReMax) remain
 available. The OPD methods learn from a teacher instead of a verifiable reward; they share a teacher role
@@ -289,7 +294,7 @@ explains [what the results can and cannot say](examples/comparison/README.md#abo
   ([why](examples/comparison/rlvr_qwen3_vl_4b/README.md#why-deepeyes-is-not-included)) on Qwen3-VL-4B-Instruct,
   with the same data (ViRL39K / MMK12) and the same GRPO hyper-parameters; only the method-specific arguments
   differ, and each method keeps the image perturbation of its paper.
-- **[OPD](examples/comparison/opd_qwen3_vl_2b/README.md)**: the two base OPD objectives, VA-OPD, VGS and VCSD on a
+- **[OPD](examples/comparison/opd_qwen3_vl_2b/README.md)**: the two base OPD objectives, VA-OPD, VGS, VCSD and S-OPD on a
   Qwen3-VL-2B student with a GRPO-trained Qwen3-VL-4B as the teacher (VCSD distills from an EMA of the student
   instead), next to GRPO on the same student, with the same data, budget and evaluation; Vision-OPD needs
   region annotations, which this data does not have.
@@ -499,12 +504,6 @@ OPD for large vision-language models whose teacher, target or token weights come
 | 2026-07 | [Correcting What You Cannot See: Credit Assignment for Perception Distillation in Multimodal Reasoners](https://arxiv.org/abs/2607.28336)<br>Feng Xiong et al. · `2607.28336` | arXiv | - | **PCD**: Strengthens distillation only where downstream failure and teacher-student disagreement both point to a correctable perception error, with separated perception and reasoning rollouts. |
 | 2026-07 | [Med-OPD: Improving Medical Vision-Language Models via Evidence-Aware On-Policy Distillation](https://arxiv.org/abs/2607.16303)<br>Yunhang Qian et al. · `2607.16303` | arXiv | [GitHub](https://github.com/yunhang8658/MedOPD) | **Med-OPD**: A medical evidence advantage from a teacher counterfactual focuses distillation on the diagnosis-critical, evidence-dependent tokens of medical VLMs. |
 | 2026-06 | [V-Zero: Answer-Label-Free On-Policy Distillation with Contrastive Evidence Gating for Fine-Grained Visual Reasoning](https://arxiv.org/abs/2606.25319)<br>Haoxiang Sun et al. · `2606.25319` | arXiv | [GitHub](https://github.com/eVI-group-SCU/V-Zero) | **V-Zero**: Answer-label-free OPD for fine-grained visual reasoning: a question-relevant crop and a negative view gate the token-level distillation. |
-
-#### Auxiliary objectives
-
-| Date | Paper | Venue | Code | Key idea |
-|---|---|---|---|---|
-| 2026-09 | [Is Better Teacher Supervision Enough? Unlocking Student-side Learning in Multimodal On-Policy Distillation](https://arxiv.org/abs/2609.39120)<br>Siyuan Liu et al. · `2609.39120` | arXiv | [GitHub](https://github.com/Sirilaw/S-OPD) | **S-OPD**: Strengthens student-side perception: contrasts the student under the original and a masked image with teacher-based token gating, and aligns it under noise-perturbed images. |
 
 ### 📏 Benchmarks and datasets
 

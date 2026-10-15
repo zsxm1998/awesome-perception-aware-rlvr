@@ -175,7 +175,7 @@ Used by CGPO.
 ## On-Policy Distillation
 
 Used by the OPD comparison ([examples/comparison/opd_qwen3_vl_2b](../examples/comparison/opd_qwen3_vl_2b)) and by
-VA-OPD, VGS, VCSD and Vision-OPD. The losses are in [`verl/trainer/distillation.py`](../verl/trainer/distillation.py);
+VA-OPD, VGS, VCSD, Vision-OPD and S-OPD. The losses are in [`verl/trainer/distillation.py`](../verl/trainer/distillation.py);
 see the [implementation notes](implementation_notes.md#on-policy-distillation).
 
 Teacher (`worker.teacher`, off by default):

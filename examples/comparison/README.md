@@ -11,7 +11,7 @@ sets `ALGO_ARGS`, the switches that define its method; everything else comes fro
 | Comparison | Methods | Shared setting | Results |
 | --- | --- | --- | --- |
 | [RLVR on Qwen3-VL-4B-Instruct](rlvr_qwen3_vl_4b/README.md) | GRPO and DAPO baselines; PAPO, VPPO, ToR, DVRP, PGPO, PEPO, CFPO, VEPO, NoisyRollout, VGPO, VAPO, GRIT, CGPO | ViRL39K, 202 steps of 384 prompts × 8 responses, GRPO hyper-parameters, 4 A800 GPUs | 19 benchmarks in three groups, at the last and at the best validation step; training time |
-| [OPD on Qwen3-VL-2B-Instruct](opd_qwen3_vl_2b/README.md) | GRPO reference; OPD from sampled tokens, OPD on the full distributions, VA-OPD, VGS, VCSD | the data, prompt and lengths of the RLVR comparison; a GRPO-trained Qwen3-VL-4B-Instruct as the teacher; 606 updates of 1,024 responses, 4 A800 GPUs | the same 19 benchmarks, at the last and at the best validation step; training time |
+| [OPD on Qwen3-VL-2B-Instruct](opd_qwen3_vl_2b/README.md) | GRPO reference; OPD from sampled tokens, OPD on the full distributions, VA-OPD, VGS, VCSD, S-OPD | the data, prompt and lengths of the RLVR comparison; a GRPO-trained Qwen3-VL-4B-Instruct as the teacher; 606 updates of 1,024 responses, 4 A800 GPUs | the same 19 benchmarks, at the last and at the best validation step; training time |
 
 DeepEyes (RLVR) and Vision-OPD (OPD) are not in these comparisons; the README of each comparison explains why.
 

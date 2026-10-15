@@ -225,6 +225,27 @@ suites:
       The decoding defaults are PAPO-Eval's (avg@8, T=1.0); add `--temperature 0 --num-samples
       1` for Acc@1 or `--num-samples 16` for Acc@16.
 
+  s_opd:
+    description: S-OPD Table 1 (8 benchmarks; Avg is their unweighted mean)
+    benchmarks: [mathverse, mathvista, mathvision, wemath, logicvista, visualpuzzles, zerobench_sub, mmmu_val]
+    defaults:  # the training prompt and image size of examples/reproduction/s_opd
+      format_prompt: examples/format_prompt/math.jinja
+      system_prompt: examples/system_prompt/helpful_assistant.txt
+      min_pixels: 65536
+      max_pixels: 16777216
+    notes: >-
+      S-OPD evaluates with VLMEvalKit, greedy decoding and its own prompt per benchmark, with a
+      Qwen3-30B-A3B model extracting and grading the answers. We ask with the training prompt and
+      score with rules; the math sets default to PAPO-Eval's avg@8 at T=1.0, so add `--temperature
+      0 --num-samples 1` for the paper's greedy decoding. Our sets differ from VLMEvalKit's:
+      `mathverse` holds the 2,180 multiple-choice testmini questions with an image (the paper:
+      MathVerse_MINI without the text-only version), `mathvision` VPPO-Eval's 2,907-item verifiable
+      subset (the paper: the full set), `wemath` scores each question (the paper: the Core strict
+      score) and `logicvista` has 447 items; MathVista is testmini and MMMU the validation split in
+      both. ZeroBench is gated (accept its terms first, see eval/README.md) and scored with its
+      official exact match; VLMEvalKit's containment reading, which the paper's numbers use, is in
+      the details. Geometry3K test, the in-domain set of the component analysis, is `geo3k`.
+
   vcsd:
     description: VCSD Table 1 (7 benchmarks; Acc. is their unweighted mean)
     benchmarks: [blink, mmstar, vstar, mathvista, hrbench_4k, hrbench_8k, hallusionbench]
