@@ -6,18 +6,14 @@
 
 ## 贡献方式
 
-- **补充论文。** 在 `README.md` 和 `README_zh.md` 中，按论文主要改动所在的训练环节（见 README 的“已复现方法”）找到对应的表，按时间倒序各加一行：arXiv 链接、第一作者、会议
-  （仅当 arXiv 备注、OpenReview 或官方仓库能确认时才写）、代码链接和一句话核心思路。
-- **新增方法。** 参考 [docs/add_method.md](../docs/add_method.md)。新方法需要带校验的配置项、单元测试、
-  `examples/reproduction/<method>/` 目录（基线与方法脚本），以及说明与官方配方差异的 README。
+- **补充论文。** 在 `README.md` 和 `README_zh.md` 中，按论文主要改动所在的训练环节（见 README 的“已复现方法”）找到对应的表，按时间倒序各加一行：arXiv 链接、第一作者、会议（仅当 arXiv 备注、OpenReview 或官方仓库能确认时才写）、代码链接和一句话核心思路。
+- **新增方法。** 参考 [docs/add_method.md](../docs/add_method.md)。新方法需要带校验的配置项、单元测试、`examples/reproduction/<method>/` 目录（基线与方法脚本），以及说明与官方配方差异的 README。
 - **新增评测基准。** 参考 [eval/README.md](../eval/README.md#adding-a-new-benchmark) 中的教程。
-- **提交复现结果。** 用 "Reproduction results" 模板开 issue，附上完整命令、提交哈希、训练日志
-  （`experiment_log.jsonl`）和评测汇总。
+- **提交复现结果。** 用 "Reproduction results" 模板开 issue，附上完整命令、提交哈希、训练日志（`experiment_log.jsonl`）和评测汇总。
 
 ## 用 pre-commit 做检查
 
-仓库的检查由 [pre-commit](https://pre-commit.com) 执行：同一套检查在你本机每次提交前运行，也在 CI 中对每个
-PR 运行，所以本地通过的 PR，CI 的代码检查也会通过。
+仓库的检查由 [pre-commit](https://pre-commit.com) 执行：同一套检查在你本机每次提交前运行，也在 CI 中对每个 PR 运行，所以本地通过的 PR，CI 的代码检查也会通过。
 
 **一次性设置**（pre-commit 需要 git 2.31 或更新的版本；第一次运行会从 GitHub 下载各项检查的运行环境）：
 
@@ -28,8 +24,7 @@ pip install pre-commit
 pre-commit install            # 在你的仓库目录中执行：安装提交前检查和提交信息检查
 ```
 
-**每次提交时**，检查会作用于暂存的文件和提交信息。会自动修复的检查（行尾空格、文件末尾换行、ruff）
-改完文件后会中止这次提交：用 `git diff` 看一下改动，`git add` 之后再提交一次。只检查不修复的项会打印出要改的地方。
+**每次提交时**，检查会作用于暂存的文件和提交信息。会自动修复的检查（行尾空格、文件末尾换行、ruff）改完文件后会中止这次提交：用 `git diff` 看一下改动，`git add` 之后再提交一次。只检查不修复的项会打印出要改的地方。
 
 **开 PR 之前**，对整个仓库跑一遍全部检查和单元测试：
 
@@ -62,9 +57,7 @@ Impact: 对已有运行、结果、缓存或已准备数据的影响
 Refs: #123
 ```
 
-**标题。** 用英文：`[type]` 加可选的 `scope:`，然后是祈使句的概括，以小写动词开头，不加句号，整行不超过
-72 个字符。写改了什么行为，而不是改了哪个文件："give no accuracy to answers of 1,000+ characters"，
-而不是 "update deepeyes.py"。
+**标题。** 用英文：`[type]` 加可选的 `scope:`，然后是祈使句的概括，以小写动词开头，不加句号，整行不超过 72 个字符。写改了什么行为，而不是改了哪个文件："give no accuracy to answers of 1,000+ characters"，而不是 "update deepeyes.py"。
 
 **type**（只选一个）：
 
@@ -84,13 +77,9 @@ Refs: #123
 | `build` | 依赖、CI、钩子、打包 |
 | `revert` | 回退某个提交（正文写明被回退的提交和原因） |
 
-**scope**（可选，只写一个，小写）：方法名（`cgpo`、`papo`、`vppo`、`tor`、`dvrp`、`pgpo`、`pepo`、
-`cfpo`、`vepo`、`grit`、`deepeyes`）、`comparison`，或组件名（`trainer`、`actor`、`rollout`、`agent`、
-`reward`、`data`、`eval`、`docs`、`ci`）。改动涉及多处时省略。
+**scope**（可选，只写一个，小写）：方法名（`cgpo`、`papo`、`vppo`、`tor`、`dvrp`、`pgpo`、`pepo`、`cfpo`、`vepo`、`grit`、`deepeyes`）、`comparison`，或组件名（`trainer`、`actor`、`rollout`、`agent`、`reward`、`data`、`eval`、`docs`、`ci`）。改动涉及多处时省略。
 
-**正文。** 写清为什么改、改了什么，每行不超过 72 列；只有标题已经说尽时（如修正错别字）才可以省略。
-`align` 提交要写出处：论文的章节或表格，或官方代码的文件与函数（或提交）。`fix` 提交要写出错的具体情形。
-描述其他作者的代码时就事论事（"the released code reads ..."、"differs from"）。
+**正文。** 写清为什么改、改了什么，每行不超过 72 列；只有标题已经说尽时（如修正错别字）才可以省略。`align` 提交要写出处：论文的章节或表格，或官方代码的文件与函数（或提交）。`fix` 提交要写出错的具体情形。描述其他作者的代码时就事论事（"the released code reads ..."、"differs from"）。
 
 **Impact。** 以下任一情况都必须写：已有脚本的结果会变、已缓存的评测结果失效、数据需要重新准备、原来能通过的配置现在会被拒绝。
 
@@ -106,16 +95,13 @@ Refs: #123
 [list] add VEPO (2606.03937)
 ```
 
-PR 以 **squash and merge** 方式合并，**PR 标题**会成为 `main` 上那个提交的标题，所以 PR 标题也按同一格式写。
-CI 会检查 PR 标题（修改标题后会重新检查），不检查 PR 内部的各个提交。本地的提交信息检查会作用于每一次提交；
-以 `fixup!` 和 `squash!` 开头的提交不检查。
+PR 以 **squash and merge** 方式合并，**PR 标题**会成为 `main` 上那个提交的标题，所以 PR 标题也按同一格式写。CI 会检查 PR 标题（修改标题后会重新检查），不检查 PR 内部的各个提交。本地的提交信息检查会作用于每一次提交；以 `fixup!` 和 `squash!` 开头的提交不检查。
 
 ## 提交 PR
 
 1. fork 本仓库，从 `main` 拉一个分支。
 2. 配好环境和检查（见[用 pre-commit 做检查](#用-pre-commit-做检查)）。
 3. 完成改动并补测试，运行检查、单元测试，改了启动脚本的还要跑 `DRY_RUN`。
-4. 用符合[提交信息](#提交信息)格式的标题开 PR，并填写模板。GitHub Actions 会对每个 PR 运行 pre-commit 检查、
-   CPU 单元测试和标题检查；CI 不跑 GPU 训练和评测，请在 PR 中说明你是怎么测试的。
+4. 用符合[提交信息](#提交信息)格式的标题开 PR，并填写模板。GitHub Actions 会对每个 PR 运行 pre-commit 检查、CPU 单元测试和标题检查；CI 不跑 GPU 训练和评测，请在 PR 中说明你是怎么测试的。
 
 请互相尊重，并遵守[行为准则](CODE_OF_CONDUCT.md)。

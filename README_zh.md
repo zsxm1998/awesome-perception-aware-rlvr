@@ -12,20 +12,11 @@ OPD：VA-OPD · VGS · VCSD · Vision-OPD<br>
 
 [English](README.md) | [简体中文](README_zh.md)
 
-[![Awesome](https://awesome.re/badge.svg)](https://github.com/sindresorhus/awesome)
-[![Papers](https://img.shields.io/badge/Papers-125-blue)](#-论文清单)
-[![Reproduced](https://img.shields.io/badge/Reproduced-18-brightgreen)](#-已复现方法)
-[![CGPO](https://img.shields.io/badge/CGPO-ACM%20MM%202026%20Oral-8A2BE2)](https://doi.org/10.1145/3767308.3835969)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Built on EasyR1](https://img.shields.io/badge/built%20on-EasyR1-orange)](https://github.com/hiyouga/EasyR1)
+[![Awesome](https://awesome.re/badge.svg)](https://github.com/sindresorhus/awesome) [![Papers](https://img.shields.io/badge/Papers-125-blue)](#-论文清单) [![Reproduced](https://img.shields.io/badge/Reproduced-18-brightgreen)](#-已复现方法) [![CGPO](https://img.shields.io/badge/CGPO-ACM%20MM%202026%20Oral-8A2BE2)](https://doi.org/10.1145/3767308.3835969) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) [![Built on EasyR1](https://img.shields.io/badge/built%20on-EasyR1-orange)](https://github.com/hiyouga/EasyR1)
 
 </div>
 
-RLVR 能提升大视觉语言模型的推理能力，但它的奖励只检查最终答案：模型可能"答对但理由不对"，依赖语言先验
-而不是图像本身。**感知导向的 RLVR** 方法把视觉感知重新放回优化目标中，例如在图像的反事实视图上对比策略输出、
-把信用分配给真正依赖图像的 token，或者让模型在推理过程中定位、放大视觉证据。同样的思路也用于 **OPD**：
-由教师对学生自己采样的回答逐 token 打分，可以加权那些由图像决定的 token、只蒸馏教师从图像中得到的增益而非
-其语言先验，或者让模型在看到更多图像信息的条件下给自己当教师。
+RLVR 能提升大视觉语言模型的推理能力，但它的奖励只检查最终答案：模型可能"答对但理由不对"，依赖语言先验而不是图像本身。**感知导向的 RLVR** 方法把视觉感知重新放回优化目标中，例如在图像的反事实视图上对比策略输出、把信用分配给真正依赖图像的 token，或者让模型在推理过程中定位、放大视觉证据。同样的思路也用于 **OPD**：由教师对学生自己采样的回答逐 token 打分，可以加权那些由图像决定的 token、只蒸馏教师从图像中得到的增益而非其语言先验，或者让模型在看到更多图像信息的条件下给自己当教师。
 
 <p align="center">
   <img src="docs/assets/architecture_zh.svg" width="100%" alt="框架架构：一个 RL 训练步分三个阶段。vLLM 采样：加噪图像采样（NoisyRollout）、放大工具（DeepEyes）、在线过滤（DAPO），以及需要策略生成、在 vLLM 休眠前算完的奖励输入：定位一致性（CGPO）和视觉断言探针（VAPO）。更新前无梯度计算：rollout 策略和参考模型的 log-prob，以及基于采样 token 的 OPD 和 VA-OPD 所用冻结教师的 log-prob，改动输入（遮挡、加噪、像素化或去掉图像，或模型内部改动）上的辅助前向（由此得到每个 token 的视觉依赖），带各方法额外项的奖励函数，以及优势。策略更新：执行 compute_perception_reasoning_policy_loss 的五步（控制信号、优势调制、逐 token PPO 项、token 筛选、辅助损失），或 OPD 的蒸馏损失（逐 micro-batch 做学生前向和无梯度的教师前向），然后优化器更新。">
@@ -34,20 +25,15 @@ RLVR 能提升大视觉语言模型的推理能力，但它的奖励只检查最
 本仓库提供：
 
 - **[CGPO](#-cgpo-acm-mm-2026-oral) 官方实现**（ACM MM 2026 Oral）；
-- **[方法复现](#-已复现方法)**：17 个方法（13 个 RLVR、4 个 OPD），各自使用原论文的数据、模型和超参数，
-  并附带论文中对比的基线；
+- **[方法复现](#-已复现方法)**：17 个方法（13 个 RLVR、4 个 OPD），各自使用原论文的数据、模型和超参数，并附带论文中对比的基线；
 - **[统一设定对比](#-统一设定对比)**：两个对比各用一套统一设定，RLVR 方法（除 DeepEyes 外）在 Qwen3-VL-4B 上对比；OPD 方法以 Qwen3-VL-2B 为学生，以经 GRPO 训练的 Qwen3-VL-4B 为教师进行对比；
-- **[一键评测](eval/README.md)**：覆盖这些论文所用评测基准的并集，每个基准都有下载处理脚本，每篇论文都有
-  对应的评测套件；
+- **[一键评测](eval/README.md)**：覆盖这些论文所用评测基准的并集，每个基准都有下载处理脚本，每篇论文都有对应的评测套件；
 - **[论文清单](#-论文清单)**：感知导向的 RLVR（含基于定位的推理与看图思考，即 thinking with images）与 OPD，按训练环节分类，以及这一方向常用的评测基准。
 
-所有方法共用同一个训练框架（[EasyR1](https://github.com/hiyouga/EasyR1) 的分支），
-通过少量配置开关即可组合、对比和扩展。
+所有方法共用同一个训练框架（[EasyR1](https://github.com/hiyouga/EasyR1) 的分支），通过少量配置开关即可组合、对比和扩展。
 
 > [!NOTE]
-> 除 CGPO 外，其余方法均为**非官方复现**。请参考并引用原论文和原仓库。与官方实现的差异记录在
-> 各方法目录的 README 中。我们的数字来自这些复现的单次运行，未必能复现论文报告的提升，见
-> [关于结果的说明](examples/comparison/README_zh.md#关于结果的说明)。
+> 除 CGPO 外，其余方法均为**非官方复现**。请参考并引用原论文和原仓库。与官方实现的差异记录在各方法目录的 README 中。我们的数字来自这些复现的单次运行，未必能复现论文报告的提升，见[关于结果的说明](examples/comparison/README_zh.md#关于结果的说明)。
 
 ## 📖 目录
 
@@ -67,21 +53,14 @@ RLVR 能提升大视觉语言模型的推理能力，但它的奖励只检查最
 
 ## 🔥 更新
 
-- **2026-10**：两个[统一设定对比](#-统一设定对比)的结果，每个方法给出最后一步和验证最优步；[论文清单](#-论文清单)
-  新增 30 篇感知导向的 OPD 论文。
-- **2026-10**：OPD：教师模型（冻结模型或策略的 EMA）、基于采样 token 和基于完整下一 token 分布的两种 OPD
-  目标，复现 [VA-OPD](examples/reproduction/va_opd/README.md)、[VGS](examples/reproduction/vgs/README.md)、
-  [VCSD](examples/reproduction/vcsd/README.md)、[Vision-OPD](examples/reproduction/vision_opd/README.md)，
-  新增 [OPD 统一对比](examples/comparison/opd_qwen3_vl_2b/README_zh.md)，评测新增 ZoomBench、BLINK、MMStar、AI2D、MMMU。
-- **2026-10**：🎉 首次发布：[CGPO](#-cgpo-acm-mm-2026-oral)（ACM MM 2026 Oral）官方实现、13 个复现的 RLVR 方法
-  （PAPO、VPPO、DVRP、ToR、PGPO、PEPO、CFPO、VEPO、NoisyRollout、VGPO、VAPO、GRIT、DeepEyes）、Qwen3-VL-4B 上的
-  统一设定对比、一键评测。
+- **2026-10**：两个[统一设定对比](#-统一设定对比)的结果，每个方法给出最后一步和验证最优步；[论文清单](#-论文清单)新增 30 篇感知导向的 OPD 论文。
+- **2026-10**：OPD：教师模型（冻结模型或策略的 EMA）、基于采样 token 和基于完整下一 token 分布的两种 OPD 目标，复现 [VA-OPD](examples/reproduction/va_opd/README.md)、[VGS](examples/reproduction/vgs/README.md)、[VCSD](examples/reproduction/vcsd/README.md)、[Vision-OPD](examples/reproduction/vision_opd/README.md)，新增 [OPD 统一对比](examples/comparison/opd_qwen3_vl_2b/README_zh.md)，评测新增 ZoomBench、BLINK、MMStar、AI2D、MMMU。
+- **2026-10**：🎉 首次发布：[CGPO](#-cgpo-acm-mm-2026-oral)（ACM MM 2026 Oral）官方实现、13 个复现的 RLVR 方法（PAPO、VPPO、DVRP、ToR、PGPO、PEPO、CFPO、VEPO、NoisyRollout、VGPO、VAPO、GRIT、DeepEyes）、Qwen3-VL-4B 上的统一设定对比、一键评测。
 
 ## 🚧 计划
 
 - [x] 两个统一设定对比的结果（RLVR 在 Qwen3-VL-4B 上，OPD 在 Qwen3-VL-2B 上）。
-- [x] OPD：GRPO、DAPO 之外的基础训练方式（教师模型，基于采样 token 和基于完整分布的两种目标），
-  及 VA-OPD、VGS、VCSD、Vision-OPD。
+- [x] OPD：GRPO、DAPO 之外的基础训练方式（教师模型，基于采样 token 和基于完整分布的两种目标），及 VA-OPD、VGS、VCSD、Vision-OPD。
 - [x] 统一设定对比加入更多单轮方法：NoisyRollout、VGPO、VAPO。
 - [ ] 在带证据框的数据上新开定位推理对比：TreeVGR、DeFacto、iVGR，与 GRIT、CGPO 一起比较。
 - [ ] 更多 DeepEyes 方向的看图思考方法：MGPO、Mini-o3、Pixel Reasoner，以及 MED 的"有工具/无工具"评测。
@@ -97,10 +76,7 @@ RLVR 能提升大视觉语言模型的推理能力，但它的奖励只检查最
 > *Proceedings of the 34th ACM International Conference on Multimedia (MM '26)*, Rio de Janeiro, Brazil, 2026 · **Oral 报告**<br>
 > [[论文]](https://doi.org/10.1145/3767308.3835969) · [[代码与脚本]](examples/reproduction/cgpo/README.md) · [[BibTeX]](#-引用)
 
-CGPO 训练视觉语言模型进行*证据敏感推理*：关键推理步骤要定位它所依据的视觉证据，并且去掉这些证据后结论应当改变。
-策略在思维链中以内联方式定位证据；把定位到的区域遮挡得到反事实图像，用策略在原图与反事实图像上输出分布的
-变化衡量每个 token 对证据的依赖程度。证据依赖越强的回答，其感知关键 token 的优势被放大；定位一致性奖励
-（由策略对每个定位实体重新检测）防止证据框被刻意放大。整个方法只需要答案级监督。
+CGPO 训练视觉语言模型进行*证据敏感推理*：关键推理步骤要定位它所依据的视觉证据，并且去掉这些证据后结论应当改变。策略在思维链中以内联方式定位证据；把定位到的区域遮挡得到反事实图像，用策略在原图与反事实图像上输出分布的变化衡量每个 token 对证据的依赖程度。证据依赖越强的回答，其感知关键 token 的优势被放大；定位一致性奖励（由策略对每个定位实体重新检测）防止证据框被刻意放大。整个方法只需要答案级监督。
 
 ```bash
 bash scripts/prepare_data.sh cgpo
@@ -110,9 +86,7 @@ bash scripts/eval.sh checkpoints/CGPO-Reproduce/qwen3_vl_8b_cgpo --suite cgpo
 
 ## 🧪 已复现方法
 
-每个方法都可以用 `examples/reproduction/<method>` 中的脚本训练，这些脚本沿用其论文的数据、模型和超参数（各目录的
-README 说明了设定、基线、与官方代码的差异以及论文报告的结果）；除 DeepEyes 和 Vision-OPD 外，也都可以用
-[统一设定对比](#-统一设定对比)的脚本训练。除 CGPO 外均为非官方复现。
+每个方法都可以用 `examples/reproduction/<method>` 中的脚本训练，这些脚本沿用其论文的数据、模型和超参数（各目录的 README 说明了设定、基线、与官方代码的差异以及论文报告的结果）；除 DeepEyes 和 Vision-OPD 外，也都可以用[统一设定对比](#-统一设定对比)的脚本训练。除 CGPO 外均为非官方复现。
 
 方法（以及[论文清单](#-论文清单)中的论文）按其感知导向改动所在的训练环节分类，环节按一个训练步的顺序排列：
 
@@ -158,10 +132,7 @@ README 说明了设定、基线、与官方代码的差异以及论文报告的�
 | [**VGS**](examples/reproduction/vgs/README.md) | **蒸馏目标** · 辅助目标 | [Decomposed On-Policy Distillation for Vision-Language Reasoning: Steering Gradients for Visual Grounding](https://arxiv.org/abs/2606.00564)<br>Hee Suk Yoon et al. · `2606.00564` | ICML 2026 (Spotlight) | - | 把教师分解为语言先验和视觉增益：在反向 KL 之外，学生拟合自己的纯文本分布乘以教师有图/无图的概率比。 | Qwen3-VL-2B / 4B 学生，经 GRPO 训练的 Qwen3-VL-8B 教师，Vision-SR1-47K |
 | [**VA-OPD**](examples/reproduction/va_opd/README.md) | **信用分配** | [Visual-Advantage On-Policy Distillation for Vision-Language Models](https://arxiv.org/abs/2605.21924)<br>Ruiqi Liu et al. · `2605.21924` | arXiv | - | 按教师的视觉优势（原图下比像素化图像下高出的对数概率）逐回答、逐 token 加权蒸馏。 | Qwen3-VL-2B 学生，4B / 8B / 32B 教师，Geometry3K / ViRL39K |
 
-EasyR1 原有的算法（GRPO、DAPO、GSPO、CISPO、SAPO、REINFORCE++、RLOO、ReMax）仍然可用。OPD 方法从教师学习，
-不使用可验证奖励；它们共用教师（`worker.teacher`）和两种基础目标：基于采样 token 的 OPD
-（`algorithm.adv_estimator=teacher_log_ratio`）和基于完整下一 token 分布的 OPD（`algorithm.distill_loss_coef`），见
-[docs/algorithm_parameters.md](docs/algorithm_parameters.md#on-policy-distillation)。
+EasyR1 原有的算法（GRPO、DAPO、GSPO、CISPO、SAPO、REINFORCE++、RLOO、ReMax）仍然可用。OPD 方法从教师学习，不使用可验证奖励；它们共用教师（`worker.teacher`）和两种基础目标：基于采样 token 的 OPD（`algorithm.adv_estimator=teacher_log_ratio`）和基于完整下一 token 分布的 OPD（`algorithm.distill_loss_coef`），见 [docs/algorithm_parameters.md](docs/algorithm_parameters.md#on-policy-distillation)。
 
 ## 🚀 快速开始
 
@@ -195,9 +166,7 @@ bash examples/comparison/rlvr_qwen3_vl_4b/cgpo.sh                               
 N_GPUS_PER_NODE=4 bash examples/reproduction/papo/qwen2_5_vl_7b_grpo.sh trainer.total_epochs=1   # 任意覆盖参数
 ```
 
-checkpoint 保存在 `checkpoints/<project>/<experiment>/global_step_*`（脚本只保留最新一次保存和验证奖励
-最高的一次，`trainer.save_limit=1`）；日志输出到终端，同时写入同一目录下的 `experiment_log.jsonl`
-（在线记录可设置 `LOGGER='["console","wandb"]'` 或 `swanlab`）。
+checkpoint 保存在 `checkpoints/<project>/<experiment>/global_step_*`（脚本只保留最新一次保存和验证奖励最高的一次，`trainer.save_limit=1`）；日志输出到终端，同时写入同一目录下的 `experiment_log.jsonl`（在线记录可设置 `LOGGER='["console","wandb"]'` 或 `swanlab`）。
 
 **4. 评测**：
 
@@ -206,8 +175,7 @@ bash scripts/eval.sh checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_papo --suite 
 bash scripts/eval.sh Qwen/Qwen2.5-VL-7B-Instruct --suite papo         # 基座模型
 ```
 
-评测脚本会自动把 FSDP checkpoint 合并成 Hugging Face 格式，在所有可见 GPU 上用 vLLM 跑完套件中的
-每个基准，并输出汇总表。详见 [eval/README.md](eval/README.md)。
+评测脚本会自动把 FSDP checkpoint 合并成 Hugging Face 格式，在所有可见 GPU 上用 vLLM 跑完套件中的每个基准，并输出汇总表。详见 [eval/README.md](eval/README.md)。
 
 **5. 释放磁盘空间**（训练结束后）：
 
@@ -215,12 +183,7 @@ bash scripts/eval.sh Qwen/Qwen2.5-VL-7B-Instruct --suite papo         # 基座�
 python3 scripts/finalize_run.py checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_papo   # --keep last|best|all|N,...，--dry-run
 ```
 
-每个保存的 step 都带优化器状态，大小是模型本身的 3 到 4 倍（4B 模型为 34 GB）。该脚本默认把最后一步和验证奖励
-最高的一步保留为 `global_step_N/actor` 中的 Hugging Face 权重（4B 模型每步约 9 GB），删除优化器状态和其余 step，
-此后该实验无法再续训。`--keep` 接受逗号分隔的集合：单独的 `last` 或 `best`、`all`（保留所有已保存的 step，
-例如分析训练动态，训练时需设 `trainer.save_limit=-1` 才会全部保存）或具体步数（`--keep last,50,100`）。
-统一对比的主表取最后一步，验证最优步另列一张表并去掉验证集对应的基准（验证集往往同时是评测基准，按它挑步会使该基准偏高）；验证最优步也可用作教师。
-传入单个 `.../global_step_N` 时只处理这一步，不动其他 step。`scripts/eval.sh` 可以直接评测收尾后的实验。
+每个保存的 step 都带优化器状态，大小是模型本身的 3 到 4 倍（4B 模型为 34 GB）。该脚本默认把最后一步和验证奖励最高的一步保留为 `global_step_N/actor` 中的 Hugging Face 权重（4B 模型每步约 9 GB），删除优化器状态和其余 step，此后该实验无法再续训。`--keep` 接受逗号分隔的集合：单独的 `last` 或 `best`、`all`（保留所有已保存的 step，例如分析训练动态，训练时需设 `trainer.save_limit=-1` 才会全部保存）或具体步数（`--keep last,50,100`）。统一对比的主表取最后一步，验证最优步另列一张表并去掉验证集对应的基准（验证集往往同时是评测基准，按它挑步会使该基准偏高）；验证最优步也可用作教师。传入单个 `.../global_step_N` 时只处理这一步，不动其他 step。`scripts/eval.sh` 可以直接评测收尾后的实验。
 
 ## 📁 仓库结构
 
@@ -242,11 +205,7 @@ python3 scripts/finalize_run.py checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_pa
 └── tests/                   # 单元测试
 ```
 
-各方法在 `verl/trainer/` 中被实现为可组合的模块：辅助（反事实）图像视图、token 级视觉敏感度信号、
-token 选择、优势缩放、辅助损失和额外奖励；OPD 另有教师和蒸馏损失（`distillation.py`）。所有开关见
-[docs/algorithm_parameters.md](docs/algorithm_parameters.md)，多个方法共有的实现细节（如 k3 KL 估计的梯度方向、损失平均方式）见
-[docs/implementation_notes.md](docs/implementation_notes.md)，新增方法见
-[docs/add_method.md](docs/add_method.md)。
+各方法在 `verl/trainer/` 中被实现为可组合的模块：辅助（反事实）图像视图、token 级视觉敏感度信号、token 选择、优势缩放、辅助损失和额外奖励；OPD 另有教师和蒸馏损失（`distillation.py`）。所有开关见 [docs/algorithm_parameters.md](docs/algorithm_parameters.md)，多个方法共有的实现细节（如 k3 KL 估计的梯度方向、损失平均方式）见 [docs/implementation_notes.md](docs/implementation_notes.md)，新增方法见 [docs/add_method.md](docs/add_method.md)。
 
 ## 📊 统一设定对比
 
@@ -259,19 +218,10 @@ token 选择、优势缩放、辅助损失和额外奖励；OPD 另有教师和�
 
 ## 📈 评测
 
-评测系统覆盖所复现论文使用的基准的并集：数学与多模态推理（Geometry3K、MathVista、We-Math、MMK12、
-MathVerse、MathVerse-V、LogicVista、CLEVR 计数、MMMU-Pro、MMMU、DynaMath、MathVision），感知与幻觉
-（POPE、HallusionBench、MME、MMStar、BLINK、AI2D、TextVQA、CFPO 的反事实基准 C-VQA-Real 与 MARS-Bench、
-SEED-Bench 等），基于定位的推理（GRIT 的 VSR / TallyQA / GQA / OVDEval、refCOCO），以及高分辨率感知
-（V*、HR-Bench、MME-RealWorld-Lite、ZoomBench）。每个基准都有下载脚本，每篇论文都有评测套件（`--suite papo`、
-`--suite deepeyes` 等）。无论用哪个套件，本仓库训练的检查点都按训练时的方式提问（提示词、图像尺寸、对话模板与
-分词器，从其训练目录读取，[详见](eval/README.md#prompts)）。新增基准只需要 loader、scorer 和注册表条目，教程见
-[eval/README.md](eval/README.md#adding-a-new-benchmark)。
+评测系统覆盖所复现论文使用的基准的并集：数学与多模态推理（Geometry3K、MathVista、We-Math、MMK12、MathVerse、MathVerse-V、LogicVista、CLEVR 计数、MMMU-Pro、MMMU、DynaMath、MathVision），感知与幻觉（POPE、HallusionBench、MME、MMStar、BLINK、AI2D、TextVQA、CFPO 的反事实基准 C-VQA-Real 与 MARS-Bench、SEED-Bench 等），基于定位的推理（GRIT 的 VSR / TallyQA / GQA / OVDEval、refCOCO），以及高分辨率感知（V*、HR-Bench、MME-RealWorld-Lite、ZoomBench）。每个基准都有下载脚本，每篇论文都有评测套件（`--suite papo`、`--suite deepeyes` 等）。无论用哪个套件，本仓库训练的检查点都按训练时的方式提问（提示词、图像尺寸、对话模板与分词器，从其训练目录读取，[详见](eval/README.md#prompts)）。新增基准只需要 loader、scorer 和注册表条目，教程见 [eval/README.md](eval/README.md#adding-a-new-benchmark)。
 
 > [!IMPORTANT]
-> 各论文的评测协议并不相同（PAPO/VPPO/PGPO/DVRP/CFPO 使用温度 1.0 下基于规则的 avg@8；
-> ToR/VEPO/NoisyRollout/VAPO/GRIT/DeepEyes/Vision-OPD 使用贪心解码加 LLM 裁判）。本仓库用同一套评测系统评测所有模型，
-> 因此请与本仓库中跑出的基线比较，而不要直接与跨论文摘抄的数字比较。
+> 各论文的评测协议并不相同（PAPO/VPPO/PGPO/DVRP/CFPO 使用温度 1.0 下基于规则的 avg@8；ToR/VEPO/NoisyRollout/VAPO/GRIT/DeepEyes/Vision-OPD 使用贪心解码加 LLM 裁判）。本仓库用同一套评测系统评测所有模型，因此请与本仓库中跑出的基线比较，而不要直接与跨论文摘抄的数字比较。
 
 ## 🔧 配置
 
@@ -288,24 +238,13 @@ SEED-Bench 等），基于定位的推理（GRIT 的 VSR / TallyQA / GQA / OVDEv
 | `NNODES` | `1` | 节点数（多机训练需先启动 Ray 集群） |
 | `EXPERIMENT_NAME` | 脚本名 | 实验名；checkpoint 保存在 `checkpoints/<project>/<experiment>` |
 
-任何配置项都可以用 `key=value` 追加在命令后面（见 [examples/config.yaml](examples/config.yaml) 和
-[verl/trainer/config.py](verl/trainer/config.py)）。设置 `USE_MODELSCOPE_HUB=1` 可从 ModelScope 下载模型。
+任何配置项都可以用 `key=value` 追加在命令后面（见 [examples/config.yaml](examples/config.yaml) 和 [verl/trainer/config.py](verl/trainer/config.py)）。设置 `USE_MODELSCOPE_HUB=1` 可从 ModelScope 下载模型。
 
-**Qwen3-VL Instruct 模型中的 `<think>`。** 这些模型的分词器带有 `<think>`、`</think>` 两个附加 token，
-但它们从未被训练（只有 Thinking 版会用到）。格式提示词要求写 `<think> ... </think>` 时，这两个标签会被编码成
-未训练的 token，模型不会照做：在 256 道 ViRL39K 题上，Qwen3-VL-4B-Instruct 用原版分词器的格式奖励为 0.00，
-把标签当普通文字时为 0.47，准确率相同。因此默认（`worker.actor.model.plain_think_tokens=auto`）把这类
-token 当普通文字处理：分词器照常加载（Hugging Face、ModelScope 或本地路径均可），删掉这两个附加 token 后
-保存在 `~/.cache/parlvr/tokenizers`（可用 `PARLVR_CACHE_DIR` 修改），训练、rollout 和评测都使用它，检查点
-也保存这份分词器。对话模板会用到这两个 token 的模型（Qwen3-VL Thinking）或本来没有它们的模型（Qwen2.5-VL、
-InternVL）不受影响。设置 `worker.actor.model.plain_think_tokens=false`
-可保留原版分词器（评测从检查点的训练记录读取该设置；其他模型用 `--plain-think-tokens false`）。
+**Qwen3-VL Instruct 模型中的 `<think>`。** 这些模型的分词器带有 `<think>`、`</think>` 两个附加 token，但它们从未被训练（只有 Thinking 版会用到）。格式提示词要求写 `<think> ... </think>` 时，这两个标签会被编码成未训练的 token，模型不会照做：在 256 道 ViRL39K 题上，Qwen3-VL-4B-Instruct 用原版分词器的格式奖励为 0.00，把标签当普通文字时为 0.47，准确率相同。因此默认（`worker.actor.model.plain_think_tokens=auto`）把这类 token 当普通文字处理：分词器照常加载（Hugging Face、ModelScope 或本地路径均可），删掉这两个附加 token 后保存在 `~/.cache/parlvr/tokenizers`（可用 `PARLVR_CACHE_DIR` 修改），训练、rollout 和评测都使用它，检查点也保存这份分词器。对话模板会用到这两个 token 的模型（Qwen3-VL Thinking）或本来没有它们的模型（Qwen2.5-VL、InternVL）不受影响。设置 `worker.actor.model.plain_think_tokens=false` 可保留原版分词器（评测从检查点的训练记录读取该设置；其他模型用 `--plain-think-tokens false`）。
 
 ## 📚 论文清单
 
-以下条目对照 arXiv、OpenReview 和官方仓库核实（2026-10-01；感知导向的 OPD 论文于 2026-10-15）；只有在一手来源
-确认时才标注会议（来源见 [docs/paper_list_sources.md](docs/paper_list_sources.md)，BibTeX 见
-[docs/paper_list.bib](docs/paper_list.bib)）。每张表内按时间倒序排列。每篇论文按其主要的感知导向改动所在的训练环节归类（见[已复现方法](#-已复现方法)）；本仓库实现的方法列在那里，这里不再重复。欢迎提交 PR 补充论文。
+以下条目对照 arXiv、OpenReview 和官方仓库核实（2026-10-01；感知导向的 OPD 论文于 2026-10-15）；只有在一手来源确认时才标注会议（来源见 [docs/paper_list_sources.md](docs/paper_list_sources.md)，BibTeX 见 [docs/paper_list.bib](docs/paper_list.bib)）。每张表内按时间倒序排列。每篇论文按其主要的感知导向改动所在的训练环节归类（见[已复现方法](#-已复现方法)）；本仓库实现的方法列在那里，这里不再重复。欢迎提交 PR 补充论文。
 
 ### 🎯 感知导向的 RLVR
 
@@ -481,16 +420,12 @@ InternVL）不受影响。设置 `worker.actor.model.plain_think_tokens=false`
 
 欢迎贡献：
 
-- **补充论文**：提交 PR，在中英文两份 README 的清单中按时间倒序各添加一行（arXiv 链接、会议、代码链接），
-  然后运行 `python scripts/check_docs.py --fix`。
-- **新增方法**：参考 [docs/add_method.md](docs/add_method.md)，新增 `examples/reproduction/<method>/` 目录，
-  包含 README 和基线脚本。
+- **补充论文**：提交 PR，在中英文两份 README 的清单中按时间倒序各添加一行（arXiv 链接、会议、代码链接），然后运行 `python scripts/check_docs.py --fix`。
+- **新增方法**：参考 [docs/add_method.md](docs/add_method.md)，新增 `examples/reproduction/<method>/` 目录，包含 README 和基线脚本。
 - **新增评测基准**：参考 [eval/README.md](eval/README.md#adding-a-new-benchmark)。
 - **提交复现结果**：用 "Reproduction results" 模板开 issue，提供运行命令、日志和评测汇总。
 
-开 PR 之前，先用 `pip install pre-commit && pre-commit install` 配好检查（只需一次），再运行
-`pre-commit run --all-files` 和 `make test`。[贡献指南](.github/CONTRIBUTING_zh.md)
-（[English](.github/CONTRIBUTING.md)）介绍了每项检查、提交信息格式和提交 PR 的步骤。
+开 PR 之前，先用 `pip install pre-commit && pre-commit install` 配好检查（只需一次），再运行 `pre-commit run --all-files` 和 `make test`。[贡献指南](.github/CONTRIBUTING_zh.md)（[English](.github/CONTRIBUTING.md)）介绍了每项检查、提交信息格式和提交 PR 的步骤。
 
 ## 📝 引用
 
@@ -516,9 +451,7 @@ InternVL）不受影响。设置 `worker.actor.model.plain_think_tokens=false`
 
 ## 🙏 致谢
 
-本仓库基于 [EasyR1](https://github.com/hiyouga/EasyR1) 和 [veRL](https://github.com/volcengine/verl)
-构建，使用 [vLLM](https://github.com/vllm-project/vllm) 进行 rollout 和评测。感谢所有被复现方法的
-作者公开论文、代码和数据，特别感谢 PAPO、VPPO、GRIT 和 DeepEyes 公开的训练与评测数据。
+本仓库基于 [EasyR1](https://github.com/hiyouga/EasyR1) 和 [veRL](https://github.com/volcengine/verl) 构建，使用 [vLLM](https://github.com/vllm-project/vllm) 进行 rollout 和评测。感谢所有被复现方法的作者公开论文、代码和数据，特别感谢 PAPO、VPPO、GRIT 和 DeepEyes 公开的训练与评测数据。
 
 ## 📄 许可证
 
