@@ -18,7 +18,7 @@ Each script only sets `ALGO_ARGS`; everything else comes from [common.sh](common
 > paper designed and tuned its method for, and the evaluation is this repository's. The tables describe how our
 > re-implementations behave in this setting; they do not rank the methods and are not evidence for or against
 > any of them. The original papers remain the reference. Authors who see a problem with our implementation or
-> setting are welcome to open an issue or a pull request.
+> setting are welcome to open an issue or a pull request. See [About the results](../README.md#about-the-results).
 
 ## Shared setting
 

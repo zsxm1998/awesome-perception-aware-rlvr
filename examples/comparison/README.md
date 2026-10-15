@@ -1,5 +1,7 @@
 # Controlled comparison on Qwen3-VL-4B-Instruct
 
+[English](README.md) | [简体中文](README_zh.md)
+
 The perception-aware RLVR papers reproduced in [examples/reproduction/](../reproduction/) use different
 backbones, training sets, baseline definitions and evaluation protocols, and several of them reuse
 baseline numbers from other papers. Their reported gains are therefore hard to compare with each
@@ -8,32 +10,39 @@ under **one** recipe: same model, same data, same GRPO hyper-parameters and the 
 Each script only sets `ALGO_ARGS`, the switches that define the method; everything else comes from
 [qwen3_vl_4b/common.sh](qwen3_vl_4b/common.sh).
 
-On-policy distillation (VA-OPD, VGS, VCSD and the two base OPD objectives) is compared separately, on a 2B
+On-policy distillation (OPD: VA-OPD, VGS, VCSD and the two base OPD objectives) is compared separately, on a 2B
 student distilled from this comparison's GRPO run: see [opd_qwen3_vl_2b/README.md](opd_qwen3_vl_2b/README.md).
 
+## About the results
+
 > [!IMPORTANT]
-> **The results are a reference, not a verdict on the methods.** Please read them with these limits in mind:
->
-> - **Re-implementations.** Except for CGPO, the methods are our re-implementations of the papers and, where
->   available, the official code. Details a paper leaves open may differ from the authors' code; the known
->   differences are listed in each method's README.
-> - **One run per method.** Training is not deterministic (sampling, kernels, hardware), and each configuration
->   is trained once. Two runs of CFPO with the same configuration (the second with a faster implementation of its
->   counterfactual attention that differs only by rounding) ended 0.6 points apart in Overall and up to 2.6
->   points apart on single benchmarks, in both directions, while two checkpoints of one run five steps apart
->   differ by about 0.15 points. Differences of about a point between methods are within this variation.
-> - **A shared setting that is not the methods' own.** One backbone, one dataset, one training budget, one set
->   of GRPO hyper-parameters and one prompt are used for every method. Most methods were designed and tuned for
->   another setting (a different model, data, base algorithm, response length or schedule), and some of their
->   components are left out here (see [Methods](#methods)); a method may not reach its best performance in this
->   setting.
-> - **Our evaluation protocol.** All checkpoints are evaluated with this repository's harness and prompts,
->   which differ from the papers' evaluations.
->
-> The tables describe how our re-implementations behave in this setting; they do not rank the methods and are
-> not evidence for or against any of them. The original papers remain the reference for each method's
-> performance. If you are an author and see a problem with our implementation or setting, please open an issue
-> or a pull request; we will correct it.
+> **The results are a reference, not a verdict on the methods.** The numbers produced with this repository
+> (the tables below, those of the [OPD comparison](opd_qwen3_vl_2b/README.md) and the "this repo" columns of the
+> reproduction READMEs) come with these limits.
+
+- **Re-implementations.** Except for CGPO, the methods are our re-implementations of the papers and, where
+  available, the official code. Details a paper leaves open may differ from the authors' code; the known
+  differences are listed in each method's README.
+- **A different environment.** Hardware, software versions (PyTorch, vLLM, transformers, the RL framework) and
+  data preprocessing differ from those of the original papers.
+- **One run per method.** Training is not deterministic (sampling, kernels, hardware), and each configuration
+  is trained once. Two runs of CFPO with the same configuration (the second with a faster implementation of its
+  counterfactual attention that differs only by rounding) ended 0.6 points apart in Overall and up to 2.6
+  points apart on single benchmarks, in both directions, while two checkpoints of one run five steps apart
+  differ by about 0.15 points. Differences of about a point between methods are within this variation, and
+  many reported gains are of this size.
+- **A shared setting that is not the methods' own.** One backbone, one dataset, one training budget, one set
+  of GRPO hyper-parameters and one prompt are used for every method. Most methods were designed and tuned for
+  another setting (a different model, data, base algorithm, response length or schedule), and some of their
+  components are left out here (see [Methods](#methods)); a method may not reach its best performance in this
+  setting.
+- **Our evaluation protocol.** All checkpoints are evaluated with this repository's harness and prompts,
+  which differ from the papers' evaluations.
+
+The tables describe how our re-implementations behave in this setting; they do not rank the methods and are
+not evidence for or against any of them. The original papers remain the reference for each method's
+performance. If you are an author and see a problem with our implementation or setting, please open an issue
+or a pull request; we will correct it.
 
 ## Shared setting
 
@@ -75,7 +84,7 @@ perturbation; patch masking uses Qwen3-VL's 16-px patches. Parameter names are l
 | `vgpo.sh` | [VGPO](../reproduction/vgpo/README.md) | none (single forward) | `visual_sensitivity_metric=hidden_state_similarity` on the last layer against the mean image-token state (`visual_sensitivity_hidden_layers=last`, `visual_sensitivity_hidden_pooling=prototype`), scored before the update (`visual_sensitivity_reference=old`); `advantage_scaling_method=vgpo` with β=0.3, γ=0.5, κ=0.2; factors per prompt group |
 | `vapo.sh` | [VAPO](../reproduction/vapo/README.md) | – (no image perturbation) | `claim_probe_count=20` probes per correct response, each asking whether one of the image's GPT-5 visual claims is correct after a random cut of the reasoning, `claim_probe_late_emphasis=1.5`; the probe question without the released trailing space, after which Qwen3-VL-4B answers the probes with "1" or "0" (see the [VAPO README](../reproduction/vapo/README.md#probe-question)); reward 0.8 accuracy + 0.1 format + 0.1 perception (`perception_weight=0.1`); trained on `virl39k_claims` (ViRL39K with the claims; the 2,289 multi-image problems have none and get the GRPO reward) |
 | `grit.sh` | [GRIT](../reproduction/grit/README.md) | – | think / rethink / answer format with inline JSON evidence boxes (`examples/system_prompt/grit_GR.txt`, no format prompt) and `grit.py:compute_score` (format, box format, rule-based answer, 0.1·BLEU-1); trained on ViRL39K instead of GRIT's 20 samples |
-| `cgpo.sh` | CGPO ([examples/reproduction/cgpo](../reproduction/cgpo/README.md)) | evidence regions flattened to their local mean (`cgpo_flat`, one per response) | `<region>` evidence format (`xml_grounded_reasoning_v2.jinja` and reward, format weight 0.1); `top_entropy_quantile=0.3`, `top_perception_quantile=0.3` (within each update micro-batch, `*_thr_granularity=micro_batch`, as in the CGPO paper), `include_region_tokens_in_perception_mask=true`; `advantage_scaling_method=cgpo`, `cgpo_response_scaling_coef=0.1`; grounding-consistency reward weight 0.1; `visual_sensitivity_reference=old` |
+| `cgpo.sh` | [CGPO](../reproduction/cgpo/README.md) | evidence regions flattened to their local mean (`cgpo_flat`, one per response) | `<region>` evidence format (`xml_grounded_reasoning_v2.jinja` and reward, format weight 0.1); `top_entropy_quantile=0.3`, `top_perception_quantile=0.3` (within each update micro-batch, `*_thr_granularity=micro_batch`, as in the CGPO paper), `include_region_tokens_in_perception_mask=true`; `advantage_scaling_method=cgpo`, `cgpo_response_scaling_coef=0.1`; grounding-consistency reward weight 0.1; `visual_sensitivity_reference=old` |
 
 Settings that belong to a paper's base recipe rather than to its method are replaced by the shared
 recipe. The methods that their papers run on DAPO (VPPO, PGPO and VGPO; PAPO, ToR and DVRP report both
@@ -289,12 +298,3 @@ the math reasoning of a method whose best step comes well before its last may st
 | VAPO | 155 | 66.9 | 72.5 | 78.4 | **72.6** | 70.3 |
 | GRIT | 202 | 65.5 | 70.4 | 77.5 | **71.1** | 71.1 |
 | CGPO | 160 | 66.8 | 71.3 | 77.6 | **71.9** | 71.7 |
-
-> [!IMPORTANT]
-> Except for CGPO, every method in this table is our unofficial re-implementation, run in one shared
-> setting (backbone, data and hyper-parameters chosen for the comparison, not for each method), on
-> our hardware and software versions, with a single seed per method. Differences of a point or less
-> between methods can come from training randomness alone. A method that does not beat GRPO here is
-> not shown to be ineffective: the original papers remain the reference for each method's
-> performance. See [About the results](../../README.md#-about-the-results); corrections from the
-> authors are welcome.

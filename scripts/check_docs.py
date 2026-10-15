@@ -16,10 +16,10 @@
     python scripts/check_docs.py          # check
     python scripts/check_docs.py --fix    # also rewrite the paper-count badges
 
-Checks: the "Papers" / "Reproduced" badges match the lists, README.md and README_zh.md list the
-same papers, every table of "Other papers" is sorted newest first without duplicates, and every
-relative Markdown link or image points to an existing file (and, with ``#anchor``, to an existing
-heading).
+Checks: the "Papers" / "Reproduced" badges match the lists (the tables of "Reproduced methods" and
+of "Paper list"), README.md and README_zh.md list the same papers, every table of the paper list is
+sorted newest first and no paper appears twice, and every relative Markdown link or image points to
+an existing file (and, with ``#anchor``, to an existing heading).
 """
 
 from __future__ import annotations
@@ -34,10 +34,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 READMES = {
-    "README.md": ("Paper list", "Reproduced in this repository", "Other papers"),
-    "README_zh.md": ("论文清单", "本仓库已复现的论文", "其他论文"),
+    "README.md": ("Paper list", "Reproduced methods"),
+    "README_zh.md": ("论文清单", "已复现方法"),
 }
 ROW = re.compile(r"^\| (\d{4}(?:-\d{2})?) \|")
+METHOD_ROW = re.compile(r"^\| \[")  # a row of the reproduced-method tables starts with the link to its directory
 ARXIV_ID = re.compile(r"`(\d{4}\.\d{4,5})`|arxiv\.org/abs/(\d{4}\.\d{4,5})")
 BADGE = re.compile(r"(img\.shields\.io/badge/{name}-)(\d+)(-)")
 LINK = re.compile(r"\]\(([^)\s]*?)#([^)\s]+)\)")
@@ -83,15 +84,14 @@ def anchors_of(path: Path) -> set[str]:
 def check_paper_list(fix: bool) -> list[str]:
     errors: list[str] = []
     ids_by_file = {}
-    for name, (list_title, reproduced_title, other_title) in READMES.items():
+    for name, (list_title, reproduced_title) in READMES.items():
         path = ROOT / name
         text = path.read_text(encoding="utf-8")
         paper_list = section(text, 2, list_title)
-        reproduced = section(paper_list, 3, reproduced_title)
-        others = section(paper_list, 3, other_title)
-        n_reproduced = sum(1 for line in reproduced.splitlines() if line.startswith("- **"))
+        reproduced = section(text, 2, reproduced_title)
+        n_reproduced = sum(1 for line in reproduced.splitlines() if METHOD_ROW.match(line))
         n_others = 0
-        for table in re.split(r"(?m)^#### ", others)[1:]:
+        for table in re.split(r"(?m)^### ", paper_list)[1:]:
             title = table.splitlines()[0]
             dates = [ROW.match(line).group(1) for line in table.splitlines() if ROW.match(line)]
             n_others += len(dates)
@@ -100,7 +100,8 @@ def check_paper_list(fix: bool) -> list[str]:
                     errors.append(f"{name}: '{title}' is not sorted newest first ({previous} before {current})")
                     break
         # one id per entry (an entry repeats its id in the link and in the label)
-        ids = [i for line in paper_list.splitlines() for i in {a or b for a, b in ARXIV_ID.findall(line)}]
+        entries = [line for line in reproduced.splitlines() if METHOD_ROW.match(line)] + paper_list.splitlines()
+        ids = [i for line in entries for i in {a or b for a, b in ARXIV_ID.findall(line)}]
         duplicates = sorted(i for i, count in Counter(ids).items() if count > 1)
         if duplicates:
             errors.append(f"{name}: arXiv ids listed more than once: {', '.join(duplicates)}")

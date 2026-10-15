@@ -111,7 +111,7 @@ the environment. Evaluation is described in [eval/README.md](../../../eval/READM
 > come from our unofficial re-implementation, trained once with a single seed on our hardware and
 > software versions and evaluated with this repository's harness. They may differ from the official
 > results, including smaller or no gains over the baselines, and do not replace them; corrections
-> from the authors are welcome. See [About the results](../../../README.md#-about-the-results).
+> from the authors are welcome. See [About the results](../../comparison/README.md#about-the-results).
 
 Paper Tables 1 and 2 (greedy accuracy, %; HallusionBench with the reasoning prompt).
 

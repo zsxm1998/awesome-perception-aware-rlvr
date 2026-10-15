@@ -186,7 +186,7 @@ The reproduction and the comparison do not use dynamic sampling, so the followin
 > come from our unofficial re-implementation, trained once with a single seed on our hardware and
 > software versions and evaluated with this repository's harness. They may differ from the official
 > results, including smaller or no gains over the baselines, and do not replace them; corrections
-> from the authors are welcome. See [About the results](../../../README.md#-about-the-results).
+> from the authors are welcome. See [About the results](../../comparison/README.md#about-the-results).
 
 Paper Tables 28 and 29 (greedy decoding, %; MM-Vet is a judged score). The 7B GRPO row is the paper's
 K = 0 ablation; the paper's 3B model starts from a non-public SFT model (see above).

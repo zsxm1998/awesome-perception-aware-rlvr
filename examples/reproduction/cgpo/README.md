@@ -99,7 +99,7 @@ Notes:
 > The paper's results were obtained with the original ms-swift implementation on pathology data. The
 > natural-image numbers of this repository come from the EasyR1 re-implementation, trained once with
 > a single seed and evaluated with this repository's harness, together with baselines run in the
-> same way. See [About the results](../../../README.md#-about-the-results).
+> same way. See [About the results](../../comparison/README.md#about-the-results).
 
 Pathology results reported in the paper (PathMMU overall accuracy, %):
 
