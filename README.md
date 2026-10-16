@@ -57,6 +57,31 @@ so they can be combined, compared and extended with a few configuration switches
 > reproduce the gains reported in the papers; see
 > [About the results](examples/comparison/README.md#about-the-results).
 
+## 🔍 Key findings
+
+From the [controlled comparisons](#-controlled-comparison): each method trained once, in one shared setting that is
+not the one each method was designed for; read [About the results](examples/comparison/README.md#about-the-results)
+before drawing conclusions.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/comparison_rlvr_dark.svg">
+    <img src="docs/assets/comparison_rlvr.svg" width="100%" alt="Difference from GRPO, in points, of 13 perception-aware RLVR methods on Qwen3-VL-4B-Instruct, in the mean of the 3 benchmark groups and in each group. Mean of the 3 groups: PAPO +3.5, DVRP +3.2, CFPO +3.1, VEPO +3.0, ToR +2.8, PEPO +2.4, VPPO +2.1, CGPO +1.2, PGPO +1.2, GRIT +0.6, VAPO -0.2, NoisyRollout -1.0, VGPO -6.7. The gains come from math reasoning and vision-dependent reasoning; in perception and hallucination all methods but one stay within a point of GRPO.">
+  </picture>
+</p>
+
+- **Most perception-aware RLVR methods end above GRPO.** On Qwen3-VL-4B-Instruct with the same data and training
+  budget, 9 of the 13 methods end 1.2 to 3.5 points above GRPO in the mean of the 3 benchmark groups (GRPO: 70.6),
+  at 1.0× to 1.5× its training time.
+- **The gains are in reasoning, not on the perception benchmarks.** These nine methods gain 3.3 to 6.3 points in
+  math reasoning; in perception and hallucination (POPE, HallusionBench, MMStar, BLINK, MME perception,
+  CV-Bench), 12 of the 13 methods stay within a point of GRPO.
+- **Differences of about a point are within run-to-run variation.** Two runs of one configuration ended 0.6 points
+  apart in the mean of the 3 groups.
+- **In the OPD comparison, GRPO on the student itself ends highest.** With a Qwen3-VL-2B student and the
+  GRPO-trained Qwen3-VL-4B as the teacher, GRPO on the student ends at 64.0 in the mean of the 3 groups, the best of
+  the OPD variants evaluated so far at 62.8.
+
 ## 📖 Contents
 
 - [News](#-news)

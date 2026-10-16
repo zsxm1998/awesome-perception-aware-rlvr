@@ -35,6 +35,22 @@ RLVR 能提升大视觉语言模型的推理能力，但它的奖励只检查最
 > [!NOTE]
 > 除 CGPO 外，其余方法均为**非官方复现**。请参考并引用原论文和原仓库。与官方实现的差异记录在各方法目录的 README 中。我们的数字来自这些复现的单次运行，未必能复现论文报告的提升，见[关于结果的说明](examples/comparison/README_zh.md#关于结果的说明)。
 
+## 🔍 主要发现
+
+来自[统一设定对比](#-统一设定对比)：每个方法只训练一次，用的是同一套设定，而不是各方法设计时针对的设定；下结论前请先读[关于结果的说明](examples/comparison/README_zh.md#关于结果的说明)。
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/comparison_rlvr_zh_dark.svg">
+    <img src="docs/assets/comparison_rlvr_zh.svg" width="100%" alt="13 个感知导向 RLVR 方法在 Qwen3-VL-4B-Instruct 上相对 GRPO 的分差，分三组平均与各组。三组平均：PAPO +3.5、DVRP +3.2、CFPO +3.1、VEPO +3.0、ToR +2.8、PEPO +2.4、VPPO +2.1、CGPO +1.2、PGPO +1.2、GRIT +0.6、VAPO -0.2、NoisyRollout -1.0、VGPO -6.7。提升来自数学推理和依赖视觉的推理；感知与幻觉组中除一个方法外都在 GRPO 的一分以内。">
+  </picture>
+</p>
+
+- **多数感知导向 RLVR 方法最终高于 GRPO。** 在 Qwen3-VL-4B-Instruct 上用相同数据和训练量，13 个方法中有 9 个的三组平均比 GRPO 高 1.2 到 3.5 分（GRPO 为 70.6），训练时长是 GRPO 的 1.0 到 1.5 倍。
+- **提升在推理上，不在感知类基准上。** 这 9 个方法的数学推理提高 3.3 到 6.3 分；而在感知与幻觉组（POPE、HallusionBench、MMStar、BLINK、MME 感知、CV-Bench），13 个方法中有 12 个与 GRPO 相差不到一分。
+- **一分左右的差距在多次训练的波动范围内。** 同一配置训练两次，三组平均相差 0.6 分。
+- **OPD 对比中，直接对学生做 GRPO 的结果最高。** 以 Qwen3-VL-2B 为学生、经 GRPO 训练的 Qwen3-VL-4B 为教师时，直接对学生做 GRPO 的三组平均为 64.0，已评测的 OPD 变体中最高为 62.8。
+
 ## 📖 目录
 
 - [更新](#-更新)
