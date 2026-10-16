@@ -627,7 +627,7 @@ def test_opd_suites_list_the_paper_benchmarks_and_can_be_prepared():
     suites = load_suites(ROOT / "eval/config/suites.yaml", specs)
     expected = {
         "va_opd": ("wemath", "mathvista", "mathverse", "hallusionbench", "ai2d", "mmmu_val", "mmstar"),
-        "vgs": ("mathvision", "mathverse_v", "logicvista", "mmmu_pro"),
+        "vgs": ("mathvision", "mathverse_v", "logicvista", "visualpuzzles", "mmmu_pro"),
         "vcsd": ("blink", "mmstar", "vstar", "mathvista", "hrbench_4k", "hrbench_8k", "hallusionbench"),
         "vision_opd": ("vstar", "zoombench", "hrbench_4k", "hrbench_8k", "mme_realworld_lite", "mmstar", "pope"),
     }
@@ -711,6 +711,95 @@ def test_scoring_uses_the_answer_protocol_of_the_scoring_run(monkeypatch, tmp_pa
         # the run comparison reads the predictions with the protocol of the stored score
         scored = _scored_rows(args.output_dir, spec.key)
         assert boxed_row_answers(scored[0], spec.key)[0][1] == expected / 100.0
+
+
+def test_multiple_choice_answers_follow_the_answer_protocol(monkeypatch, tmp_path):
+    """VisualPuzzles in the vgs suite: with --answer-protocol vgs the mcq scorer reads the option letter as the VGS
+    training reward does (the last \\boxed{}, else the text after </reason>); the default reading is unchanged."""
+    spec = _registry("visualpuzzles")
+    for response, default, vgs in (
+        ("<reason>Count the dots.</reason>C", 0.0, 100.0),  # the answer after </reason>
+        ("Answer: C", 100.0, 0.0),  # neither a box nor </reason>
+        ("<reason>Count the dots.</reason>\\boxed{(C)}", 100.0, 100.0),
+        ("<reason>Count the dots.</reason>\\boxed{A and C}", 0.0, 0.0),
+    ):
+        for flag, expected in (("default", default), ("vgs", vgs)):
+            runner, args = _score_args(
+                monkeypatch, tmp_path / flag / str(abs(hash(response))), "--answer-protocol", flag
+            )
+            rows = [
+                {"sample_id": "a", "target": "C", "responses": [response], "extra_info": {"options": list("1234")}}
+            ]
+            _write_predictions(runner, args, spec, rows)
+            result = runner.score_benchmark(spec, args, None)
+            assert result.normalized_score_0_100 == expected, (response, flag)
+
+
+@pytest.mark.parametrize("finish_reason", ["stop", "length"])
+def test_a_vgs_answer_at_the_length_limit_counts(finish_reason):
+    """The VGS reading needs a \\boxed{} or the text after </reason>, so a response truncated after its answer is
+    read; the default reading keeps refusing a truncated response without a final answer."""
+    from easyr1_eval.scorers import mcq_row_score, mmmu_row_score
+
+    response = "<reason>Count the dots.</reason>C"
+    row = {
+        "target": "C",
+        "responses": [response],
+        "extra_info": {"options": list("1234"), "question_type": "multiple-choice"},
+        "response_metadata": [{"finish_reason": finish_reason}],
+    }
+    vgs = {**row, "eval_metadata": {"answer_protocol": "vgs"}}
+    assert mcq_row_score(vgs) == mmmu_row_score(vgs) == 1.0
+    truncated = {**row, "responses": ["(C)"], "extra_info": {"options": list("1234")}}  # a letter, no final answer
+    assert mcq_row_score(truncated) == (0.0 if finish_reason == "length" else 1.0)
+
+
+@pytest.mark.parametrize(
+    "argv, recorded, rescored",
+    [
+        (("--answer-protocol", "vgs"), {}, True),  # a protocol given (flag, training record or suite)
+        ((), {"answer_protocol": "vgs"}, True),  # none given: the protocol recorded with the predictions
+        ((), {}, False),  # the default reading
+        (("--answer-protocol", "default"), {"answer_protocol": "vgs"}, False),
+    ],
+)
+@pytest.mark.parametrize("key", ["vstar", "mmmu_val"])
+def test_choice_scores_of_earlier_versions_read_with_vgs_are_recomputed(
+    monkeypatch, tmp_path, argv, recorded, rescored, key
+):
+    """A score cached by an earlier version (757b2b3: every protocol read option letters with extract_choice_letter)
+    is recomputed when the mcq / MMMU letters are read with vgs, and reused otherwise."""
+    from easyr1_eval.json_utils import read_json, write_json
+    from easyr1_eval.state import fingerprint, mark_complete
+
+    spec = _registry(key)
+    runner, args = _score_args(monkeypatch, tmp_path, *argv)
+    rows = [
+        {
+            "sample_id": "a",
+            "target": "C",
+            "responses": ["<reason>Count the dots.</reason>C"],
+            "extra_info": {"options": list("1234"), "question_type": "multiple-choice"},
+            "eval_metadata": recorded,
+        }
+    ]
+    _write_predictions(runner, args, spec, rows)
+    runner.score_benchmark(spec, args, None)
+    # the cache of the earlier version: its fingerprint had no vgs_choice_reading field; a sentinel score
+    fields = runner.task_fingerprint_fields(
+        args, spec, phase="score", recorded_answer_protocol=recorded.get("answer_protocol", "default")
+    )
+    assert ("vgs_choice_reading" in fields) == rescored
+    fields.pop("vgs_choice_reading", None)
+    metric_path = runner.metrics_dir(args.output_dir) / f"{spec.key}.json"
+    cached = read_json(metric_path)
+    cached["result"]["raw_score"] = cached["result"]["normalized_score_0_100"] = 42.0
+    write_json(metric_path, cached)
+    mark_complete(args.output_dir, f"score:{spec.key}", fingerprint(fields), [metric_path])
+
+    result = runner.score_benchmark(spec, args, None)
+
+    assert result.normalized_score_0_100 == (100.0 if rescored else 42.0)
 
 
 def test_a_scorer_revision_only_rescores_its_benchmarks(monkeypatch, tmp_path):

@@ -201,8 +201,8 @@ suites:
       harness, so the paper's Visual Avg cannot be reproduced.
 
   vgs:
-    description: VGS Table 1 benchmarks available here (4 of 7)
-    benchmarks: [mathvision, mathverse_v, logicvista, mmmu_pro]
+    description: VGS Table 1 benchmarks available here (5 of 7)
+    benchmarks: [mathvision, mathverse_v, logicvista, visualpuzzles, mmmu_pro]
     defaults:  # the training prompt, image size and answer reading of examples/reproduction/vgs
       format_prompt: none
       system_prompt: examples/system_prompt/vgs.txt
@@ -220,10 +220,12 @@ suites:
       multiple-choice 432 / 436, LogicVista 448, MMMU-Pro 4-option 1,592): `mathvision` is
       VPPO-Eval's 2,907-item verifiable subset, `mathverse_v` is PAPO-Eval's 1,308-item
       vision-dependent split (one score), `logicvista` has 447 items and `mmmu_pro` is
-      PAPO-Eval's 1,730-item vision setting. VisualPuzzles (`visualpuzzles`) is not in the suite;
-      VlmsAreBlind is not available.
-      The decoding defaults are PAPO-Eval's (avg@8, T=1.0); add `--temperature 0 --num-samples
-      1` for Acc@1 or `--num-samples 16` for Acc@16.
+      PAPO-Eval's 1,730-item vision setting. `visualpuzzles` has the 1,168 items of the authors'
+      file (same images, texts and answers); it writes the options as (A)-(D) lines with a letter
+      instruction, where that file has "A. text" lines and no options line when the options are
+      drawn in the image. VlmsAreBlind is not available. The decoding defaults are PAPO-Eval's (avg@8, T=1.0), except VisualPuzzles
+      (greedy); add `--temperature 0 --num-samples 1` for Acc@1 or `--temperature 1.0
+      --num-samples 16` for Acc@16.
 
   s_opd:
     description: S-OPD Table 1 (8 benchmarks; Avg is their unweighted mean)

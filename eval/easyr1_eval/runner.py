@@ -469,6 +469,11 @@ RECORD_ONLY_KEYS = ("agent_prompt_style",)
 # answer protocols that only change how the answers are read (not the prompts), and that read the output contract
 # of a training reward: a checkpoint gets one from its training record only, never from a suite
 SCORING_ONLY_ANSWER_PROTOCOLS = {"vgs"}
+# Revision of the option-letter reading of the mcq and MMMU scorers under --answer-protocol vgs: since revision 1
+# they read the letter as the VGS training reward does (earlier versions used extract_choice_letter for every
+# protocol). It is in the score fingerprint of those benchmarks only when they are read with vgs.
+VGS_CHOICE_READING_REVISION = 1
+VGS_CHOICE_READING_SCORERS = frozenset({"mcq", "mmmu"})
 
 
 def apply_prompt_defaults(args: argparse.Namespace) -> None:
@@ -762,11 +767,14 @@ def record_skipped_benchmark(spec: BenchmarkSpec, args: argparse.Namespace, reas
 
 def score_benchmark(spec: BenchmarkSpec, args: argparse.Namespace, judge_config):
     from .schemas import MetricResult
-    from .scorers import score_predictions
+    from .scorers import recorded_answer_protocol, score_predictions
 
     prediction_path = merged_prediction_path(args.output_dir, spec)
     metric_path = metrics_dir(args.output_dir) / f"{spec.key}.json"
-    fp = task_fingerprint(args, spec, phase="score")
+    recorded = None
+    if spec.scorer in VGS_CHOICE_READING_SCORERS and not getattr(args, "answer_protocol_given", False):
+        recorded = recorded_answer_protocol(prediction_path)  # the reading of a run without a protocol
+    fp = task_fingerprint(args, spec, phase="score", recorded_answer_protocol=recorded)
     if args.resume and is_complete(args.output_dir, f"score:{spec.key}", fp, [metric_path]):
         result_data = read_json(metric_path)["result"]
         return MetricResult(**result_data)
@@ -1456,6 +1464,19 @@ def _answer_protocol_fingerprint_fields(args: argparse.Namespace, phase: str) ->
     return {"answer_protocol": protocol} if phase == "score" else {}
 
 
+def _vgs_choice_reading_fingerprint_fields(
+    args: argparse.Namespace, spec: BenchmarkSpec, phase: str, recorded_answer_protocol: str | None
+) -> dict[str, Any]:
+    """VGS_CHOICE_READING_REVISION for the scores of the mcq and MMMU benchmarks read with the vgs protocol, given
+    (flag, training record or suite) or, without one, recorded with the predictions; the other scores keep their
+    fingerprints."""
+    if phase != "score" or spec.scorer not in VGS_CHOICE_READING_SCORERS:
+        return {}
+    given = getattr(args, "answer_protocol_given", False)
+    protocol = args.answer_protocol if given else recorded_answer_protocol
+    return {"vgs_choice_reading": VGS_CHOICE_READING_REVISION} if protocol == "vgs" else {}
+
+
 def task_fingerprint(
     args: argparse.Namespace,
     spec: BenchmarkSpec,
@@ -1463,9 +1484,17 @@ def task_fingerprint(
     phase: str,
     shard_index: int | None = None,
     num_shards: int | None = None,
+    recorded_answer_protocol: str | None = None,
 ) -> str:
     return fingerprint(
-        task_fingerprint_fields(args, spec, phase=phase, shard_index=shard_index, num_shards=num_shards)
+        task_fingerprint_fields(
+            args,
+            spec,
+            phase=phase,
+            shard_index=shard_index,
+            num_shards=num_shards,
+            recorded_answer_protocol=recorded_answer_protocol,
+        )
     )
 
 
@@ -1476,6 +1505,7 @@ def task_fingerprint_fields(
     phase: str,
     shard_index: int | None = None,
     num_shards: int | None = None,
+    recorded_answer_protocol: str | None = None,
 ) -> dict[str, Any]:
     return {
         "phase": phase,
@@ -1510,6 +1540,7 @@ def task_fingerprint_fields(
             else {}
         ),
         **_answer_protocol_fingerprint_fields(args, phase),
+        **_vgs_choice_reading_fingerprint_fields(args, spec, phase, recorded_answer_protocol),
         **(
             {"max_dynamic_patch": args.max_dynamic_patch}
             if getattr(args, "max_dynamic_patch", None) is not None
