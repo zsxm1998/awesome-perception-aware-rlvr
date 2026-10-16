@@ -89,11 +89,13 @@ The repository named in the paper holds no code; everything below that the paper
   distillation term is not multiplied by η. The distillation term of the 2nd to 4th update of a step uses
   rollouts of the policy before the step.
 - **Evaluation** (suite `vgs`): our MathVerse vision-only and MMMU-Pro sets come from PAPO-Eval and differ from
-  the authors' multiple-choice subsets; VisualPuzzles and VlmsAreBlind are not available. The paper reports Acc@1
-  (greedy) and Acc@16 (mean accuracy of 16 samples at T=1.0); the suite defaults to avg@8 at T=1.0, with the
-  training prompt (the VGS system prompt) and image size. The paper does not describe its answer scoring; the
-  evaluation reads the answers with the code of the training reward (`--answer-protocol vgs`, set by the suite and
-  for the checkpoints of these scripts), so that the validation reward and the benchmarks score a response alike.
+  the authors' multiple-choice subsets. VisualPuzzles has the 1,168 items of the authors' file (same images, texts
+  and answers), asked with (A)-(D) option lines and a letter instruction where that file has "A. text" lines.
+  VlmsAreBlind is not available. The paper reports Acc@1 (greedy) and Acc@16 (mean accuracy of 16 samples at
+  T=1.0); the suite defaults to avg@8 at T=1.0 (VisualPuzzles: greedy), with the training prompt (the VGS system
+  prompt) and image size. The paper does not describe its answer scoring; the evaluation reads the answers with the
+  code of the training reward (`--answer-protocol vgs`, set by the suite and for the checkpoints of these scripts),
+  so that the validation reward and the benchmarks score a response alike.
 
 ## Results
 

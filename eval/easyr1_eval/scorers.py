@@ -245,6 +245,20 @@ def _rows_answer_protocol(rows: PredictionRows) -> str:
     return "default"
 
 
+def recorded_answer_protocol(prediction_path: Path) -> str:
+    """The answer protocol recorded with the predictions of a file, read as ``_rows_answer_protocol`` reads it (the
+    first row with metadata), without loading the whole file; ``default`` when there is none."""
+    if not prediction_path.exists():
+        return "default"
+    with prediction_path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                row = json.loads(line)
+                if isinstance(row.get("eval_metadata"), dict):
+                    return _row_answer_protocol(row)
+    return "default"
+
+
 def _metadata_from_predictions(rows: PredictionRows) -> dict[str, Any]:
     for row in rows:
         metadata = row.get("eval_metadata")
@@ -655,11 +669,24 @@ def extract_choice_letter(
     return None
 
 
-def mcq_response_correct(row: dict[str, Any], response_index: int, response: str) -> bool:
-    if is_truncated_without_final_answer(row, response_index, response):
-        return False
+def mcq_response_letter(row: dict[str, Any], response: str) -> str | None:
+    """The option letter of a response: with --answer-protocol vgs, the reading of the VGS training reward (the
+    last \\boxed{}, else the text after </reason>, then the option letter it starts with,
+    verl/utils/vgs_answer.py); otherwise ``extract_choice_letter``."""
+    if _row_answer_protocol(row) == "vgs":
+        from verl.utils.vgs_answer import extract_answer, option_letter
+
+        return option_letter(extract_answer(response)[0])
     options = (row.get("extra_info") or {}).get("options")
-    letter = extract_choice_letter(response, list(options) if options else None)
+    return extract_choice_letter(response, list(options) if options else None)
+
+
+def mcq_response_correct(row: dict[str, Any], response_index: int, response: str) -> bool:
+    # a truncated response counts only with a final answer; the VGS reading has one by construction (a \\boxed{} or
+    # the text after </reason>), which has_final_answer does not know
+    if _row_answer_protocol(row) != "vgs" and is_truncated_without_final_answer(row, response_index, response):
+        return False
+    letter = mcq_response_letter(row, response)
     return letter is not None and letter == str(row.get("target")).strip().upper()
 
 
@@ -728,10 +755,9 @@ def score_mcq(
     unparsed = 0
     response_count = 0
     for row in rows:
-        options = (row.get("extra_info") or {}).get("options")
         letters = []
         for response in row.get("responses") or []:
-            letter = extract_choice_letter(str(response), list(options) if options else None)
+            letter = mcq_response_letter(row, str(response))
             letters.append(letter)
             unparsed += int(letter is None)
             response_count += 1
@@ -911,7 +937,7 @@ def score_mmmu(
 ) -> MetricResult:
     """Accuracy over all questions (the official overall score), by question type, discipline and subject.
 
-    Multiple-choice answers are read with ``extract_choice_letter``; unlike the official
+    Multiple-choice answers are read with ``mcq_response_letter`` (``extract_choice_letter``); unlike the official
     ``parse_multi_choice_response``, an answer without a recognizable option is wrong instead of
     replaced by a random letter.
     """
@@ -920,11 +946,10 @@ def score_mmmu(
     for row in rows:
         extra = row.get("extra_info") or {}
         question_type = str(extra.get("question_type") or "")
-        options = extra.get("options")
         answers: list[Any] = []
         for response in row.get("responses") or []:
             if question_type == "multiple-choice":
-                letter = extract_choice_letter(str(response), list(options) if options else None)
+                letter = mcq_response_letter(row, str(response))
                 answers.append(letter)
                 unparsed += int(letter is None)
                 choice_responses += 1
