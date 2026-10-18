@@ -141,7 +141,7 @@ same two means (the mean of the 3 groups, in bold, and the mean of the 19 benchm
 | VA-OPD | 46.7 | 60.7 | 73.2 | **60.2** | 59.5 | 34.4 (1.64×) |
 | VGS | 49.5 | 61.3 | 72.4 | **61.0** | 60.4 | 35.3 (1.68×) |
 | VCSD (no external teacher) | 2.7 | 16.3 | 35.5 | **18.2** | 17.3 | 40.3 (1.92×) |
-| S-OPD | TBD | TBD | TBD | **TBD** | TBD | TBD |
+| S-OPD | 51.1 | 62.7 | 72.8 | **62.2** | 61.6 | 35.7 (1.70×) |
 
 **Training time** is the wall-clock time in hours of the training steps on 4 A800 80GB GPUs (606 OPD steps, or
 the 202 GRPO steps of 3 updates each: the same 606 updates of 1,024 responses), with the rollout, the teacher's
@@ -161,6 +161,7 @@ from the node load. VCSD's time grows as more of its answers run to the 2,048-to
 | VA-OPD | 37.8 | 59.3 | 58.1 | 43.6 | 50.2 | 17.8 | 60.2 | 46.7 |
 | VGS | 38.8 | 60.4 | 60.8 | 45.7 | 56.0 | 22.8 | 61.7 | 49.5 |
 | VCSD (no external teacher) | 0.0 | 15.1 | 0.0 | 0.1 | 0.1 | 0.0 | 3.4 | 2.7 |
+| S-OPD | 40.9 | 61.7 | 63.3 | 48.2 | 56.9 | 24.1 | 62.4 | 51.1 |
 
 ### Vision-dependent reasoning
 
@@ -174,6 +175,7 @@ from the node load. VCSD's time grows as more of its answers run to the 2,048-to
 | VA-OPD | 45.6 | 26.8 | 42.7 | 86.1 | 73.3 | 89.4 | 60.7 |
 | VGS | 51.7 | 27.7 | 44.5 | 82.8 | 73.2 | 87.6 | 61.3 |
 | VCSD (no external teacher) | 0.1 | 0.1 | 0.5 | 71.4 | 3.1 | 22.8 | 16.3 |
+| S-OPD | 53.3 | 29.0 | 45.8 | 84.8 | 73.2 | 89.8 | 62.7 |
 
 ### Perception and hallucination
 
@@ -187,6 +189,7 @@ from the node load. VCSD's time grows as more of its answers run to the 2,048-to
 | VA-OPD | 88.8 | 69.0 | 60.1 | 58.8 | 83.1 | 79.4 | 73.2 |
 | VGS | 87.6 | 68.6 | 60.5 | 57.4 | 81.8 | 78.7 | 72.4 |
 | VCSD (no external teacher) | 89.0 | 26.0 | 8.0 | 6.3 | 53.9 | 29.7 | 35.5 |
+| S-OPD | 88.0 | 69.4 | 61.1 | 57.4 | 82.9 | 78.1 | 72.8 |
 
 MME (cognition) and MME (perception) are MME's cognition score (commonsense reasoning, numerical calculation,
 text translation and code reasoning; 260 questions, out of 800) and its perception score (the other 10 subtasks;
@@ -207,6 +210,7 @@ mean at the last step (606; GRPO: 202) and the difference between the two, from 
 | VA-OPD | 255 | 52.3 | 62.9 | 72.1 | **62.5** | 60.4 | +2.1 |
 | VGS | 600 | 49.9 | 61.2 | 72.0 | **61.0** | 61.3 | −0.3 |
 | VCSD (no external teacher) | 30 | 43.3 | 55.9 | 71.1 | **56.8** | 18.3 | +38.5 |
+| S-OPD | 600 | 51.3 | 62.4 | 72.6 | **62.1** | 62.3 | −0.2 |
 
 VCSD's validation reward is highest at step 30 and falls afterwards; at the last step most of its answers run
 to the 2,048-token limit. Its paper trains 90 steps of 32 prompts x 8 responses, about 4% of the 606 updates of

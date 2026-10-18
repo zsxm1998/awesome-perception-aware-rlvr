@@ -79,8 +79,8 @@ before drawing conclusions.
 - **Differences of about a point are within run-to-run variation.** Two runs of one configuration ended 0.6 points
   apart in the mean of the 3 groups.
 - **In the OPD comparison, GRPO on the student itself ends highest.** With a Qwen3-VL-2B student and the
-  GRPO-trained Qwen3-VL-4B as the teacher, GRPO on the student ends at 64.0 in the mean of the 3 groups, the best of
-  the OPD variants evaluated so far at 62.8.
+  GRPO-trained Qwen3-VL-4B as the teacher, GRPO on the student ends at 64.0 in the mean of the 3 groups, the best
+  OPD variant at 62.8.
 
 ## 📖 Contents
 
