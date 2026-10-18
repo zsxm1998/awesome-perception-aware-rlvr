@@ -2,10 +2,10 @@
 
 One-command evaluation of the base models and checkpoints produced by this repository.
 The harness covers the benchmarks used by the reproduced papers (PAPO, VPPO, DVRP, ToR,
-PGPO, PEPO, CFPO, VEPO, NoisyRollout, VGPO, GRIT, DeepEyes, VA-OPD, VGS, VCSD, Vision-OPD,
-S-OPD) and CGPO, downloads them from public sources, runs inference with vLLM on all visible
-GPUs, and scores every benchmark with a documented, rule-based protocol (an LLM judge is only
-used for MM-Vet and, optionally, GQA).
+PGPO, PEPO, CFPO, VEPO, NoisyRollout, VGPO, VAPO, GRIT, DeepEyes, VA-OPD, VGS, VCSD,
+Vision-OPD, S-OPD) and CGPO, downloads them from public sources, runs inference with vLLM on
+all visible GPUs, and scores every benchmark with a documented, rule-based protocol (an LLM
+judge is only used for MM-Vet and, optionally, GQA).
 
 ```
 eval/
