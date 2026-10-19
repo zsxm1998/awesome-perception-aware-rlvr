@@ -38,7 +38,7 @@
 | `pepo.sh` | [PEPO](../../reproduction/pepo/README.md) | 无（单次前向） | `visual_sensitivity_metric=hidden_state_similarity`（余弦），`advantage_scaling_method=pepo`，`advantage_scaling_schedule=linear`，`pepo_gate_alpha=0.05`，`pepo_gate_temperature=1.8` |
 | `cfpo.sh` | [CFPO](../../reproduction/cfpo/README.md) | 模型内部的注意力 value 反事实 | `corrupt_image=cross_modal_attention_value_mean`（λ=2），`visual_sensitivity_loss_coef=0.02`，`visual_sensitivity_reference=current` |
 | `vepo.sh` | [VEPO](../../reproduction/vepo/README.md) | 在归一化像素值上加高斯噪声，std 1.08（Qwen3-VL 的 image_std 为 0.5，约合像素单位 0.54，即 VEPO 代码注释和论文所述的强度），每道题一张加噪图 | `visual_sensitivity_metric=vepo`，`visual_sensitivity_jsd_weight=0.7`，`visual_sensitivity_entropy_gate=normal_entropy`，每个回答 `top_perception_quantile=0.2`，`normalize_pg_loss_by_selected_tokens=true` |
-| `noisyrollout.sh` | [NoisyRollout](../../reproduction/noisyrollout/README.md) | 像素上的 VP 扩散噪声，每道题每步一张加噪图，只用于采样该题 8 个回答中的 4 个 | `rollout_image_transform=vp_diffusion`；α₀=450，λ=60，γ = t_max / 3（官方 MMK12-7B 脚本的形状按本次运行的步数换算），`pixel_rounding=floor`；8 个回答为一组，都在干净图像上训练 |
+| `noisyrollout.sh` | [NoisyRollout](../../reproduction/noisyrollout/README.md) | 像素上的 VP 扩散噪声，每道题每步一张加噪图，只用于采样该题 8 个回答中的 4 个 | `rollout_image_transform=vp_diffusion`；α₀=450，λ=60（官方 MMK12-7B 脚本），γ = 0.1 · t_max，而不是官方的 t_max / 3（[原因](#noisyrollout-的噪声调度)），`pixel_rounding=floor`；8 个回答为一组，都在干净图像上训练 |
 | `vgpo.sh` | [VGPO](../../reproduction/vgpo/README.md) | 无（单次前向） | 在最后一层上对图像 token 平均隐状态计算 `visual_sensitivity_metric=hidden_state_similarity`（`visual_sensitivity_hidden_layers=last`，`visual_sensitivity_hidden_pooling=prototype`），在更新前打分（`visual_sensitivity_reference=old`）；`advantage_scaling_method=vgpo`，β=0.3，γ=0.5，κ=0.2；系数按题目组计算 |
 | `vapo.sh` | [VAPO](../../reproduction/vapo/README.md) | –（无图像扰动） | 每个答对的回答 `claim_probe_count=20` 个探针，每个探针在推理的随机截断处询问图像的一条 GPT-5 视觉断言是否正确，`claim_probe_late_emphasis=1.5`；探针问题去掉了官方版本末尾的空格，这样 Qwen3-VL-4B 用 "1" 或 "0" 回答（见 [VAPO README](../../reproduction/vapo/README.md#probe-question)）；奖励为 0.8 准确率 + 0.1 格式 + 0.1 感知（`perception_weight=0.1`）；在 `virl39k_claims`（附断言的 ViRL39K；2,289 道多图题没有断言，使用 GRPO 奖励）上训练 |
 | `grit.sh` | [GRIT](../../reproduction/grit/README.md) | – | think / rethink / answer 格式，推理中内联 JSON 证据框（`examples/system_prompt/grit_GR.txt`，不用格式提示词），奖励为 `grit.py:compute_score`（格式、框格式、基于规则的答案、0.1·BLEU-1）；在 ViRL39K 上训练，而不是 GRIT 的 20 条样本 |
@@ -56,6 +56,18 @@ DeepEyes 改的是采样而不是损失：模型调用放大工具，在多轮�
 - **开销。** 智能体采样（每条轨迹多轮、最多六次工具调用）比其他方法的单轮采样慢得多。
 
 在每道 ViRL39K 题上都启用工具，就成了我们自己的改编，而不是 DeepEyes。GRIT 同样在推理中定位图像证据，但它保持单轮，只替换提示词和奖励，所以可以在统一设定下运行。[DeepEyes 复现](../../reproduction/deepeyes/README.md)在 DeepEyes 自己的数据和奖励上，把 DeepEyes 与纯文本的 GRPO 基线比较（`qwen*_grpo.sh` 对 `qwen*_grpo_deepeyes.sh`）。
+
+### NoisyRollout 的噪声调度
+
+NoisyRollout 每道题有一半回答从加噪图像采样，所有回答都在干净图像上训练。把官方调度按本次运行的步数换算（满强度噪声持续到约第 55 步，中点在第 67 步）时，加噪回答逐渐偏离策略在干净图像上会生成的内容：
+
+| | 第 0 步 | 第 20 步 | 第 50 步 |
+| --- | --- | --- | --- |
+| 加噪回答中，在干净图像下概率低于 1e-4 的 token 比例 | 0.04% | 0.53% | 14.7% |
+| 同一 token 在干净图像与加噪图像下的平均对数概率比 | −0.03 | −0.16 | −6.8 |
+| 加噪回答在梯度量级中所占比例 | 51% | 54% | 87% |
+
+偏离主要在第 20 到 50 步之间形成，同时熵从 0.26 降到 0.07；那次运行在第 55 步停止。把中点提前到全程的 10% 后，噪声在第 20 步约为一半强度，到第 30 步基本消失，赶在偏离形成之前。表中报告的是这次运行。它保留了方法的噪声强度和分组方式，只缩短了加噪阶段（强噪声约 15 步），所以这里的提升可能小于方法在自己配置下的提升。
 
 ## 运行
 

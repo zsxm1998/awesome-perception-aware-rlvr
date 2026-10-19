@@ -52,7 +52,7 @@ perturbation; patch masking uses Qwen3-VL's 16-px patches. Parameter names are l
 | `pepo.sh` | [PEPO](../../reproduction/pepo/README.md) | none (single forward) | `visual_sensitivity_metric=hidden_state_similarity` (cosine), `advantage_scaling_method=pepo`, `advantage_scaling_schedule=linear`, `pepo_gate_alpha=0.05`, `pepo_gate_temperature=1.8` |
 | `cfpo.sh` | [CFPO](../../reproduction/cfpo/README.md) | in-model attention-value counterfactual | `corrupt_image=cross_modal_attention_value_mean` (λ=2), `visual_sensitivity_loss_coef=0.02`, `visual_sensitivity_reference=current` |
 | `vepo.sh` | [VEPO](../../reproduction/vepo/README.md) | Gaussian noise on the normalized pixel values, std 1.08 (about 0.54 in pixel units with Qwen3-VL's image_std 0.5, the strength VEPO's code comment and paper describe), one noisy image per prompt | `visual_sensitivity_metric=vepo`, `visual_sensitivity_jsd_weight=0.7`, `visual_sensitivity_entropy_gate=normal_entropy`, `top_perception_quantile=0.2` per response, `normalize_pg_loss_by_selected_tokens=true` |
-| `noisyrollout.sh` | [NoisyRollout](../../reproduction/noisyrollout/README.md) | VP-diffusion noise on the pixels, one noised image per prompt and step, used only to sample 4 of the 8 rollouts of the prompt | `rollout_image_transform=vp_diffusion`; α₀=450, λ=60, γ = t_max / 3 (the shape of the official MMK12-7B script over this run's steps), `pixel_rounding=floor`; all 8 rollouts form one group and are trained on the clean image |
+| `noisyrollout.sh` | [NoisyRollout](../../reproduction/noisyrollout/README.md) | VP-diffusion noise on the pixels, one noised image per prompt and step, used only to sample 4 of the 8 rollouts of the prompt | `rollout_image_transform=vp_diffusion`; α₀=450, λ=60 (the official MMK12-7B script), γ = 0.1 · t_max instead of its t_max / 3 ([why](#noisyrollouts-noise-schedule)), `pixel_rounding=floor`; all 8 rollouts form one group and are trained on the clean image |
 | `vgpo.sh` | [VGPO](../../reproduction/vgpo/README.md) | none (single forward) | `visual_sensitivity_metric=hidden_state_similarity` on the last layer against the mean image-token state (`visual_sensitivity_hidden_layers=last`, `visual_sensitivity_hidden_pooling=prototype`), scored before the update (`visual_sensitivity_reference=old`); `advantage_scaling_method=vgpo` with β=0.3, γ=0.5, κ=0.2; factors per prompt group |
 | `vapo.sh` | [VAPO](../../reproduction/vapo/README.md) | – (no image perturbation) | `claim_probe_count=20` probes per correct response, each asking whether one of the image's GPT-5 visual claims is correct after a random cut of the reasoning, `claim_probe_late_emphasis=1.5`; the probe question without the released trailing space, after which Qwen3-VL-4B answers the probes with "1" or "0" (see the [VAPO README](../../reproduction/vapo/README.md#probe-question)); reward 0.8 accuracy + 0.1 format + 0.1 perception (`perception_weight=0.1`); trained on `virl39k_claims` (ViRL39K with the claims; the 2,289 multi-image problems have none and get the GRPO reward) |
 | `grit.sh` | [GRIT](../../reproduction/grit/README.md) | – | think / rethink / answer format with inline JSON evidence boxes (`examples/system_prompt/grit_GR.txt`, no format prompt) and `grit.py:compute_score` (format, box format, rule-based answer, 0.1·BLEU-1); trained on ViRL39K instead of GRIT's 20 samples |
@@ -97,6 +97,24 @@ which also grounds its reasoning in the image, stays single-turn and only replac
 the reward, so it runs in the shared setting. The [DeepEyes reproduction](../../reproduction/deepeyes/README.md)
 compares DeepEyes with a text-only GRPO baseline on DeepEyes' data and reward (`qwen*_grpo.sh`
 against `qwen*_grpo_deepeyes.sh`).
+
+### NoisyRollout's noise schedule
+
+NoisyRollout samples half of a prompt's rollouts from a noised image and trains all of them on the clean
+image. With the official schedule mapped onto this run's steps (full-strength noise until about step 55,
+midpoint at step 67), the noised rollouts drifted away from what the policy generates on the clean image:
+
+| | Step 0 | Step 20 | Step 50 |
+| --- | --- | --- | --- |
+| Tokens of the noised rollouts with probability below 1e-4 under the clean image | 0.04% | 0.53% | 14.7% |
+| Mean log-probability ratio of a token, clean vs. noised image | −0.03 | −0.16 | −6.8 |
+| Share of the gradient magnitude from the noised rollouts | 51% | 54% | 87% |
+
+The drift builds up between steps 20 and 50, while the entropy falls from 0.26 to 0.07; that run was stopped
+at step 55. With the midpoint at 10% of the steps, the noise is about half its strength at step 20 and almost
+gone by step 30, before the drift builds up. The tables report this run. It keeps the method's noise strength
+and grouping and only shortens the noisy phase (about 15 steps of strong noise), so the method may gain less
+here than with its own recipe.
 
 ## Running
 
