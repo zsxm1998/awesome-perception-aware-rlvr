@@ -2,7 +2,7 @@
 
 ICML 2026 · [arXiv:2606.23206](https://arxiv.org/abs/2606.23206) ·
 [official code](https://github.com/Raven-July/CFPO) ·
-**Unofficial re-implementation in this repository.**
+**Unofficial re-implementation in this repository**, checked by the CFPO authors (October 2026).
 
 ## Method
 

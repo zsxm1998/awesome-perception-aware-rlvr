@@ -111,7 +111,10 @@ midpoint at step 67), the noised rollouts drifted away from what the policy gene
 | Share of the gradient magnitude from the noised rollouts | 51% | 54% | 87% |
 
 The drift builds up between steps 20 and 50, while the entropy falls from 0.26 to 0.07; that run was stopped
-at step 55. With the midpoint at 10% of the steps, the noise is about half its strength at step 20 and almost
+at step 55. The [NoisyRollout paper](https://arxiv.org/abs/2504.13055) describes the same kind of instability:
+fixed-strength noise "often leads to training instability, primarily due to a distributional mismatch between
+noisy rollouts and the evolving policy" (its Section 2), and without annealing its in-domain accuracy drops
+sharply around step 45 (its Figure 5). With the midpoint at 10% of the steps, the noise is about half its strength at step 20 and almost
 gone by step 30, before the drift builds up. The tables report this run. It keeps the method's noise strength
 and grouping and only shortens the noisy phase (about 15 steps of strong noise), so the method may gain less
 here than with its own recipe.

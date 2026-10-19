@@ -1,7 +1,7 @@
 # DVRP — Thinking with Deltas: Incentivizing Reinforcement Learning via Differential Visual Reasoning Policy
 
 arXiv preprint · [arXiv:2601.06801](https://arxiv.org/abs/2601.06801) · no official code released ·
-**Unofficial re-implementation in this repository.**
+**Unofficial re-implementation in this repository**, checked by the first author of DVRP (October 2026).
 
 ## Method
 

@@ -1,7 +1,7 @@
 # ToR — Bridging Perception and Reasoning: Token Reweighting for RLVR in Multimodal LLMs
 
 arXiv preprint · [arXiv:2603.25077](https://arxiv.org/abs/2603.25077) · no official code released ·
-**Unofficial re-implementation in this repository.**
+**Unofficial re-implementation in this repository**, checked by the first author of ToR (October 2026).
 
 ## Method
 
