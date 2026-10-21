@@ -240,6 +240,12 @@ def _extract_boxed_exact_match(spec: BenchmarkSpec, rows: list[dict[str, Any]], 
     return mean_samples(_row_ids(rows), values)
 
 
+def _extract_environment_reward(
+    spec: BenchmarkSpec, rows: list[dict[str, Any]], results_dir: Path
+) -> BenchmarkSamples:
+    return mean_samples(_row_ids(rows), [S.environment_row_score(row) for row in rows])
+
+
 def _extract_hallusionbench(spec: BenchmarkSpec, rows: list[dict[str, Any]], results_dir: Path) -> BenchmarkSamples:
     return mean_samples(_row_ids(rows), [float(S.hallusionbench_row(row)) for row in rows])
 
@@ -370,6 +376,7 @@ SCORER_EXTRACTORS: dict[str, Callable[[BenchmarkSpec, list[dict[str, Any]], Path
     "mmvet": _extract_mmvet,
     "pope": _extract_pope,
     "mme": _extract_mme,
+    "environment_reward": _extract_environment_reward,
 }
 
 

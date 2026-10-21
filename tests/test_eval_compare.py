@@ -37,6 +37,7 @@ from easyr1_eval.schemas import BenchmarkSpec  # noqa: E402
 from easyr1_eval.scorers import (  # noqa: E402
     score_answer_bbox,
     score_boxed_exact_match,
+    score_environment_reward,
     score_gqa,
     score_grounding_iou,
     score_hallusionbench,
@@ -239,6 +240,11 @@ ANSWER_BBOX_ROWS = [
     },
 ]
 
+ENVIRONMENT_ROWS = [
+    {"sample_id": "a", "agent_diagnostics": [{"env_outcome": {"reward": 1.0}}, {"env_outcome": {"reward": 0.5}}]},
+    {"sample_id": "b", "agent_diagnostics": [{"status": "sample_error"}, {"env_outcome": {"reward": 0.25}}]},
+]
+
 GROUNDING_IOU_ROWS = [
     {
         "sample_id": "gi1",
@@ -274,6 +280,7 @@ GROUNDING_IOU_ROWS = [
         ("mcq", score_mcq, CVBENCH_ROWS, {"aggregate": "cvbench"}),
         ("answer_bbox", score_answer_bbox, ANSWER_BBOX_ROWS, {}),
         ("grounding_iou", score_grounding_iou, GROUNDING_IOU_ROWS, {}),
+        ("environment_reward", score_environment_reward, ENVIRONMENT_ROWS, {}),
     ],
 )
 def test_extractor_matches_scorer_normalized_score(tmp_path, scorer, score_fn, rows, metadata):
