@@ -14,14 +14,24 @@
 
 from .deepeyes import DeepEyesEnvironment
 from .local import LocalToolEnvironment
-from .registry import EnvironmentContext, environment_factory, register_environment, registered_environments
+from .registry import (
+    EnvironmentContext,
+    environment_factory,
+    register_environment,
+    registered_environments,
+    validate_environment_options,
+)
+from .remote import RemoteEnvironmentError, RemoteHTTPEnvironment
 
 
 __all__ = [
     "DeepEyesEnvironment",
     "EnvironmentContext",
     "LocalToolEnvironment",
+    "RemoteEnvironmentError",
+    "RemoteHTTPEnvironment",
     "environment_factory",
     "register_environment",
     "registered_environments",
+    "validate_environment_options",
 ]

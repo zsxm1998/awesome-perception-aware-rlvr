@@ -80,6 +80,8 @@ class AgentStatus(str, Enum):
     NO_ACTION = "no_action"
     TOOL_CALL_LIMIT = "tool_call_limit"
     LENGTH_LIMIT = "length_limit"
+    # The environment ended the episode after a tool call (EnvStep.done).
+    ENVIRONMENT_DONE = "environment_done"
 
 
 @dataclass(frozen=True)
@@ -113,6 +115,10 @@ class ToolResult:
     # ``content`` remains available for diagnostics, while the observation
     # encoder emits this literal instead of serializing that mapping.
     observation_text: Optional[str] = None
+    # Model-facing content in order, as chat parts: {"type": "text", "text": ...} and {"type": "image"}
+    # placeholders filled from ``images``. Set by environments that write their own observations
+    # (rendered by EnvironmentChatAdapter); None for the DeepEyes tool.
+    parts: Optional[list[dict[str, Any]]] = None
 
 
 @dataclass(frozen=True)
@@ -184,9 +190,21 @@ class EnvReset:
 
 @dataclass
 class EnvStep:
-    """The environment's response to one well-formed tool call."""
+    """The environment's response to one well-formed tool call.
+
+    ``done`` ends the episode after this step (its observation is not shown to the model). ``reward``,
+    ``state_key`` and ``cost`` are recorded on the step for step-level credit assignment and diagnostics.
+    ``state_key`` names the environment state after this call, the state the next action is taken in, so that
+    actions of different rollouts taken in the same state can be grouped; the first actions of a group share
+    the initial state (``reset`` gets one seed per group).
+    """
 
     result: ToolResult
+    done: bool = False
+    reward: Optional[float] = None
+    state_key: Optional[str] = None
+    cost: float = 0.0
+    info: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -244,6 +262,13 @@ class AgentStep:
     tool_result: Optional[ToolResult] = None
     observation_token_ids: list[int] = field(default_factory=list)
     observation_committed: bool = False
+    # What the environment reported for this step's tool call (EnvStep). They keep their defaults when no call
+    # reached the environment (a malformed call), which leaves the environment's state unchanged.
+    env_reward: Optional[float] = None
+    state_key: Optional[str] = None
+    cost: float = 0.0
+    env_done: bool = False
+    env_info: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

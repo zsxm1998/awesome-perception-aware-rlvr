@@ -1034,51 +1034,78 @@ class PPOConfig:
             unsupported_interventions.extend(name for name, enabled in intervention_fields.items() if enabled)
             if unsupported_interventions:
                 raise ValueError(
-                    "DeepEyes agentic training does not support grounded-reasoning "
+                    "Agentic training does not support grounded-reasoning "
                     "interventions because their image/box semantics are defined for "
                     "one-shot responses; disable: " + ", ".join(unsupported_interventions)
                 )
             if self.data.format_prompt is not None:
-                raise ValueError("DeepEyes agentic training cannot use data.format_prompt")
+                raise ValueError("Agentic training cannot use data.format_prompt")
             from ..workers.agent.coordinates import (
                 check_chat_template_supports_tools,
                 check_prompt_matches_bbox_format,
                 resolve_bbox_format,
             )
+            from ..workers.agent.environments import validate_environment_options
 
-            # Resolve "auto" once (Qwen2-VL / Qwen2.5-VL -> absolute pixels, others -> 0-1000).
-            self.worker.rollout.agent_bbox_format = resolve_bbox_format(
-                self.worker.rollout.agent_bbox_format, self.worker.actor.model.model_path
-            )
-            if self.worker.rollout.agent_prompt_style == "official":
-                # the official prompts come with the data and carry the tool schema as text
-                if not self.data.system_prompt_key or self.data.system_prompt is not None:
+            rollout = self.worker.rollout
+            environment = rollout.resolved_agent_environment
+            validate_environment_options(environment, rollout.agent_environment_kwargs)
+            if environment != "deepeyes":
+                # The environment writes the prompt and its tool schemas are rendered by the chat template.
+                if rollout.agent_prompt_style != "native":
+                    raise ValueError("worker.rollout.agent_prompt_style is a DeepEyes option; leave it at native")
+                if environment == "remote_http" and rollout.tensor_parallel_size != 1:
                     raise ValueError(
-                        "worker.rollout.agent_prompt_style=official takes the system prompt from the data; "
-                        "set data.system_prompt_key (DeepEyes: official_system_prompt) and data.system_prompt=null"
+                        "the batched rollout runs every trajectory on each rank of a tensor-parallel group, so a "
+                        "remote environment would get every episode tensor_parallel_size times; set "
+                        "worker.rollout.tensor_parallel_size=1"
                     )
-            else:
-                if self.data.system_prompt is None:
-                    raise ValueError("DeepEyes agentic training requires data.system_prompt")
-                from ..workers.agent.chat import render_deepeyes_system_prompt
-
-                prompt_path = get_abs_path(
-                    self.data.system_prompt,
-                    prompt="DeepEyes system prompt file",
-                )
-                if prompt_path is None:
-                    raise FileNotFoundError(f"DeepEyes system prompt file was not found: {self.data.system_prompt}")
-                with open(prompt_path, encoding="utf-8") as prompt_file:
-                    prompt_text = prompt_file.read()
-                render_deepeyes_system_prompt(
-                    prompt_text,
-                    max_tool_calls=self.worker.rollout.agent_max_tool_calls,
-                )
-                # refuse a system prompt that describes the other coordinate convention
-                check_prompt_matches_bbox_format(prompt_text, self.worker.rollout.agent_bbox_format)
                 check_chat_template_supports_tools(
                     self.worker.actor.model.model_path, self.data.override_chat_template
                 )
+            else:
+                overlapping = sorted({"bbox_format", "prompt_style"} & set(rollout.agent_environment_kwargs))
+                if overlapping:
+                    raise ValueError(
+                        f"set DeepEyes' {', '.join(overlapping)} with worker.rollout.agent_bbox_format / "
+                        "agent_prompt_style, not worker.rollout.agent_environment_kwargs"
+                    )
+
+                # Resolve "auto" once (Qwen2-VL / Qwen2.5-VL -> absolute pixels, others -> 0-1000).
+                self.worker.rollout.agent_bbox_format = resolve_bbox_format(
+                    self.worker.rollout.agent_bbox_format, self.worker.actor.model.model_path
+                )
+                if self.worker.rollout.agent_prompt_style == "official":
+                    # the official prompts come with the data and carry the tool schema as text
+                    if not self.data.system_prompt_key or self.data.system_prompt is not None:
+                        raise ValueError(
+                            "worker.rollout.agent_prompt_style=official takes the system prompt from the data; "
+                            "set data.system_prompt_key (DeepEyes: official_system_prompt) and data.system_prompt=null"
+                        )
+                else:
+                    if self.data.system_prompt is None:
+                        raise ValueError("DeepEyes agentic training requires data.system_prompt")
+                    from ..workers.agent.chat import render_deepeyes_system_prompt
+
+                    prompt_path = get_abs_path(
+                        self.data.system_prompt,
+                        prompt="DeepEyes system prompt file",
+                    )
+                    if prompt_path is None:
+                        raise FileNotFoundError(
+                            f"DeepEyes system prompt file was not found: {self.data.system_prompt}"
+                        )
+                    with open(prompt_path, encoding="utf-8") as prompt_file:
+                        prompt_text = prompt_file.read()
+                    render_deepeyes_system_prompt(
+                        prompt_text,
+                        max_tool_calls=self.worker.rollout.agent_max_tool_calls,
+                    )
+                    # refuse a system prompt that describes the other coordinate convention
+                    check_prompt_matches_bbox_format(prompt_text, self.worker.rollout.agent_bbox_format)
+                    check_chat_template_supports_tools(
+                        self.worker.actor.model.model_path, self.data.override_chat_template
+                    )
 
     def _validate_claim_probes(self):
         """Claim probes and the perception reward are set together; the probes run after online filtering, so the

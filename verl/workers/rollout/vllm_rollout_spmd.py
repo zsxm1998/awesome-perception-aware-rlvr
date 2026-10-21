@@ -14,6 +14,7 @@
 
 import asyncio
 import hashlib
+import json
 import os
 from contextlib import contextmanager
 from typing import Any, Optional, Union
@@ -100,6 +101,18 @@ def _process_multi_modal_data(
         return {"video": videos}
 
     return None
+
+
+def _row_environment_config(value: Any) -> dict[str, Any]:
+    """One row's agent-environment configuration: a JSON object, stored as a string (parquet) or a mapping."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"a row's environment configuration is not valid JSON: {exc}") from exc
+    if not isinstance(value, dict):
+        raise TypeError("a row's environment configuration must be a JSON object")
+    return value
 
 
 def _check_rollout_dependency_versions(model_path: str, trust_remote_code: bool) -> None:
@@ -477,6 +490,7 @@ class vLLMRollout(BaseRollout):
 
         if self.processor is None:
             raise RuntimeError("agentic rollout requires a multimodal processor")
+        environment_name = self.config.resolved_agent_environment
         messages_batch = prompts.non_tensor_batch.pop("raw_prompt", None)
         raw_multi_modal_batch = prompts.non_tensor_batch.pop(
             "multi_modal_data",
@@ -484,12 +498,24 @@ class vLLMRollout(BaseRollout):
         )
         uids = prompts.non_tensor_batch.pop("uid", None)
         env_names = prompts.non_tensor_batch.pop("env_name", None)  # "" = no tool for that row
+        row_env_configs = prompts.non_tensor_batch.pop(self.config.agent_environment_config_key, None)
         prompts.non_tensor_batch.pop("raw_prompt_ids", None)
-        if messages_batch is None or raw_multi_modal_batch is None or uids is None:
-            raise ValueError("agentic rollout requires aligned raw_prompt, multi_modal_data, and uid fields")
         batch_size = len(prompts)
-        if not (len(messages_batch) == len(raw_multi_modal_batch) == len(uids) == batch_size):
-            raise ValueError("agentic rollout inputs do not align by sample")
+        if environment_name == "deepeyes":
+            # DeepEyes' task is the row itself: its chat messages and source images.
+            if messages_batch is None or raw_multi_modal_batch is None or uids is None:
+                raise ValueError("agentic rollout requires aligned raw_prompt, multi_modal_data, and uid fields")
+            if not (len(messages_batch) == len(raw_multi_modal_batch) == len(uids) == batch_size):
+                raise ValueError("agentic rollout inputs do not align by sample")
+        else:
+            # Other environments build the task in reset() from the row's environment configuration.
+            if uids is None or row_env_configs is None:
+                raise ValueError(
+                    f"agent environment {environment_name!r} requires the uid field and the data column "
+                    f"{self.config.agent_environment_config_key!r} (worker.rollout.agent_environment_config_key)"
+                )
+            if not (len(uids) == len(row_env_configs) == batch_size):
+                raise ValueError("agentic rollout inputs do not align by sample")
 
         image_config = AgentImageConfig(
             min_pixels=prompts.meta_info.get("min_pixels"),
@@ -510,7 +536,7 @@ class vLLMRollout(BaseRollout):
         )
 
         source_images_batch = []
-        for multi_modal_data in raw_multi_modal_batch:
+        for multi_modal_data in raw_multi_modal_batch if environment_name == "deepeyes" else ():
             if not isinstance(multi_modal_data, dict):
                 raise TypeError("DeepEyes currently requires image-based multi_modal_data")
             if multi_modal_data.get("videos"):
@@ -538,21 +564,31 @@ class vLLMRollout(BaseRollout):
                 min_pixels=image_config.min_pixels,
                 max_pixels=image_config.max_pixels,
             )
-            make_environment = environment_factory(
-                "deepeyes",
-                EnvironmentContext(processor=self.processor, image_preprocessor=image_cache.prepare),
-                {"bbox_format": self.agent_bbox_format, "prompt_style": self.config.agent_prompt_style},
+            environment_context = EnvironmentContext(
+                processor=self.processor,
+                image_preprocessor=image_cache.prepare,
+                max_tool_calls=self.config.agent_max_tool_calls,
             )
+            environment_kwargs = dict(self.config.agent_environment_kwargs)
+            if environment_name == "deepeyes":
+                environment_kwargs.update(
+                    bbox_format=self.agent_bbox_format, prompt_style=self.config.agent_prompt_style
+                )
+            make_environment = environment_factory(environment_name, environment_context, environment_kwargs)
 
             async def run_batch():
                 try:
                     identities = []
                     requests = []
-                    for sample_position, (
-                        messages,
-                        source_images,
-                        uid,
-                    ) in enumerate(zip(messages_batch, source_images_batch, uids)):
+                    for sample_position, uid in enumerate(uids):
+                        if environment_name == "deepeyes":
+                            env_config = {
+                                "messages": messages_batch[sample_position],
+                                "images": source_images_batch[sample_position],
+                                "tools_enabled": env_names is None or bool(env_names[sample_position]),
+                            }
+                        else:
+                            env_config = _row_environment_config(row_env_configs[sample_position])
                         sample_identity = int.from_bytes(
                             hashlib.blake2b(
                                 str(uid).encode("utf-8"),
@@ -571,11 +607,7 @@ class vLLMRollout(BaseRollout):
                             )
                             requests.append(
                                 {
-                                    "env_config": {
-                                        "messages": messages,
-                                        "images": source_images,
-                                        "tools_enabled": env_names is None or bool(env_names[sample_position]),
-                                    },
+                                    "env_config": env_config,
                                     "env_seed": derive_environment_seed(
                                         int(base_sampling_params.seed), sample_identity
                                     ),
@@ -609,7 +641,17 @@ class vLLMRollout(BaseRollout):
                             max_model_len=max_model_len,
                         )
 
-                    trajectories = list(await asyncio.gather(*(generate_one(request) for request in requests)))
+                    # gather creates the tasks in this order too; holding them lets a failure cancel the rest
+                    tasks = [asyncio.ensure_future(generate_one(request)) for request in requests]
+                    try:
+                        trajectories = list(await asyncio.gather(*tasks))
+                    except BaseException:
+                        # One trajectory failed: stop the others and let them close their environments before the
+                        # shared environment resources are closed below.
+                        for task in tasks:
+                            task.cancel()
+                        await asyncio.gather(*tasks, return_exceptions=True)
+                        raise
                     materialized = []
                     retry_counts = []
                     for index, (request, trajectory) in enumerate(zip(requests, trajectories)):
@@ -629,6 +671,7 @@ class vLLMRollout(BaseRollout):
                     return identities, trajectories, materialized, retry_counts
                 finally:
                     await scheduler.close()
+                    await environment_context.aclose()
 
             identities, trajectories, materialized, retry_counts = asyncio.run(run_batch())
         repeated_uids = [uid for uid, _, _ in identities]
@@ -663,16 +706,21 @@ class vLLMRollout(BaseRollout):
                 )
                 for step in trajectory.steps
             )
-            reward_inputs.append(
-                {
-                    "trajectory_id": str(trajectory_id),
-                    "response": response,
-                    "final_answer": trajectory.final_answer,
-                    "status": trajectory.status.value,
-                    "tool_call_successes": metrics.tool_call_successes,
-                    "trajectory_retries": retry_counts[len(reward_inputs)],
+            reward_input = {
+                "trajectory_id": str(trajectory_id),
+                "response": response,
+                "final_answer": trajectory.final_answer,
+                "status": trajectory.status.value,
+                "tool_call_successes": metrics.tool_call_successes,
+                "trajectory_retries": retry_counts[len(reward_inputs)],
+            }
+            if trajectory.env_outcome is not None:  # what the environment reported at the end of the episode
+                reward_input["env_outcome"] = {
+                    "reward": trajectory.env_outcome.reward,
+                    "components": dict(trajectory.env_outcome.components),
+                    "metrics": dict(trajectory.env_outcome.metrics),
                 }
-            )
+            reward_inputs.append(reward_input)
             diagnostics.append(
                 {
                     "trajectory_id": str(trajectory_id),

@@ -19,7 +19,7 @@ import os
 import sys
 from collections import defaultdict
 from functools import partial
-from typing import Callable, NotRequired, Tuple, TypedDict
+from typing import Any, Callable, NotRequired, Tuple, TypedDict
 
 import torch
 from transformers import PreTrainedTokenizer
@@ -54,6 +54,8 @@ class RewardInput(TypedDict):
     trajectory_retries: NotRequired[int]
     final_answer: NotRequired[str | None]
     agent_status: NotRequired[str]
+    # What the agent environment reported at the end of the episode: {"reward", "components", "metrics"}.
+    env_outcome: NotRequired[dict[str, Any]]
 
 
 class RewardScore(TypedDict):
@@ -147,6 +149,23 @@ def _response_payload(
     return response, int(action_positions.numel()), int(action_positions[-1].item())
 
 
+def _finite_number(value: Any) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+
+
+def _validated_env_outcome(outcome: Any) -> dict[str, Any]:
+    if not isinstance(outcome, dict) or set(outcome) != {"reward", "components", "metrics"}:
+        raise ValueError("agent_reward_input.env_outcome must hold exactly reward, components and metrics")
+    reward = outcome["reward"]
+    if reward is not None and not _finite_number(reward):
+        raise TypeError("env_outcome.reward must be a finite number or None")
+    for key in ("components", "metrics"):
+        values = outcome[key]
+        if not isinstance(values, dict) or not all(_finite_number(value) for value in values.values()):
+            raise TypeError(f"env_outcome.{key} must map names to finite numbers")
+    return {"reward": reward, "components": dict(outcome["components"]), "metrics": dict(outcome["metrics"])}
+
+
 def _attach_agent_reward_fields(
     reward_input: RewardInput,
     data: DataProto,
@@ -179,6 +198,8 @@ def _attach_agent_reward_fields(
     if (agent_status == "answered") != (final_answer is not None):
         raise ValueError("agent_reward_input.status and final_answer must agree on answered state")
     reward_input["agent_status"] = agent_status
+    if "env_outcome" in agent_input:
+        reward_input["env_outcome"] = _validated_env_outcome(agent_input["env_outcome"])
 
     diagnostics = data.non_tensor_batch.get("agent_diagnostics")
     if diagnostics is None or len(diagnostics) != len(data):
