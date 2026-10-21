@@ -736,7 +736,11 @@ def test_fsdp_worker_requires_provenance_for_precomputed_multimodal_inputs():
 
 def test_agent_rollout_pop_preserves_driver_raw_prompt():
     trainer = object.__new__(RayPPOTrainer)
-    trainer.config = SimpleNamespace(worker=SimpleNamespace(rollout=SimpleNamespace(interaction_mode="agentic")))
+    trainer.config = SimpleNamespace(
+        worker=SimpleNamespace(
+            rollout=SimpleNamespace(interaction_mode="agentic", agent_environment_config_key="env_config")
+        )
+    )
     raw_prompt = np.empty(1, dtype=object)
     raw_prompt[0] = [{"role": "user", "content": "inspect"}]
     batch = DataProto.from_dict(
@@ -763,7 +767,11 @@ def test_agent_rollout_pop_preserves_driver_raw_prompt():
 
 def test_agent_rollout_pop_passes_env_name_and_keeps_it_on_the_driver():
     trainer = object.__new__(RayPPOTrainer)
-    trainer.config = SimpleNamespace(worker=SimpleNamespace(rollout=SimpleNamespace(interaction_mode="agentic")))
+    trainer.config = SimpleNamespace(
+        worker=SimpleNamespace(
+            rollout=SimpleNamespace(interaction_mode="agentic", agent_environment_config_key="env_config")
+        )
+    )
     env_name = np.array(["visual_toolbox_v2", ""], dtype=object)
     batch = DataProto.from_dict(
         tensors={
@@ -784,6 +792,165 @@ def test_agent_rollout_pop_passes_env_name_and_keeps_it_on_the_driver():
 
     assert batch.non_tensor_batch["env_name"] is env_name
     assert rollout_batch.non_tensor_batch["env_name"].tolist() == ["visual_toolbox_v2", ""]
+
+
+def test_agent_rollout_pop_passes_the_rows_environment_configuration():
+    trainer = object.__new__(RayPPOTrainer)
+    trainer.config = SimpleNamespace(
+        worker=SimpleNamespace(
+            rollout=SimpleNamespace(interaction_mode="agentic", agent_environment_config_key="task")
+        )
+    )
+    batch = DataProto.from_dict(
+        tensors={
+            "input_ids": torch.ones((1, 2), dtype=torch.long),
+            "attention_mask": torch.ones((1, 2), dtype=torch.long),
+            "position_ids": torch.zeros((1, 2), dtype=torch.long),
+        },
+        non_tensors={
+            "raw_prompt_ids": np.array([[1, 2]], dtype=object),
+            "raw_prompt": np.array([[]], dtype=object),
+            "uid": np.array(["prompt-0"], dtype=object),
+            "task": np.array(['{"window": 3}'], dtype=object),
+        },
+    )
+
+    rollout_batch = trainer._pop_rollout_inputs(batch)
+
+    assert rollout_batch.non_tensor_batch["task"].tolist() == ['{"window": 3}']
+    assert "task" not in batch.non_tensor_batch
+
+
+def test_vllm_rollout_gives_other_environments_their_row_configuration(monkeypatch):
+    from verl.workers.agent.protocol import EnvOutcome
+
+    rollout, prompts = _make_agentic_materialization_test_case(monkeypatch, [])
+    calls = []
+
+    async def fake_run_agent_inference(**kwargs):
+        calls.append((type(kwargs["environment"]).__name__, kwargs["env_config"], kwargs["env_seed"]))
+        trajectory = _make_trajectory(kwargs["rollout_index"])
+        trajectory.env_outcome = EnvOutcome(reward=0.5, components={"task": 1.0}, metrics={})
+        return trajectory
+
+    monkeypatch.setattr("verl.workers.agent.inference.run_agent_inference", fake_run_agent_inference)
+    rollout.config.agent_environment = "remote_http"
+    rollout.config.agent_environment_kwargs = {"url": "http://env.test"}
+    prompts.non_tensor_batch.pop("multi_modal_data")  # environment tasks need no images in the row
+    missing = copy.deepcopy(prompts)
+    prompts.non_tensor_batch["env_config"] = np.array(['{"task": "F2"}'], dtype=object)
+
+    output = rollout.generate_sequences(prompts)
+
+    assert [call[:2] for call in calls] == [("RemoteHTTPEnvironment", {"task": "F2"})] * 2
+    assert calls[0][2] == calls[1][2]  # one reset seed for the group
+    assert [item["env_outcome"] for item in output.non_tensor_batch["agent_reward_input"]] == [
+        {"reward": 0.5, "components": {"task": 1.0}, "metrics": {}}
+    ] * 2
+    assert "env_config" not in output.non_tensor_batch
+    with pytest.raises(ValueError, match="'env_config'"):
+        rollout.generate_sequences(missing)
+
+
+def test_vllm_rollout_failure_cancels_the_other_trajectories_before_closing_shared_resources(monkeypatch):
+    import verl.workers.agent.environments.remote as remote
+
+    rollout, prompts = _make_agentic_materialization_test_case(monkeypatch, [])
+    events, sessions = [], []
+
+    class Session:
+        def __init__(self, *args, **kwargs):
+            self.index, self.closed = len(sessions), False
+            sessions.append(self)
+
+        async def post(self, path, payload, **kwargs):
+            events.append((path, self.index, self.closed))
+            return {"episode_id": str(len(events)), "user_content": [], "tool_schemas": []}
+
+        async def aclose(self):
+            self.closed = True
+            events.append(("session_closed", self.index))
+
+    ready = None
+
+    async def fake_run_agent_inference(*, environment, rollout_index, **kwargs):
+        nonlocal ready
+        ready = ready or asyncio.Event()
+        try:
+            await environment.reset({}, 0)
+            if rollout_index == 0:
+                await ready.wait()
+                raise RuntimeError("one trajectory failed")
+            ready.set()
+            await asyncio.sleep(100)  # still running when the other one fails
+        finally:
+            await environment.close()
+
+    monkeypatch.setattr(remote, "_HTTPSession", Session)
+    monkeypatch.setattr("verl.workers.agent.inference.run_agent_inference", fake_run_agent_inference)
+    rollout.config.agent_environment = "remote_http"
+    rollout.config.agent_environment_kwargs = {"url": "http://env.test"}
+    prompts.non_tensor_batch["env_config"] = np.array([{}], dtype=object)
+
+    with pytest.raises(RuntimeError, match="one trajectory failed"):
+        rollout.generate_sequences(prompts)
+
+    # both episodes are closed on the one shared session, which is closed last
+    assert events == [
+        ("/reset", 0, False),
+        ("/reset", 0, False),
+        ("/close", 0, False),
+        ("/close", 0, False),
+        ("session_closed", 0),
+    ]
+    assert [session.closed for session in sessions] == [True]
+
+
+def test_vllm_rollout_failure_does_not_cut_off_a_close_already_in_progress(monkeypatch):
+    import verl.workers.agent.environments.remote as remote
+
+    rollout, prompts = _make_agentic_materialization_test_case(monkeypatch, [])
+    events = []
+    closing = None
+
+    class Session:
+        async def post(self, path, payload, **kwargs):
+            if path == "/reset":
+                episode_id = str(sum(event[0] == "reset" for event in events))
+                events.append(("reset", episode_id))
+                return {"episode_id": episode_id, "user_content": [], "tool_schemas": []}
+            if payload["episode_id"] == "1":
+                closing.set()
+                await asyncio.sleep(0.05)  # the request is on the network when the batch fails
+            events.append(("closed", payload["episode_id"]))
+            return {}
+
+        async def aclose(self):
+            events.append(("session_closed",))
+
+    async def fake_run_agent_inference(*, environment, rollout_index, **kwargs):
+        nonlocal closing
+        closing = closing or asyncio.Event()
+        try:
+            await environment.reset({}, 0)
+            if rollout_index == 0:
+                await closing.wait()
+                raise RuntimeError("one trajectory failed")
+            return _make_trajectory(rollout_index)
+        finally:
+            await environment.close()
+
+    monkeypatch.setattr(remote, "_HTTPSession", lambda *args, **kwargs: Session())
+    monkeypatch.setattr("verl.workers.agent.inference.run_agent_inference", fake_run_agent_inference)
+    rollout.config.agent_environment = "remote_http"
+    rollout.config.agent_environment_kwargs = {"url": "http://env.test"}
+    prompts.non_tensor_batch["env_config"] = np.array([{}], dtype=object)
+
+    with pytest.raises(RuntimeError, match="one trajectory failed"):
+        rollout.generate_sequences(prompts)
+
+    assert sorted(event[1] for event in events if event[0] == "closed") == ["0", "1"]
+    assert events[-1] == ("session_closed",)
 
 
 def test_vllm_rollout_passes_the_row_tool_switch_and_prompt_style(monkeypatch):
@@ -1006,7 +1173,11 @@ def test_data_metrics_use_interleaved_agent_response_mask():
 
 def test_agent_reward_rpc_input_excludes_images_layouts_and_processor_tensors():
     trainer = object.__new__(RayPPOTrainer)
-    trainer.config = SimpleNamespace(worker=SimpleNamespace(rollout=SimpleNamespace(interaction_mode="agentic")))
+    trainer.config = SimpleNamespace(
+        worker=SimpleNamespace(
+            rollout=SimpleNamespace(interaction_mode="agentic", agent_environment_config_key="env_config")
+        )
+    )
     batch = DataProto.from_dict(
         tensors={
             "responses": torch.tensor([[1, 2]]),

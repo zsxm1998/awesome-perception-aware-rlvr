@@ -15,6 +15,7 @@
 Rollout config
 """
 
+import os
 from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
@@ -59,6 +60,14 @@ class RolloutConfig:
     # "official": DeepEyes' own prompts from the data (tool schema in the system prompt text) and its tool response
     # format. Either way, rows whose env_name column is empty are rolled out once without tools.
     agent_prompt_style: str = "native"
+    # The environment of agentic rollouts (docs/agent_environments.md): a registered name ("deepeyes",
+    # "remote_http"), path/to/file.py:ClassName for your own class, or null for "deepeyes"; the options of
+    # its constructor (remote_http: url, timeout_s, retries, ...); and the data column holding each row's
+    # environment configuration, a JSON object given to reset (not used by "deepeyes", whose task is the
+    # row's prompt and images).
+    agent_environment: Optional[str] = None
+    agent_environment_kwargs: dict[str, Any] = field(default_factory=dict)
+    agent_environment_config_key: str = "env_config"
     val_override_config: dict[str, Any] = field(default_factory=dict)
     # below are auto keys
     prompt_length: int = field(default=-1, init=False)
@@ -87,12 +96,25 @@ class RolloutConfig:
             raise ValueError("agent_bbox_format must be 'auto', 'norm1000' or 'pixel'")
         if self.agent_max_trajectory_retries < 0:
             raise ValueError("agent_max_trajectory_retries must be non-negative")
+        if self.agent_environment is not None and self.interaction_mode != "agentic":
+            raise ValueError("rollout.agent_environment requires rollout.interaction_mode=agentic")
+        if self.agent_environment is not None and ":" in self.agent_environment:
+            # path/to/file.py:ClassName, made absolute so that the rollout workers find the same file
+            path, class_name = self.agent_environment.rsplit(":", 1)
+            self.agent_environment = f"{os.path.abspath(path)}:{class_name}"
+        if self.agent_environment_kwargs and self.interaction_mode != "agentic":
+            raise ValueError("rollout.agent_environment_kwargs requires rollout.interaction_mode=agentic")
         if (
             self.interaction_mode == "agentic"
             and self.response_length > 0
             and self.agent_max_tokens_per_turn > self.response_length
         ):
             raise ValueError("agent_max_tokens_per_turn cannot exceed the full response budget")
+
+    @property
+    def resolved_agent_environment(self) -> str:
+        """The agent environment of this rollout; null means DeepEyes, the original agentic setting."""
+        return self.agent_environment or "deepeyes"
 
     def to_dict(self):
         return asdict(self)

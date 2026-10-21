@@ -232,6 +232,7 @@ class AgentLoop:
                 break
 
             metrics.tool_call_attempts += 1
+            env_step = None
             if parsed.tool_call_error is not None:
                 step.tool_call_error = parsed.tool_call_error
                 result = tool_error(
@@ -246,6 +247,16 @@ class AgentLoop:
                 result = self._resize_observation_images(env_step.result)
             step.tool_result = result
             self._record_tool_result(metrics, result)
+            if env_step is not None:
+                step.env_reward = env_step.reward
+                step.state_key = env_step.state_key
+                step.cost = env_step.cost
+                step.env_info = dict(env_step.info)
+                if env_step.done:
+                    # No model turn would read this observation, so it is not committed.
+                    step.env_done = True
+                    status = AgentStatus.ENVIRONMENT_DONE
+                    break
 
             remaining_tokens = self.config.max_response_tokens - effective_response_tokens
             if remaining_tokens <= 0:

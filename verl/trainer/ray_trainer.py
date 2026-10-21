@@ -869,6 +869,9 @@ class RayPPOTrainer:
             env_name = batch.non_tensor_batch.get("env_name")  # DeepEyes' per-row tool switch ("" = no tool)
             if env_name is not None:
                 rollout_non_tensor_keys.append("env_name")
+            env_config_key = self.config.worker.rollout.agent_environment_config_key  # rows' environment configs
+            if env_config_key in batch.non_tensor_batch:
+                rollout_non_tensor_keys.append(env_config_key)
 
         rollout_batch = batch.pop(
             batch_keys=["input_ids", "attention_mask", "position_ids"],

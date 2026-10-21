@@ -90,11 +90,29 @@ class NativeToolChatAdapter:
             raise TypeError("NativeToolChatAdapter requires processor.tokenizer")
         if num_source_images <= 0:
             raise ValueError("DeepEyes requires at least one source image")
+        self._setup(
+            processor,
+            tool_registry.schemas(num_source_images),
+            num_source_images,
+            max_tool_calls,
+            image_config,
+            image_preprocessor,
+        )
+
+    def _setup(
+        self,
+        processor: Any,
+        tools: Any,
+        num_source_images: int,
+        max_tool_calls: int,
+        image_config: AgentImageConfig,
+        image_preprocessor: Any,
+    ) -> None:
         if isinstance(max_tool_calls, bool) or not isinstance(max_tool_calls, int) or max_tool_calls < 0:
             raise ValueError("max_tool_calls must be a non-negative integer")
 
         self.processor = processor
-        self.tools = tool_registry.schemas(num_source_images)
+        self.tools = tools
         self.num_source_images = num_source_images
         self.max_tool_calls = max_tool_calls
         if not isinstance(image_config, AgentImageConfig):
@@ -137,6 +155,11 @@ class NativeToolChatAdapter:
             tool_content: Any = [{"type": "image"}, {"type": "text", "text": content_json}]
         else:
             tool_content = content_json
+        return self._encode_tool_message(tool_content, request.result.images)
+
+    def _encode_tool_message(self, tool_content: Any, images: Sequence[Any]) -> EncodedObservation:
+        """Tokens of one tool message after the model's action: the template suffix after an assistant
+        sentinel, without the assistant terminator that the action itself already ends with."""
 
         synthetic_messages = [
             {"role": "assistant", "content": self._ASSISTANT_SENTINEL},
@@ -159,19 +182,19 @@ class NativeToolChatAdapter:
         # suffix; keep the following template separator (for Qwen, "\n").
         suffix_token_ids = suffix_token_ids[len(termination_token_ids) :]
         effective_token_count = None
-        visual_token_count = None if request.result.images else 0
-        if request.result.images and hasattr(self.processor, "image_processor"):
+        visual_token_count = None if images else 0
+        if images and hasattr(self.processor, "image_processor"):
             effective_token_count, visual_token_count = measure_expanded_observation(
                 self.processor,
                 suffix_token_ids,
-                request.result.images,
+                images,
                 min_pixels=self.image_config.min_pixels,
                 max_pixels=self.image_config.max_pixels,
                 image_preprocessor=self.image_preprocessor,
             )
         return EncodedObservation(
             token_ids=suffix_token_ids,
-            images=request.result.images,
+            images=images,
             effective_token_count=effective_token_count,
             visual_token_count=visual_token_count,
         )
@@ -441,3 +464,119 @@ class OfficialDeepEyesChatAdapter(NativeToolChatAdapter):
             effective_token_count=effective_token_count,
             visual_token_count=visual_token_count,
         )
+
+
+class EnvironmentChatAdapter(NativeToolChatAdapter):
+    """Render an environment's own prompt and observations with the model's native tool template.
+
+    The environment writes every model-visible text: its system and user messages are rendered as given
+    (no DeepEyes prompt template, no image labels), with its tool schemas passed as ``tools=``, and an
+    observation's ``ToolResult.parts`` (else its ``observation_text``) are rendered in order. That text, including
+    every string in the tool schemas, is rendered verbatim, so it must not contain the tokenizer's special tokens
+    (such as ``<|im_start|>`` or ``<|image_pad|>``), which would change the turn structure or the image
+    placeholders; such text is rejected.
+    """
+
+    def __init__(
+        self,
+        processor: Any,
+        tool_schemas: Sequence[Mapping[str, Any]],
+        num_source_images: int,
+        max_tool_calls: int,
+        image_config: AgentImageConfig = AgentImageConfig(),
+        image_preprocessor: Any = None,
+    ):
+        if processor is None or not hasattr(processor, "apply_chat_template"):
+            raise TypeError("EnvironmentChatAdapter requires a multimodal processor with a chat template")
+        if not hasattr(processor, "tokenizer"):
+            raise TypeError("EnvironmentChatAdapter requires processor.tokenizer")
+        if num_source_images < 0:
+            raise ValueError("num_source_images must be non-negative")
+        self._special_tokens = sorted(
+            {token for token in getattr(processor.tokenizer, "all_special_tokens", []) if token}
+        )
+        self._check_environment_strings(tool_schemas)
+        self._setup(
+            processor,
+            [dict(schema) for schema in tool_schemas] or None,
+            num_source_images,
+            max_tool_calls,
+            image_config,
+            image_preprocessor,
+        )
+
+    def encode_initial_prompt(self, messages: Sequence[Mapping[str, Any]]) -> EncodedPrompt:
+        prepared = copy.deepcopy(list(messages))
+        num_images = 0
+        for message in prepared:
+            content = message.get("content")
+            if isinstance(content, str):
+                self._check_environment_text(content)
+                continue
+            for item in content or []:
+                if item.get("type") == "image":
+                    num_images += 1
+                elif item.get("type") == "text":
+                    self._check_environment_text(item.get("text", ""))
+                else:
+                    raise ValueError(f"unsupported message content part {item.get('type')!r}")
+        if num_images != self.num_source_images:
+            raise ValueError(
+                f"source image count does not match image placeholders in messages: "
+                f"{self.num_source_images} images but {num_images} placeholders"
+            )
+        rendered = self._render_with_generation_prompt(prepared)
+        if self.tools:
+            self._check_tools_rendered(prepared, rendered)
+        return EncodedPrompt(token_ids=self._encode_raw_text(rendered), rendered_text=rendered)
+
+    async def encode(self, request: ObservationEncodingRequest) -> EncodedObservation:
+        result = request.result
+        if result.parts is None:
+            if result.observation_text is not None:
+                text = result.observation_text
+                self._check_environment_text(text)
+            else:
+                # e.g. the loop's malformed_tool_call error, which may echo model-generated text
+                text = json.dumps(result.content, ensure_ascii=False, separators=(",", ":"))
+                text = text.replace("<", "\\u003c").replace(">", "\\u003e")
+            parts: list[dict[str, Any]] = [*({"type": "image"} for _ in result.images), {"type": "text", "text": text}]
+        else:
+            parts = [dict(part) for part in result.parts]
+            for part in parts:
+                if part.get("type") == "text":
+                    self._check_environment_text(part.get("text", ""))
+                elif part.get("type") != "image":
+                    raise ValueError(f"unsupported observation part {part.get('type')!r}")
+            num_images = sum(part.get("type") == "image" for part in parts)
+            if num_images != len(result.images):
+                raise ValueError(
+                    f"observation has {len(result.images)} images but {num_images} image placeholders in its parts"
+                )
+        if not result.images and len(parts) == 1:
+            tool_content: Any = parts[0]["text"]
+        else:
+            tool_content = parts
+        return self._encode_tool_message(tool_content, result.images)
+
+    def _check_environment_strings(self, value: Any) -> None:
+        """Every string inside a JSON-like value (tool schemas are rendered as JSON by the template)."""
+        if isinstance(value, str):
+            self._check_environment_text(value)
+        elif isinstance(value, Mapping):
+            for key, item in value.items():
+                self._check_environment_strings(key)
+                self._check_environment_strings(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                self._check_environment_strings(item)
+
+    def _check_environment_text(self, text: str) -> None:
+        if not isinstance(text, str):
+            raise TypeError("environment text must be a string")
+        for token in self._special_tokens:
+            if token in text:
+                raise ValueError(
+                    f"environment text contains the special token {token!r}, which would change the chat "
+                    "structure; write it differently"
+                )

@@ -4,6 +4,7 @@ datasets
 einops
 flash-attn>=2.4.3
 flask
+httpx
 huggingface_hub
 liger-kernel
 # DeepEyes' ThinkLite reward; the extra keeps antlr4 at 4.9.3, which omegaconf needs
