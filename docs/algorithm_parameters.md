@@ -7,6 +7,13 @@ This note only lists which `algorithm.*` parameters are used by each perception-
 - `worker.actor.model.plain_think_tokens` (`auto` | `true` | `false`, default `auto`): tokenize `<think>` / `</think>` as plain text when they are untrained added tokens (Qwen3-VL Instruct); see [`verl/utils/plain_think.py`](../verl/utils/plain_think.py) and the README.
 - `worker.actor.model.max_dynamic_patch` (InternVL only, default: the model config's): maximum tiles per image, for the trainer's processor and the vLLM rollout (GRIT InternVL uses 2). Pass the same value to the evaluation (`--max-dynamic-patch`).
 
+## Agent Environments
+
+- `worker.rollout.agent_environment` (`null` = `deepeyes` | `remote_http` | `path/to/file.py:ClassName`),
+  `worker.rollout.agent_environment_kwargs` (constructor options, e.g. `url` for `remote_http`) and
+  `worker.rollout.agent_environment_config_key` (the data column with each row's configuration, default `env_config`):
+  the environment of agentic rollouts. Protocol, options and examples: [agent_environments.md](agent_environments.md).
+
 ## Loss Averaging
 
 - `worker.actor.loss_avg_mode`: `token` (default) weights every response token of a mini-batch equally; `seq` averages over each response's tokens, then weights every response equally across micro-batches and ranks (verl's seq-mean-token-mean). Used by the PEPO GRPO arms and GRIT. See [implementation notes](implementation_notes.md#seq-and-token-loss-averaging).

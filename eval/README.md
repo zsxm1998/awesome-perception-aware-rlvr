@@ -509,6 +509,7 @@ Common runner options:
 | `--grounding-instruction append\|none` | whether the box instruction is appended to the questions of the grounding sets (default `append`; the `grit` suite asks the bare question, as GRIT) |
 | `--answer-protocol default\|pepo\|vgs` | `pepo`: MathVista, LogicVista and MathVerse are asked and LogicVista is read as in PEPO's evaluation scripts (suite `pepo_geometry`); `vgs`: the `\boxed{}`-scored benchmarks and the multiple-choice questions (the `mcq` scorer, MMMU's multiple-choice items) read the answer as the VGS training reward does, with the same code (`verl/utils/vgs_answer.py`: the last `\boxed{}`, else the text after `</reason>`; option letters for multiple-choice answers, mathruler otherwise). It only changes the scoring: a checkpoint gets it from its training record when trained with that reward (the `vgs` suite's default applies to models without a record), and `--score-only --answer-protocol ...` rescores existing predictions with the given reading; without a protocol from a flag, the training record or a suite, predictions are read as recorded when they were generated |
 | `--agent-prompt-style native\|official`, `--agent-observation-min-pixels N` | agentic runs: DeepEyes' own prompts instead of the rewritten one; the lower pixel bound of tool crops (default `--min-pixels`; the image processor's own lower bound still applies) |
+| `--agent-profile deepeyes\|environment`, `--agent-environment NAME`, `--agent-environment-kwargs JSON` | agentic runs: DeepEyes (default) or an agent environment and its options (see [Agent environments](#agent-environments)) |
 | `--batch-size`, `--max-batch-images` | request batching per engine |
 | `--data-root`, `--skip-missing-data` | data location / tolerate unprepared benchmarks |
 | `--resume` / `--no-resume`, `--score-only`, `--summary-only` | reuse or rebuild results |
@@ -555,6 +556,44 @@ for the other convention is rejected. Pass `--box-format norm1000` for a Qwen2.5
 trained with 0-1000 tool boxes. Committed crops are stored per prediction as
 `committed_tool_regions` with `bbox_norm1000` (the crop on the source image in 0-1000, the
 same for both conventions, used by the grounding scorers) next to the model's raw `bbox_2d`.
+
+### Agent environments
+
+`--agent-profile environment` evaluates in an agent environment
+([docs/agent_environments.md](../docs/agent_environments.md)), the same one as in training:
+
+```bash
+python examples/agent_env/toy_search.py serve --port 8000 &
+bash scripts/eval.sh <ckpt> --config my_benchmarks.yaml --benchmarks toy_search \
+    --interaction-mode agentic --agent-profile environment \
+    --agent-environment remote_http --agent-environment-kwargs '{"url": "http://127.0.0.1:8000"}'
+```
+
+A benchmark of environment tasks uses `loader: environment_tasks` (a parquet file with an
+`env_config` column, as the training rows) and `scorer: environment_reward`, for example in
+your own `--config` file:
+
+```yaml
+benchmarks:
+  - key: toy_search
+    label: Toy search
+    group: Agent
+    loader: environment_tasks
+    scorer: environment_reward
+    primary_metric: mean_reward
+    path: agent_env/toy_search/val.parquet
+    num_samples: 1
+    temperature: 0.0
+```
+
+The environment writes the prompt (so `--system-prompt` and `--format-prompt` are not used)
+and scores the episode: the metric is the mean of the episode rewards that `finalize` reports
+(normalized as 100 x the mean, for rewards in [0, 1]); a trajectory that ends without an
+outcome (a failed request) counts as 0 and is reported as `trajectories_without_outcome`. The
+predictions keep each trajectory's `env_outcome` and per-call `env_steps` (state key, cost,
+reward) in `agent_diagnostics`. `--agent-environment` defaults to `remote_http`; it can also
+be `path/to/file.py:ClassName`. The environment and its options (e.g. the server url) enter
+the result fingerprint.
 
 ## Output layout
 
