@@ -233,7 +233,7 @@ def test_agentic_backend_passes_bbox_format_and_records_model_frames(monkeypatch
 
     async def fake_runner(**kwargs):
         seen.update(kwargs)
-        source = kwargs["source_images"][0]
+        source = kwargs["env_config"]["images"][0]
         return _trajectory([], source)
 
     backend.agent_runner = fake_runner
@@ -244,9 +244,9 @@ def test_agentic_backend_passes_bbox_format_and_records_model_frames(monkeypatch
         [sample], GenerationConfig(temperature=0.0, top_p=1.0, num_samples=1, max_new_tokens=32, seed=1)
     )
 
-    assert seen["bbox_format"] == "pixel" and seen["prompt_style"] == "native"
+    assert seen["environment"].bbox_format == "pixel" and seen["environment"].prompt_style == "native"
     (record,) = outputs[0].diagnostics["image_sizes"]
-    prepared = seen["image_cache"].prepare(seen["source_images"][0])
+    prepared = seen["image_cache"].prepare(seen["env_config"]["images"][0])
     # the recorded model-input frame is the one the zoom-in tool maps pixel boxes from
     assert tuple(record["model_input"]) == model_input_image_size(processor, prepared)
     assert record["original"] == [2246, 1500] and record["processed"] == list(prepared.size)

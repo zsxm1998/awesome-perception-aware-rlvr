@@ -465,8 +465,9 @@ class vLLMRollout(BaseRollout):
             VLLMAgentBatchScheduler,
             VLLMAgentImageCache,
         )
-        from ..agent.inference import run_deepeyes_inference
-        from ..agent.protocol import AgentImageConfig, AgentLoopConfig
+        from ..agent.environments import EnvironmentContext, environment_factory
+        from ..agent.inference import run_agent_inference
+        from ..agent.protocol import AgentImageConfig, AgentLoopConfig, derive_environment_seed
         from ..agent.tool_call import NativeToolCallCodec
         from ..agent.trajectory import (
             AgentTrajectoryMaterializer,
@@ -537,6 +538,11 @@ class vLLMRollout(BaseRollout):
                 min_pixels=image_config.min_pixels,
                 max_pixels=image_config.max_pixels,
             )
+            make_environment = environment_factory(
+                "deepeyes",
+                EnvironmentContext(processor=self.processor, image_preprocessor=image_cache.prepare),
+                {"bbox_format": self.agent_bbox_format, "prompt_style": self.config.agent_prompt_style},
+            )
 
             async def run_batch():
                 try:
@@ -565,11 +571,16 @@ class vLLMRollout(BaseRollout):
                             )
                             requests.append(
                                 {
-                                    "messages": messages,
-                                    "source_images": source_images,
+                                    "env_config": {
+                                        "messages": messages,
+                                        "images": source_images,
+                                        "tools_enabled": env_names is None or bool(env_names[sample_position]),
+                                    },
+                                    "env_seed": derive_environment_seed(
+                                        int(base_sampling_params.seed), sample_identity
+                                    ),
                                     "sample_index": sample_identity,
                                     "rollout_index": rollout_index,
-                                    "tools_enabled": env_names is None or bool(env_names[sample_position]),
                                     "lora_request": (
                                         None if lora_requests is None else lora_requests[sample_position]
                                     ),
@@ -579,15 +590,16 @@ class vLLMRollout(BaseRollout):
                     async def generate_one(request: dict[str, Any], retry_index: int = 0):
                         # A retry retains group identity but changes the deterministic
                         # seed namespace, avoiding an identical invalid resample.
-                        return await run_deepeyes_inference(
+                        return await run_agent_inference(
+                            environment=make_environment(),
+                            env_config=request["env_config"],
                             inference_engine=self.inference_engine,
                             sampling_params=base_sampling_params,
                             processor=self.processor,
-                            messages=request["messages"],
-                            source_images=request["source_images"],
                             sample_index=request["sample_index"],
                             rollout_index=request["rollout_index"],
                             image_config=image_config,
+                            env_seed=request["env_seed"],
                             config=loop_config,
                             lora_request=request["lora_request"],
                             use_tqdm=False,
@@ -595,9 +607,6 @@ class vLLMRollout(BaseRollout):
                             scheduler=scheduler,
                             image_cache=image_cache,
                             max_model_len=max_model_len,
-                            bbox_format=self.agent_bbox_format,
-                            tools_enabled=request["tools_enabled"],
-                            prompt_style=self.config.agent_prompt_style,
                         )
 
                     trajectories = list(await asyncio.gather(*(generate_one(request) for request in requests)))

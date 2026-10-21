@@ -21,6 +21,7 @@ from PIL import Image
 
 from ...utils.dataset import ProcessedImageInput, process_image
 from .protocol import (
+    AgentEnvironment,
     AgentImageConfig,
     AgentLoopConfig,
     AgentMetrics,
@@ -35,15 +36,15 @@ from .protocol import (
     ToolResult,
 )
 from .tool_call import NativeToolCallCodec, ToolCallCodec
-from .tools.base import ToolRegistry, tool_error
+from .tools.base import tool_error
 
 
 class AgentLoop:
     """Backend-agnostic token-in/token-out agent loop.
 
-    Model-produced IDs are appended verbatim with response mask 1. Only the
-    environment observation is encoded by ``observation_encoder`` and receives
-    response mask 0.
+    Model-produced IDs are appended verbatim with response mask 1. Well-formed
+    tool calls go to ``environment``; only its observation is encoded by
+    ``observation_encoder`` and receives response mask 0.
     """
 
     _IMAGE_IDX_ERROR_CODES = {
@@ -56,14 +57,14 @@ class AgentLoop:
         self,
         backend: GenerationBackend,
         observation_encoder: ObservationEncoder,
-        tool_registry: ToolRegistry,
+        environment: AgentEnvironment,
         config: Optional[AgentLoopConfig] = None,
         tool_call_codec: Optional[ToolCallCodec] = None,
         seed_context: Optional[AgentSeedContext] = None,
     ):
         self.backend = backend
         self.observation_encoder = observation_encoder
-        self.tool_registry = tool_registry
+        self.environment = environment
         self.config = config or AgentLoopConfig()
         self.tool_call_codec = tool_call_codec or NativeToolCallCodec()
         if seed_context is not None and not isinstance(seed_context, AgentSeedContext):
@@ -241,8 +242,8 @@ class AgentLoop:
             else:
                 assert parsed.tool_call is not None
                 step.tool_call = parsed.tool_call
-                result = self.tool_registry.execute(parsed.tool_call, source_images)
-                result = self._resize_observation_images(result)
+                env_step = await self.environment.step(parsed.tool_call)
+                result = self._resize_observation_images(env_step.result)
             step.tool_result = result
             self._record_tool_result(metrics, result)
 
