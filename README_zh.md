@@ -69,6 +69,7 @@ RLVR 能提升大视觉语言模型的推理能力，但它的奖励只检查最
 
 ## 🔥 更新
 
+- **2026-10**：多轮 agent 强化学习与评测的环境接口（进程内或通过 HTTP，[文档](docs/agent_environments.md)），回合奖励可由环境给出；DeepEyes 改为进程内环境，并提供[示例](examples/agent_env/README.md)（玩具视觉搜索、通过 HTTP 提供的 DeepEyes）。
 - **2026-10**：复现 [S-OPD](examples/reproduction/s_opd/README.md)（给 OPD 加两项学生侧损失：经教师门控的原图与遮挡图对比，以及原图与加噪图的一致），S-OPD 加入 [OPD 统一对比](examples/comparison/opd_qwen3_vl_2b/README_zh.md)，评测新增 VisualPuzzles 和 ZeroBench（子问题）。
 - **2026-10**：两个[统一设定对比](#-统一设定对比)的结果，每个方法给出最后一步和验证最优步；[论文清单](#-论文清单)新增 30 篇感知导向的 OPD 论文。
 - **2026-10**：OPD：教师模型（冻结模型或策略的 EMA）、基于采样 token 和基于完整下一 token 分布的两种 OPD 目标，复现 [VA-OPD](examples/reproduction/va_opd/README.md)、[VGS](examples/reproduction/vgs/README.md)、[VCSD](examples/reproduction/vcsd/README.md)、[Vision-OPD](examples/reproduction/vision_opd/README.md)，新增 [OPD 统一对比](examples/comparison/opd_qwen3_vl_2b/README_zh.md)，评测新增 ZoomBench、BLINK、MMStar、AI2D、MMMU。
@@ -213,6 +214,7 @@ python3 scripts/finalize_run.py checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_pa
 │   │   ├── rlvr_qwen3_vl_4b/    #   RLVR：每个方法一个脚本，共用 common.sh
 │   │   └── opd_qwen3_vl_2b/     #   OPD：每个方法一个脚本，共用 common.sh
 │   ├── config.yaml              # 基础训练配置
+│   ├── agent_env/               # 通过 HTTP 提供的 agent 环境（示例）
 │   ├── reward_function/         # 奖励函数
 │   └── format_prompt/、system_prompt/、chat_template/
 ├── eval/                    # 一键评测（注册表、loader、scorer、prepare/）
@@ -223,7 +225,7 @@ python3 scripts/finalize_run.py checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_pa
 └── tests/                   # 单元测试
 ```
 
-各方法在 `verl/trainer/` 中被实现为可组合的模块：辅助（反事实）图像视图、token 级视觉敏感度信号、token 选择、优势缩放、辅助损失和额外奖励；OPD 另有教师和蒸馏损失（`distillation.py`）。所有开关见 [docs/algorithm_parameters.md](docs/algorithm_parameters.md)，多个方法共有的实现细节（如 k3 KL 估计的梯度方向、损失平均方式）见 [docs/implementation_notes.md](docs/implementation_notes.md)，新增方法见 [docs/add_method.md](docs/add_method.md)。
+各方法在 `verl/trainer/` 中被实现为可组合的模块：辅助（反事实）图像视图、token 级视觉敏感度信号、token 选择、优势缩放、辅助损失和额外奖励；OPD 另有教师和蒸馏损失（`distillation.py`）。所有开关见 [docs/algorithm_parameters.md](docs/algorithm_parameters.md)，多个方法共有的实现细节（如 k3 KL 估计的梯度方向、损失平均方式）见 [docs/implementation_notes.md](docs/implementation_notes.md)，新增方法见 [docs/add_method.md](docs/add_method.md)。多轮 agent 训练在 agent 环境中进行，环境可以在进程内，也可以通过 HTTP 提供（[docs/agent_environments.md](docs/agent_environments.md)）。
 
 ## 📊 统一设定对比
 

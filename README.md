@@ -100,6 +100,9 @@ before drawing conclusions.
 
 ## 🔥 News
 
+- **2026-10**: Agent environments for multi-turn agentic RL and evaluation: an environment interface (in
+  process or over HTTP, [docs](docs/agent_environments.md)), episode rewards from the environment, DeepEyes as
+  the in-process environment and [examples](examples/agent_env/README.md) (a toy visual search, DeepEyes over HTTP).
 - **2026-10**: A reproduction of [S-OPD](examples/reproduction/s_opd/README.md) (two student-side terms for OPD:
   a teacher-gated contrast with a masked image and agreement with a noisy one), S-OPD in the
   [OPD comparison](examples/comparison/opd_qwen3_vl_2b/README.md), and VisualPuzzles and ZeroBench
@@ -289,6 +292,7 @@ finalized runs.
 │   │   ├── rlvr_qwen3_vl_4b/    #   RLVR: one script per method, shared common.sh
 │   │   └── opd_qwen3_vl_2b/     #   OPD: one script per method, shared common.sh
 │   ├── config.yaml              # base training config
+│   ├── agent_env/               # agent environments served over HTTP (examples)
 │   ├── reward_function/         # reward functions
 │   └── format_prompt/, system_prompt/, chat_template/
 ├── eval/                    # one-click evaluation (registry, loaders, scorers, prepare/)
@@ -306,7 +310,8 @@ distillation losses (`distillation.py`). See
 [docs/algorithm_parameters.md](docs/algorithm_parameters.md) for every switch,
 [docs/implementation_notes.md](docs/implementation_notes.md) for behaviors several methods share
 (e.g. the gradient of the k3 KL estimator, loss averaging) and
-[docs/add_method.md](docs/add_method.md) for adding a new method.
+[docs/add_method.md](docs/add_method.md) for adding a new method. Multi-turn agentic training runs in agent
+environments, in process or over HTTP ([docs/agent_environments.md](docs/agent_environments.md)).
 
 ## 📊 Controlled comparison
 

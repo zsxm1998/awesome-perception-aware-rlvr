@@ -1,0 +1,120 @@
+# Agent environments
+
+Multi-turn agentic training (`worker.rollout.interaction_mode=agentic`) runs every trajectory in an
+**agent environment**: an object that starts a task, executes the model's tool calls and reports how the
+episode ended. The same environments serve training and evaluation
+([eval/README.md](../eval/README.md#agent-environments)). Built in:
+
+| Name | What it is |
+| --- | --- |
+| `deepeyes` (also when `agent_environment` is null) | DeepEyes' zoom-in task, in process: the data row is the task (its prompt and images), `image_zoom_in_tool` crops a source image ([DeepEyes](../examples/reproduction/deepeyes/README.md)) |
+| `remote_http` | any environment served over HTTP with the protocol below, e.g. one written in another project |
+| `path/to/file.py:ClassName` | your own in-process class |
+
+Examples in [examples/agent_env/](../examples/agent_env/README.md): a toy visual-search environment
+(find the one digit among small letters with zoom-ins; its reward comes from the environment) and
+DeepEyes served over HTTP (the same prompts and observations as the in-process environment, token for
+token, with DeepEyes' reward function on the trainer).
+
+## How a trajectory runs
+
+1. `reset(config, seed)` gives the task: the chat messages (system and user, with image placeholders), the
+   images and the tool schemas. `config` is the row's environment configuration; `seed` is the same for all
+   rollouts of a prompt and for their retries, so a group starts from one task state.
+2. The model writes a turn. A well-formed `<tool_call>` goes to `step(call)`, whose observation (text and
+   images) is appended as a tool message; a malformed call gets an error observation from the agent loop and
+   never reaches the environment (it is counted as `tool_call_errors`).
+3. The episode ends when the model answers in `<answer>...</answer>`, when it uses up the tool-call limit
+   (`worker.rollout.agent_max_tool_calls`; after it, one more turn may only answer), when a length budget
+   runs out, or when a step returns `done`.
+4. `finalize(final_answer, status)` reports the episode reward with its components and metrics (or nothing);
+   `close()` releases the episode.
+
+Rendering. Tool schemas are rendered by the model's chat template (`tools=`), as in DeepEyes' native prompt.
+The environment's messages and observation texts are rendered verbatim, so they must not contain the
+tokenizer's special tokens (such as `<|im_start|>` or `<|image_pad|>`); such text is rejected. The model's
+own tokens are never re-encoded.
+
+## Training configuration
+
+| Option (`worker.rollout.*`) | Default | Meaning |
+| --- | --- | --- |
+| `agent_environment` | `null` (= `deepeyes`) | registered name or `path/to/file.py:ClassName` |
+| `agent_environment_kwargs` | `{}` | options of the environment's constructor, e.g. `agent_environment_kwargs.url=http://127.0.0.1:8000` |
+| `agent_environment_config_key` | `env_config` | data column with each row's configuration, a JSON object (or its string) given to `reset`; not used by `deepeyes` |
+| `agent_max_tool_calls` | `6` | tool calls per trajectory; the environment receives it in `/reset` (`max_tool_calls`) |
+
+Data rows of an environment task need the configuration column, a prompt column (`data.prompt_key`; only
+used for the length filter and logs, as the model's prompt comes from `reset`) and an answer column
+(`data.answer_key`, required by the dataset class; the environment's own reward does not read it). They do
+not need images. Rewards: `worker.reward.reward_function=examples/reward_function/environment.py:compute_score`
+takes the episode reward that `finalize` reports (and logs its components and metrics as `reward/<name>`);
+a trajectory without one fails the step. Any other reward function still works on the final answer, as
+DeepEyes over HTTP does.
+
+`remote_http` options: `url`; `timeout_s` (60) per request; `retries` (3) after a network error, a timeout,
+HTTP 408, 429 or 5xx, with exponential backoff from `backoff_s` (0.5); `max_concurrency` (64) requests at a
+time from one rollout worker; `max_images_per_step` (1), the most images one step returns, which sizes
+`worker.rollout.limit_images` (it must hold the initial images plus `agent_max_tool_calls` steps of them);
+`trust_env` (false): proxy variables such as `HTTP_PROXY` or `ALL_PROXY` are ignored unless it is true,
+since an environment server usually runs on the same machine or cluster. After the retries a failing
+request fails the training step, which can resume from the last checkpoint.
+
+The batched rollout runs every trajectory on each rank of a tensor-parallel group, so `remote_http` needs
+`worker.rollout.tensor_parallel_size=1`. While a trajectory waits for the server, the other trajectories'
+turns go to vLLM in smaller batches; DeepEyes over HTTP took more generation time than the
+in-process environment (1.3 to 1.5 times) in a 2-step test.
+
+## HTTP protocol
+
+JSON bodies, `POST`, HTTP 200 on success. Images are PNG, base64-encoded.
+
+| Endpoint | Request | Response |
+| --- | --- | --- |
+| `/reset` | `{"config": {...}, "seed": int, "max_tool_calls": int}` | `{"episode_id": str, "system_prompt": str or null, "user_content": [part, ...], "tool_schemas": [schema, ...]}` |
+| `/step` | `{"episode_id": str, "step_index": int, "tool_call": {"name": str, "arguments": {...}}}` | `{"content": [part, ...], "success": bool, "error_code": str (when not success), "done": bool, "reward": float or null, "state_key": str or null, "cost": float, "info": {...}}` |
+| `/finalize` | `{"episode_id": str, "final_answer": str or null, "status": str}` | `{"reward": float or null, "components": {name: float}, "metrics": {name: float}}` |
+| `/close` | `{"episode_id": str}` | `{}` |
+
+A part is `{"type": "text", "text": str}` or `{"type": "image", "png_base64": str}`, in the order the model
+sees them. `tool_schemas` are OpenAI function schemas (`{"type": "function", "function": {"name": ..., ...}}`)
+and must be present; an empty list means a single turn without tools.
+
+- `seed` is shared by the rollouts of a prompt and by their retries; the same `(config, seed)` must give the
+  same initial messages, images, tools and task state, including anything sampled per episode.
+- `max_tool_calls` is the trainer's limit; write it into the prompt and the remaining-calls notes instead of
+  keeping a second limit.
+- `step_index` counts the calls the episode received, from 0. A repeated `(episode_id, step_index)` must
+  return the first response without executing the call again (the client retries requests whose response
+  was lost); an index that skips ahead or goes back is an error. When a call fails inside the server after
+  it may have changed the episode, the episode should take no more calls: the reference server answers the
+  retry with HTTP 409 instead of running the call again, which fails the training step.
+- `done: true` ends the episode after this call; its content is not shown to the model, and `finalize` is
+  still called with status `environment_done`.
+- `final_answer` is the text inside the last `<answer>...</answer>` outside the reasoning, stripped; it is
+  null unless `status` is `answered`. The other statuses: `invalid_final_answer`, `invalid_turn_end`,
+  `no_action`, `tool_call_limit`, `length_limit`, `environment_done`. The environment parses the answer and
+  scores the episode.
+- `/finalize` called again returns the same result; `/close` of an unknown or closed episode returns `{}`.
+  A server should drop episodes that stay idle for long: a crashed trainer never closes them, and a retried
+  `/reset` leaves one behind.
+- `reward` and `state_key` of a step are recorded for step-level credit assignment, `cost` and `info` for
+  diagnostics. `state_key` names the state after the call, the one the next action is taken in, so that
+  actions of different rollouts taken in the same state can be grouped (the first actions of a group share the
+  initial state; a malformed call does not reach the environment and leaves the state unchanged).
+
+[examples/agent_env/server.py](../examples/agent_env/server.py) implements the server side of these rules on
+the Python standard library: write an `Episode` class with `reset`, `step` and `finalize`, and call `serve`. It
+drops idle episodes when a later request arrives, never one with a request in progress.
+
+## In-process environments
+
+A class with `async reset / step / finalize / close` and `chat_adapter` (see `AgentEnvironment` in
+`verl/workers/agent/protocol.py`), built as `cls(context, **agent_environment_kwargs)` once per trajectory.
+`context` holds the processor, the batch's model-side image resize, the tool-call limit and objects shared by
+the batch's environments. Constructors must not acquire resources (one instance is built when the rollout
+starts, to check the options). `LocalToolEnvironment` runs stateless `AgentTool`s; `DeepEyesEnvironment`
+builds on it. Methods that never suspend (no awaiting I/O, threads or sleeps) leave the batched rollout's vLLM
+batches as they were without environments; DeepEyes relies on this to give the same results as before the
+environment interface. `EnvironmentChatAdapter` renders an environment's own prompt and observations;
+DeepEyes keeps its own adapters.
