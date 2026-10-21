@@ -659,6 +659,8 @@ def build_backend(name: str, model: str, **kwargs) -> Backend:
     agent_bbox_format = kwargs.pop("agent_bbox_format", "norm1000")
     agent_observation_min_pixels = kwargs.pop("agent_observation_min_pixels", None)
     agent_prompt_style = kwargs.pop("agent_prompt_style", "native")
+    agent_environment = kwargs.pop("agent_environment", None)
+    agent_environment_kwargs = kwargs.pop("agent_environment_kwargs", None)
     if interaction_mode == "agentic":
         if name != "vllm":
             raise ValueError("agentic interaction currently requires the vllm backend")
@@ -678,6 +680,8 @@ def build_backend(name: str, model: str, **kwargs) -> Backend:
             agent_bbox_format=agent_bbox_format,
             agent_observation_min_pixels=agent_observation_min_pixels,
             agent_prompt_style=agent_prompt_style,
+            agent_environment=agent_environment,
+            agent_environment_kwargs=agent_environment_kwargs,
             **kwargs,
         )
     if interaction_mode != "one_shot":

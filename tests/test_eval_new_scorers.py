@@ -318,6 +318,7 @@ def test_skipped_result_and_scorer_registry():
         "answer_bbox",
         "grounding_iou",
         "refcoco",
+        "environment_reward",
         "cfpo_match",
     }
 

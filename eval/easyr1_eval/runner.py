@@ -205,9 +205,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--agent-profile",
-        choices=["deepeyes"],
+        choices=["deepeyes", "environment"],
         default=None,
-        help="Agent implementation selected when --interaction-mode agentic (default deepeyes).",
+        help="Agent implementation selected when --interaction-mode agentic (default deepeyes). environment: the "
+        "agent environment of --agent-environment, each sample's configuration from its env_config "
+        "(loader environment_tasks), scored with the environment's own episode reward (docs/agent_environments.md).",
+    )
+    parser.add_argument(
+        "--agent-environment",
+        default=None,
+        help="With --agent-profile environment: a registered environment (default remote_http) or "
+        "path/to/file.py:ClassName, as worker.rollout.agent_environment in training.",
+    )
+    parser.add_argument(
+        "--agent-environment-kwargs",
+        type=json.loads,
+        default=None,
+        help='With --agent-profile environment: its options as JSON, e.g. \'{"url": "http://127.0.0.1:8000"}\'.',
     )
     parser.add_argument("--agent-max-tool-calls", type=int, default=6)
     parser.add_argument("--agent-max-response-tokens", type=int, default=20480)
@@ -405,7 +419,39 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                 "--agent-max-response-tokens and "
                 "--agent-max-tokens-per-turn"
             )
-    if args.interaction_mode == "agentic" and getattr(args, "agent_prompt_style", "native") == "official":
+    environment_profile = args.interaction_mode == "agentic" and args.agent_profile == "environment"
+    if (args.agent_environment is not None or args.agent_environment_kwargs is not None) and not environment_profile:
+        parser.error("--agent-environment and --agent-environment-kwargs need --agent-profile environment")
+    if environment_profile:
+        # the environment writes the prompt and scores the episode (docs/agent_environments.md)
+        suite_defaults = getattr(args, "suite_defaults_applied", None) or {}
+        for key in ("system_prompt", "format_prompt"):
+            if getattr(args, key) and key not in suite_defaults:
+                parser.error(
+                    f"--agent-profile environment takes the prompt from the environment; drop --{key.replace('_', '-')}"
+                )
+            setattr(args, key, None)
+        if getattr(args, "agent_prompt_style", "native") != "native":
+            parser.error("--agent-prompt-style is a DeepEyes option")
+        if args.agent_tool_image_mode != "original":
+            parser.error("--agent-tool-image-mode is a DeepEyes option")
+        try:
+            from verl.workers.agent.environments import validate_environment_options
+
+            agent_loop_config_from_args(args)
+            options = _agent_environment_options(args)
+            validate_environment_options(options["agent_environment"], options["agent_environment_kwargs"])
+        except (TypeError, ValueError, FileNotFoundError) as exc:
+            parser.error(str(exc))
+        from verl.workers.agent.coordinates import check_chat_template_supports_tools
+
+        try:
+            check_chat_template_supports_tools(args.model, args.chat_template)
+        except ValueError as exc:
+            parser.error(f"{exc}. In eval: pass --chat-template {PROJECT_ROOT / AGENT_TOOL_CHAT_TEMPLATE}")
+        if args.agent_max_images_per_prompt <= 0:
+            parser.error("--agent-max-images-per-prompt must be positive")
+    elif args.interaction_mode == "agentic" and getattr(args, "agent_prompt_style", "native") == "official":
         if args.system_prompt and "system_prompt" not in (getattr(args, "suite_defaults_applied", None) or {}):
             parser.error("--agent-prompt-style official uses DeepEyes' own system prompt; drop --system-prompt")
         if args.format_prompt:
@@ -1434,6 +1480,7 @@ def build_eval_backend(args: argparse.Namespace):
             "original",
         ),
         agent_bbox_format=getattr(args, "box_format", "norm1000"),
+        **_agent_environment_options(args),
         chat_template=getattr(args, "chat_template", None),
         plain_think_tokens=getattr(args, "plain_think_tokens", "auto"),
         max_dynamic_patch=getattr(args, "max_dynamic_patch", None),
@@ -1644,6 +1691,8 @@ def print_dry_run(specs: list[BenchmarkSpec], args: argparse.Namespace) -> None:
     print(f"interaction_mode: {getattr(args, 'interaction_mode', 'one_shot')}")
     if getattr(args, "interaction_mode", "one_shot") == "agentic":
         print(f"agent_profile: {args.agent_profile}")
+        for key, value in _agent_environment_options(args).items():
+            print(f"{key}: {value}")
         print(f"agent_output_contract: {getattr(args, 'agent_output_contract', AGENT_OUTPUT_CONTRACT_NATIVE)}")
         print(f"agent_config: {agent_loop_config_from_args(args)}")
         print(f"agent_max_images_per_prompt: {args.agent_max_images_per_prompt}")
@@ -1677,6 +1726,16 @@ def print_dry_run(specs: list[BenchmarkSpec], args: argparse.Namespace) -> None:
         )
 
 
+def _agent_environment_options(args: argparse.Namespace) -> dict[str, Any]:
+    """--agent-environment / --agent-environment-kwargs, only for --agent-profile environment."""
+    if getattr(args, "agent_profile", "deepeyes") != "environment":
+        return {}
+    return {
+        "agent_environment": getattr(args, "agent_environment", None) or "remote_http",
+        "agent_environment_kwargs": dict(getattr(args, "agent_environment_kwargs", None) or {}),
+    }
+
+
 def _agent_fingerprint_fields(args: argparse.Namespace) -> dict[str, Any]:
     if getattr(args, "interaction_mode", "one_shot") != "agentic":
         return {}
@@ -1702,6 +1761,8 @@ def _agent_fingerprint_fields(args: argparse.Namespace) -> dict[str, Any]:
             else {}
         ),
         **({"agent_prompt_style": "official"} if getattr(args, "agent_prompt_style", "native") == "official" else {}),
+        # the environment and its options (e.g. the server url) only for the environment profile
+        **_agent_environment_options(args),
         "agent_tool_image_mode": getattr(
             args,
             "agent_tool_image_mode",

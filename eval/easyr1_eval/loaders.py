@@ -73,6 +73,7 @@ def load_samples(spec: BenchmarkSpec, data_root: Path, limit: int | None = None)
         "cfpo_json": load_cfpo_json,
         "grit_jsonl": load_grit_jsonl,
         "refcoco": load_refcoco,
+        "environment_tasks": load_environment_tasks,
     }
     try:
         loader = loaders[spec.loader]
@@ -240,6 +241,35 @@ def load_easy_parquet(spec: BenchmarkSpec, data_root: Path, limit: int | None = 
                 images=images,
                 extra_info=_mapping(row.get("extra_info")),
                 metadata={"row_index": int(index), "question": prompt},
+            )
+        )
+    return samples
+
+
+def load_environment_tasks(spec: BenchmarkSpec, data_root: Path, limit: int | None = None) -> list[EvalSample]:
+    """Tasks of an agent environment (--agent-profile environment): parquet rows with ``env_config`` (a JSON
+    object or its string), optional ``id``, ``prompt`` (a description, for the prediction files) and ``answer``.
+    The environment builds the prompt and images in reset and scores the episode itself."""
+    rows = _read_parquets(_require_paths(spec, data_root))
+    if "env_config" not in rows.columns:
+        raise ValueError(f"{spec.key}: environment tasks need an env_config column")
+    samples = []
+    for index, row in rows.iterrows():
+        if limit is not None and len(samples) >= limit:
+            break
+        env_config = row["env_config"]
+        if isinstance(env_config, str):
+            env_config = json.loads(env_config)
+        if not isinstance(env_config, dict):
+            raise ValueError(f"{spec.key} row {index}: env_config must be a JSON object")
+        samples.append(
+            EvalSample(
+                benchmark=spec.key,
+                sample_id=str(row.get("id") or f"{spec.key}:{index}"),
+                prompt=str(row.get("prompt") or ""),
+                target=row.get("answer"),
+                extra_info={"env_config": env_config},
+                metadata={"row_index": int(index)},
             )
         )
     return samples

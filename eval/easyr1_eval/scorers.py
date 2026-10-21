@@ -3097,6 +3097,70 @@ def resolve_judge_max_tokens(value: int | None, thinking: str | None) -> int:
     return DEFAULT_JUDGE_MAX_TOKENS_DISABLED_THINKING
 
 
+def environment_row_rewards(row: dict[str, Any]) -> list[float | None]:
+    """The episode reward of each of a row's trajectories (--agent-profile environment); None when the trajectory
+    has no environment outcome (it failed before the episode ended)."""
+    rewards = []
+    for diagnostic in row.get("agent_diagnostics") or []:
+        outcome = diagnostic.get("env_outcome") if isinstance(diagnostic, dict) else None
+        rewards.append(
+            float(outcome["reward"]) if isinstance(outcome, dict) and outcome.get("reward") is not None else None
+        )
+    return rewards
+
+
+def environment_row_score(row: dict[str, Any]) -> float:
+    rewards = [0.0 if reward is None else reward for reward in environment_row_rewards(row)]
+    return sum(rewards) / len(rewards) if rewards else 0.0
+
+
+def score_environment_reward(
+    spec: BenchmarkSpec, rows: PredictionRows, judge_config: JudgeConfig | None, output_dir: Path
+) -> MetricResult:
+    """--agent-profile environment: the episode reward that the environment reported (its finalize), the mean
+    over a task's samples and then over tasks; normalized = 100 x mean reward (rewards in [0, 1]). A trajectory
+    without an environment outcome (it failed before the episode ended) counts as 0 and is reported."""
+
+    per_sample = []
+    components: dict[str, list[float]] = {}
+    metrics: dict[str, list[float]] = {}
+    without_outcome = 0
+    k_values = set()
+    for row in rows:
+        rewards = environment_row_rewards(row)
+        without_outcome += sum(reward is None for reward in rewards)
+        for diagnostic in row.get("agent_diagnostics") or []:
+            outcome = diagnostic.get("env_outcome") if isinstance(diagnostic, dict) else None
+            if isinstance(outcome, dict):
+                for name, value in (outcome.get("components") or {}).items():
+                    components.setdefault(name, []).append(float(value))
+                for name, value in (outcome.get("metrics") or {}).items():
+                    metrics.setdefault(name, []).append(float(value))
+        k_values.add(len(rewards))
+        per_sample.append(
+            {"sample_id": row.get("sample_id"), "rewards": rewards, "mean_reward": environment_row_score(row)}
+        )
+    count = len(per_sample)
+    mean_reward = sum(item["mean_reward"] for item in per_sample) / count if count else 0.0
+    write_jsonl(output_dir / f"{spec.key}_per_sample.jsonl", per_sample)
+    return MetricResult(
+        spec.key,
+        spec.group,
+        spec.primary_metric,
+        mean_reward,
+        100.0 * mean_reward,
+        count,
+        details={
+            "scoring": "environment_episode_reward",
+            "k": max(k_values) if k_values else 0,
+            "mean_reward": mean_reward,
+            "trajectories_without_outcome": without_outcome,
+            "components": {name: sum(values) / len(values) for name, values in sorted(components.items())},
+            "metrics": {name: sum(values) / len(values) for name, values in sorted(metrics.items())},
+        },
+    )
+
+
 SCORERS: dict[str, Scorer] = {
     "boxed_exact_match": score_boxed_exact_match,
     "cfpo_match": score_cfpo_match,
@@ -3113,4 +3177,5 @@ SCORERS: dict[str, Scorer] = {
     "answer_bbox": score_answer_bbox,
     "grounding_iou": score_grounding_iou,
     "refcoco": score_refcoco,
+    "environment_reward": score_environment_reward,
 }

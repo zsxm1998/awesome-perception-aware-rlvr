@@ -25,7 +25,7 @@ from verl.workers.agent.backends import (
     VLLMAgentRequestError,
     VLLMAgentSchedulerError,
 )
-from verl.workers.agent.environments import EnvironmentContext, environment_factory
+from verl.workers.agent.environments import EnvironmentContext, environment_factory, validate_environment_options
 from verl.workers.agent.inference import run_agent_inference
 from verl.workers.agent.protocol import (
     AgentImageConfig,
@@ -45,9 +45,11 @@ if TYPE_CHECKING:
 
 
 AgentRunner = Callable[..., Awaitable[AgentTrajectory]]
-# --agent-profile -> registered agent environment (verl.workers.agent.environments)
-_AGENT_PROFILES: dict[str, str] = {
+# --agent-profile -> agent environment (verl.workers.agent.environments); "environment" takes it from
+# --agent-environment, and each sample's environment configuration from its extra_info["env_config"]
+_AGENT_PROFILES: dict[str, str | None] = {
     "deepeyes": "deepeyes",
+    "environment": None,
 }
 _ANSWER_OPEN_PATTERN = re.compile(r"<answer>", flags=re.IGNORECASE)
 _ANSWER_CLOSE_PATTERN = re.compile(r"</answer>", flags=re.IGNORECASE)
@@ -92,12 +94,20 @@ class AgenticVLLMBackend:
         save_perturbation_samples: int = 0,
         force_vllm_feature_wrapper: bool = False,
         agent_bbox_format: str = "norm1000",
+        agent_environment: str | None = None,
+        agent_environment_kwargs: dict[str, Any] | None = None,
         chat_template: str | None = None,
         plain_think_tokens: str = "auto",
         max_dynamic_patch: int | None = None,
     ):
         if agent_profile not in _AGENT_PROFILES:
             raise ValueError(f"unknown agent profile: {agent_profile}")
+        if agent_profile == "environment":
+            if not agent_environment:
+                raise ValueError("--agent-profile environment needs --agent-environment")
+            validate_environment_options(agent_environment, agent_environment_kwargs)
+        self.agent_environment = agent_environment
+        self.agent_environment_kwargs = dict(agent_environment_kwargs or {})
         self.agent_runner = run_agent_inference
         if not isinstance(agent_config, AgentLoopConfig):
             raise TypeError("agent_config must be an AgentLoopConfig")
@@ -228,7 +238,7 @@ class AgenticVLLMBackend:
             samples,
             source_images_by_sample,
         ):
-            if source_image_error is not None:
+            if source_image_error is not None or self.agent_profile != "deepeyes":
                 continue
             assert source_images is not None
             required_images = len(source_images)
@@ -242,15 +252,25 @@ class AgenticVLLMBackend:
                     f"required at least {required_images}"
                 )
 
-        make_environment = environment_factory(
-            _AGENT_PROFILES[self.agent_profile],
-            EnvironmentContext(processor=self.processor, image_preprocessor=image_cache.prepare),
-            {
-                "bbox_format": self.agent_bbox_format,
-                "prompt_style": getattr(self, "agent_prompt_style", "native"),
-                "tool_image_mode": self.agent_tool_image_mode,
-            },
+        environment_context = EnvironmentContext(
+            processor=self.processor,
+            image_preprocessor=image_cache.prepare,
+            max_tool_calls=self.agent_config.max_tool_calls,
         )
+        if self.agent_profile == "environment":
+            make_environment = environment_factory(
+                self.agent_environment, environment_context, self.agent_environment_kwargs
+            )
+        else:
+            make_environment = environment_factory(
+                _AGENT_PROFILES[self.agent_profile],
+                environment_context,
+                {
+                    "bbox_format": self.agent_bbox_format,
+                    "prompt_style": getattr(self, "agent_prompt_style", "native"),
+                    "tool_image_mode": self.agent_tool_image_mode,
+                },
+            )
         scheduler = VLLMAgentBatchScheduler(
             self.base.llm,
             use_tqdm=False,
@@ -285,6 +305,7 @@ class AgenticVLLMBackend:
             results = await asyncio.gather(*tasks, return_exceptions=True)
         finally:
             await scheduler.close()
+            await environment_context.aclose()
         scheduler_failures = [result for result in results if isinstance(result, VLLMAgentSchedulerError)]
         if scheduler_failures:
             signatures = sorted({str(error) for error in scheduler_failures})
@@ -325,17 +346,23 @@ class AgenticVLLMBackend:
         image_cache: VLLMAgentImageCache,
         make_environment: Callable[[], Any],
     ) -> AgentTrajectory:
-        if not sample.messages:
-            raise AgenticSampleError("agentic evaluation requires chat-mode messages for every sample")
-        if source_image_error is not None:
-            raise AgenticSampleError(
-                "failed to load source images for agentic evaluation: "
-                f"{type(source_image_error).__name__}: {source_image_error}"
-            ) from source_image_error
-        assert source_images is not None
+        if self.agent_profile == "environment":
+            env_config = sample.extra_info.get("env_config")
+            if not isinstance(env_config, dict):
+                raise AgenticSampleError("the environment profile needs extra_info['env_config'] (a JSON object)")
+        else:
+            if not sample.messages:
+                raise AgenticSampleError("agentic evaluation requires chat-mode messages for every sample")
+            if source_image_error is not None:
+                raise AgenticSampleError(
+                    "failed to load source images for agentic evaluation: "
+                    f"{type(source_image_error).__name__}: {source_image_error}"
+                ) from source_image_error
+            assert source_images is not None
+            env_config = {"messages": sample.messages, "images": source_images}
         return await self.agent_runner(
             environment=make_environment(),
-            env_config={"messages": sample.messages, "images": source_images},
+            env_config=env_config,
             inference_engine=self.base.llm,
             sampling_params=sampling_params,
             processor=self.processor,
@@ -502,6 +529,29 @@ def trajectory_to_generation_output(
         # Why failed tool calls failed (invalid bbox, image_idx, ...).
         "tool_errors": tool_errors,
     }
+    # What an environment reported, per tool call and for the episode (absent for DeepEyes, which reports none).
+    env_steps = [
+        {
+            "turn_index": turn_index,
+            "tool": step.tool_call.name,
+            "state_key": step.state_key,
+            "cost": step.cost,
+            "reward": step.env_reward,
+            "done": step.env_done,
+            "info": step.env_info,
+        }
+        for turn_index, step in enumerate(trajectory.steps)
+        if step.tool_call is not None
+        and (step.state_key is not None or step.cost or step.env_reward is not None or step.env_done or step.env_info)
+    ]
+    if env_steps:
+        agent_diagnostics["env_steps"] = env_steps
+    if trajectory.env_outcome is not None:
+        agent_diagnostics["env_outcome"] = {
+            "reward": trajectory.env_outcome.reward,
+            "components": dict(trajectory.env_outcome.components),
+            "metrics": dict(trajectory.env_outcome.metrics),
+        }
     return GenerationOutput(
         text=scoring_text,
         finish_reason=finish_reason,
