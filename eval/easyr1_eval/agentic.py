@@ -25,12 +25,14 @@ from verl.workers.agent.backends import (
     VLLMAgentRequestError,
     VLLMAgentSchedulerError,
 )
-from verl.workers.agent.inference import run_deepeyes_inference
+from verl.workers.agent.environments import EnvironmentContext, environment_factory
+from verl.workers.agent.inference import run_agent_inference
 from verl.workers.agent.protocol import (
     AgentImageConfig,
     AgentLoopConfig,
     AgentStatus,
     AgentTrajectory,
+    derive_environment_seed,
 )
 from verl.workers.agent.tool_call import NativeToolCallCodec
 
@@ -43,8 +45,9 @@ if TYPE_CHECKING:
 
 
 AgentRunner = Callable[..., Awaitable[AgentTrajectory]]
-_AGENT_PROFILES: dict[str, AgentRunner] = {
-    "deepeyes": run_deepeyes_inference,
+# --agent-profile -> registered agent environment (verl.workers.agent.environments)
+_AGENT_PROFILES: dict[str, str] = {
+    "deepeyes": "deepeyes",
 }
 _ANSWER_OPEN_PATTERN = re.compile(r"<answer>", flags=re.IGNORECASE)
 _ANSWER_CLOSE_PATTERN = re.compile(r"</answer>", flags=re.IGNORECASE)
@@ -93,10 +96,9 @@ class AgenticVLLMBackend:
         plain_think_tokens: str = "auto",
         max_dynamic_patch: int | None = None,
     ):
-        try:
-            self.agent_runner = _AGENT_PROFILES[agent_profile]
-        except KeyError as exc:
-            raise ValueError(f"unknown agent profile: {agent_profile}") from exc
+        if agent_profile not in _AGENT_PROFILES:
+            raise ValueError(f"unknown agent profile: {agent_profile}")
+        self.agent_runner = run_agent_inference
         if not isinstance(agent_config, AgentLoopConfig):
             raise TypeError("agent_config must be an AgentLoopConfig")
         if agent_max_images_per_prompt <= 0:
@@ -240,6 +242,15 @@ class AgenticVLLMBackend:
                     f"required at least {required_images}"
                 )
 
+        make_environment = environment_factory(
+            _AGENT_PROFILES[self.agent_profile],
+            EnvironmentContext(processor=self.processor, image_preprocessor=image_cache.prepare),
+            {
+                "bbox_format": self.agent_bbox_format,
+                "prompt_style": getattr(self, "agent_prompt_style", "native"),
+                "tool_image_mode": self.agent_tool_image_mode,
+            },
+        )
         scheduler = VLLMAgentBatchScheduler(
             self.base.llm,
             use_tqdm=False,
@@ -265,6 +276,7 @@ class AgenticVLLMBackend:
                             base_seed=config.seed,
                             scheduler=scheduler,
                             image_cache=image_cache,
+                            make_environment=make_environment,
                         )
                     )
                 )
@@ -311,6 +323,7 @@ class AgenticVLLMBackend:
         base_seed: int,
         scheduler: VLLMAgentBatchScheduler,
         image_cache: VLLMAgentImageCache,
+        make_environment: Callable[[], Any],
     ) -> AgentTrajectory:
         if not sample.messages:
             raise AgenticSampleError("agentic evaluation requires chat-mode messages for every sample")
@@ -321,23 +334,21 @@ class AgenticVLLMBackend:
             ) from source_image_error
         assert source_images is not None
         return await self.agent_runner(
+            environment=make_environment(),
+            env_config={"messages": sample.messages, "images": source_images},
             inference_engine=self.base.llm,
             sampling_params=sampling_params,
             processor=self.processor,
-            messages=sample.messages,
-            source_images=source_images,
             sample_index=sample_index,
             rollout_index=rollout_index,
             image_config=image_config,
+            env_seed=derive_environment_seed(base_seed, sample_index),
             config=self.agent_config,
             use_tqdm=False,
             base_seed=base_seed,
             scheduler=scheduler,
             image_cache=image_cache,
             max_model_len=self.max_model_len,
-            tool_image_mode=self.agent_tool_image_mode,
-            bbox_format=self.agent_bbox_format,
-            prompt_style=getattr(self, "agent_prompt_style", "native"),
         )
 
 

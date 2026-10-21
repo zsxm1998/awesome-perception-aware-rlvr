@@ -414,8 +414,8 @@ def test_agentic_backend_isolates_one_bad_sample_and_preserves_rollout_order(
     observed_tool_image_modes = []
 
     async def fake_agent_runner(**kwargs):
-        observed_tool_image_modes.append(kwargs["tool_image_mode"])
-        if kwargs["messages"][0]["content"] == "bad":
+        observed_tool_image_modes.append(kwargs["environment"].tool_image_mode)
+        if kwargs["env_config"]["messages"][0]["content"] == "bad":
             raise ValueError("bad sample")
         return _agent_trajectory()
 
@@ -604,7 +604,7 @@ def test_agentic_backend_never_downgrades_scheduler_failure_to_sample_error(
     backend.base = SimpleNamespace(llm=object())
 
     async def partially_failed_agent_runner(**kwargs):
-        if kwargs["messages"][0]["content"] == "failed":
+        if kwargs["env_config"]["messages"][0]["content"] == "failed":
             raise VLLMAgentSchedulerError("dispatcher stopped")
         return _agent_trajectory()
 

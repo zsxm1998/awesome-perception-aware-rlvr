@@ -33,10 +33,12 @@ from verl.workers.agent import (
 )
 from verl.workers.agent.backends import (
     VLLMAgentBatchScheduler,
+    VLLMAgentImageCache,
     VLLMAgentRequestError,
     VLLMAgentSchedulerError,
     VLLMGenerationBackend,
 )
+from verl.workers.agent.environments import LocalToolEnvironment
 from verl.workers.agent.protocol import GenerationRequest, ObservationEncodingRequest, ToolResult
 from verl.workers.agent.tools import AgentTool, ImageZoomInTool, ToolRegistry
 from verl.workers.agent.tools import base as tool_base
@@ -304,7 +306,7 @@ def test_agent_loop_preserves_action_ids_and_masks_observation_tokens():
         ]
     )
     encoder = RecordingObservationEncoder()
-    loop = AgentLoop(backend, encoder, ToolRegistry([ImageZoomInTool()]))
+    loop = AgentLoop(backend, encoder, LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), [source]))
 
     trajectory = asyncio.run(loop.run(prompt_ids=[1, 2, 3], source_images=[source]))
 
@@ -338,7 +340,7 @@ def test_agent_loop_applies_original_per_turn_budget_and_remaining_trajectory_bu
     loop = AgentLoop(
         backend,
         RecordingObservationEncoder([90, 91]),
-        ToolRegistry([ImageZoomInTool()]),
+        LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), [source]),
         config=AgentLoopConfig(
             max_response_tokens=7,
             max_tokens_per_turn=4,
@@ -357,7 +359,7 @@ def test_agent_loop_rejects_backend_output_longer_than_requested_turn_budget():
     loop = AgentLoop(
         backend,
         RecordingObservationEncoder(),
-        ToolRegistry([ImageZoomInTool()]),
+        LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), [Image.new("RGB", (100, 100))]),
         config=AgentLoopConfig(
             max_response_tokens=10,
             max_tokens_per_turn=4,
@@ -407,7 +409,7 @@ def test_agent_loop_records_which_configured_length_budget_was_exhausted(
     loop = AgentLoop(
         backend,
         RecordingObservationEncoder(),
-        ToolRegistry([ImageZoomInTool()]),
+        LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), [Image.new("RGB", (100, 100))]),
         config=AgentLoopConfig(
             max_response_tokens=max_response_tokens,
             max_tokens_per_turn=max_tokens_per_turn,
@@ -441,7 +443,7 @@ def test_agent_loop_records_context_window_length_stop_before_requested_cap():
     loop = AgentLoop(
         backend,
         RecordingObservationEncoder(),
-        ToolRegistry([ImageZoomInTool()]),
+        LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), [Image.new("RGB", (100, 100))]),
         config=AgentLoopConfig(
             max_response_tokens=10,
             max_tokens_per_turn=4,
@@ -477,7 +479,7 @@ def test_agent_loop_caps_generation_to_exact_remaining_context():
     loop = AgentLoop(
         backend,
         RecordingObservationEncoder(),
-        ToolRegistry([ImageZoomInTool()]),
+        LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), [Image.new("RGB", (100, 100))]),
         config=AgentLoopConfig(
             max_response_tokens=20,
             max_tokens_per_turn=10,
@@ -505,7 +507,7 @@ def test_agent_loop_stops_before_backend_when_context_is_already_full():
     loop = AgentLoop(
         backend,
         RecordingObservationEncoder(),
-        ToolRegistry([ImageZoomInTool()]),
+        LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), [Image.new("RGB", (100, 100))]),
     )
 
     trajectory = asyncio.run(
@@ -535,7 +537,7 @@ def test_agent_loop_does_not_commit_observation_that_leaves_no_generation_room()
     loop = AgentLoop(
         backend,
         RecordingObservationEncoder([90, 91, 92, 93]),
-        ToolRegistry([ImageZoomInTool()]),
+        LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), [Image.new("RGB", (100, 100))]),
     )
 
     trajectory = asyncio.run(
@@ -567,7 +569,9 @@ def test_agent_loop_crops_each_request_from_the_original_source_image():
             GenerationOutput([12], "<answer>done</answer>"),
         ]
     )
-    loop = AgentLoop(backend, RecordingObservationEncoder([90]), ToolRegistry([ImageZoomInTool()]))
+    loop = AgentLoop(
+        backend, RecordingObservationEncoder([90]), LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), [source])
+    )
 
     trajectory = asyncio.run(loop.run(prompt_ids=[1], source_images=[source]))
 
@@ -585,7 +589,7 @@ def test_six_failed_tool_attempts_still_allow_one_final_answer_generation():
     loop = AgentLoop(
         backend,
         encoder,
-        ToolRegistry([ImageZoomInTool()]),
+        LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), images),
         config=AgentLoopConfig(max_tool_calls=6, max_response_tokens=100),
     )
 
@@ -607,7 +611,7 @@ def test_seventh_tool_call_is_not_executed():
     loop = AgentLoop(
         backend,
         RecordingObservationEncoder([90]),
-        ToolRegistry([ImageZoomInTool()]),
+        LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), images),
         config=AgentLoopConfig(max_tool_calls=6, max_response_tokens=100),
     )
 
@@ -626,7 +630,7 @@ def test_agent_loop_never_appends_a_partial_multimodal_observation():
     loop = AgentLoop(
         backend,
         RecordingObservationEncoder([90, 91]),
-        ToolRegistry([ImageZoomInTool()]),
+        LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), [source]),
         config=AgentLoopConfig(max_response_tokens=3),
     )
 
@@ -659,7 +663,7 @@ def test_length_stopped_tool_call_is_never_parsed_or_executed():
     loop = AgentLoop(
         backend,
         encoder,
-        ToolRegistry([ImageZoomInTool()]),
+        LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), [source]),
         config=AgentLoopConfig(
             max_response_tokens=100,
             max_tokens_per_turn=1,
@@ -680,7 +684,11 @@ def test_length_stopped_tool_call_is_never_parsed_or_executed():
 
 def test_agent_loop_rejects_empty_final_answer():
     backend = ScriptedBackend([GenerationOutput([10], "<answer> \n </answer>")])
-    loop = AgentLoop(backend, RecordingObservationEncoder(), ToolRegistry([ImageZoomInTool()]))
+    loop = AgentLoop(
+        backend,
+        RecordingObservationEncoder(),
+        LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), [Image.new("RGB", (100, 100))]),
+    )
 
     trajectory = asyncio.run(loop.run(prompt_ids=[1], source_images=[Image.new("RGB", (100, 100))]))
 
@@ -703,7 +711,7 @@ def test_agent_loop_rejects_instruction_repeated_inside_unclosed_think():
     loop = AgentLoop(
         backend,
         PrefilledRecordingObservationEncoder(),
-        ToolRegistry([ImageZoomInTool()]),
+        LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), [Image.new("RGB", (100, 100))]),
     )
 
     trajectory = asyncio.run(loop.run(prompt_ids=[1], source_images=[Image.new("RGB", (100, 100))]))
@@ -740,7 +748,11 @@ def test_internal_tool_error_is_observable_and_returned_to_the_model(caplog):
             GenerationOutput([20], "<answer>done</answer>"),
         ]
     )
-    loop = AgentLoop(backend, RecordingObservationEncoder([90]), ToolRegistry([ExplodingTool()]))
+    loop = AgentLoop(
+        backend,
+        RecordingObservationEncoder([90]),
+        LocalToolEnvironment(ToolRegistry([ExplodingTool()]), [Image.new("RGB", (100, 100))]),
+    )
 
     trajectory = asyncio.run(loop.run(prompt_ids=[1], source_images=[Image.new("RGB", (100, 100))]))
 
@@ -816,7 +828,7 @@ def test_unknown_visual_token_count_is_not_reported_as_zero():
     loop = AgentLoop(
         backend,
         UnknownVisualObservationEncoder(),
-        ToolRegistry([ImageZoomInTool()]),
+        LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), [source]),
     )
 
     trajectory = asyncio.run(loop.run(prompt_ids=[1], source_images=[source]))
@@ -829,7 +841,9 @@ def test_unknown_visual_token_count_is_not_reported_as_zero():
 def test_no_tool_answer_is_a_single_generation_with_all_action_tokens_trainable():
     source = Image.new("RGB", (100, 100))
     backend = ScriptedBackend([GenerationOutput([4, 5, 6], "<answer>plain</answer>")])
-    loop = AgentLoop(backend, RecordingObservationEncoder(), ToolRegistry([ImageZoomInTool()]))
+    loop = AgentLoop(
+        backend, RecordingObservationEncoder(), LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), [source])
+    )
 
     trajectory = asyncio.run(loop.run(prompt_ids=[1, 2], source_images=[source]))
 
@@ -990,7 +1004,7 @@ def test_native_action_eos_is_trainable_without_duplicate_observation_terminator
             ),
         ]
     )
-    loop = AgentLoop(backend, adapter, registry)
+    loop = AgentLoop(backend, adapter, LocalToolEnvironment(registry, [Image.new("RGB", (100, 100))]))
 
     trajectory = asyncio.run(
         loop.run(
@@ -1045,7 +1059,7 @@ def test_native_chat_loop_rejects_noncanonical_turn_end_without_executing_tool()
             )
         ]
     )
-    loop = AgentLoop(backend, adapter, registry)
+    loop = AgentLoop(backend, adapter, LocalToolEnvironment(registry, [Image.new("RGB", (100, 100))]))
 
     trajectory = asyncio.run(
         loop.run(
@@ -1192,7 +1206,12 @@ def test_non_default_tool_budget_is_consistent_from_prompt_through_finalization(
             GenerationOutput([20, eos_token_id], "<answer>done</answer>"),
         ]
     )
-    loop = AgentLoop(backend, adapter, registry, config=config)
+    loop = AgentLoop(
+        backend,
+        adapter,
+        LocalToolEnvironment(registry, [Image.new("RGB", (100, 100)), Image.new("RGB", (100, 100))]),
+        config=config,
+    )
 
     trajectory = asyncio.run(
         loop.run(
@@ -1242,7 +1261,7 @@ def test_thinking_template_prefill_is_detected_on_every_generation_turn():
             ),
         ]
     )
-    loop = AgentLoop(backend, adapter, registry, config=config)
+    loop = AgentLoop(backend, adapter, LocalToolEnvironment(registry, [Image.new("RGB", (100, 100))]), config=config)
 
     trajectory = asyncio.run(
         loop.run(
@@ -1298,7 +1317,7 @@ def test_agent_loop_rejects_chat_adapter_tool_budget_mismatch():
         AgentLoop(
             ScriptedBackend([]),
             adapter,
-            ToolRegistry([ImageZoomInTool()]),
+            LocalToolEnvironment(ToolRegistry([ImageZoomInTool()])),
             config=AgentLoopConfig(max_tool_calls=2),
         )
 
@@ -1645,7 +1664,7 @@ def test_observation_min_pixels_keeps_small_crops_small_downstream():
             GenerationOutput([11], "<answer>done</answer>"),
         ]
     )
-    loop = AgentLoop(backend, encoder, ToolRegistry([ImageZoomInTool()]))
+    loop = AgentLoop(backend, encoder, LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), [source]))
     trajectory = asyncio.run(loop.run(prompt_ids=[1], source_images=[source]))
 
     (crop,) = trajectory.observation_images
@@ -1799,16 +1818,17 @@ def test_deepeyes_inference_picks_the_adapter_and_tools_per_row(
     max_tool_calls,
 ):
     from verl.workers.agent import inference
+    from verl.workers.agent.environments import DeepEyesEnvironment, EnvironmentContext
     from verl.workers.agent.protocol import AgentImageConfig
 
     captured = {}
 
     class CapturingLoop:
-        def __init__(self, *, backend, observation_encoder, tool_registry, config, seed_context):
-            captured.update(adapter=observation_encoder, registry=tool_registry, config=config)
+        def __init__(self, *, backend, observation_encoder, environment, config, seed_context):
+            captured.update(adapter=observation_encoder, environment=environment, config=config)
 
         async def run(self, **kwargs):
-            return SimpleNamespace()
+            return SimpleNamespace(final_answer=None, status=None)
 
     monkeypatch.setattr(inference, "AgentLoop", CapturingLoop)
     from verl.workers.agent.chat import OFFICIAL_DEEPEYES_SYSTEM_PROMPT
@@ -1816,26 +1836,35 @@ def test_deepeyes_inference_picks_the_adapter_and_tools_per_row(
     system = "Think, then answer."
     if tools_enabled:
         system = DEEPEYES_SYSTEM_PROMPT if prompt_style == "native" else OFFICIAL_DEEPEYES_SYSTEM_PROMPT
+    processor = qwen2_5_vl_tool_processor if prompt_style == "native" else qwen2_5_vl_processor
+    image_cache = VLLMAgentImageCache(min_pixels=3136, max_pixels=200704)
     asyncio.run(
-        inference.run_deepeyes_inference(
+        inference.run_agent_inference(
+            environment=DeepEyesEnvironment(
+                EnvironmentContext(processor=processor, image_preprocessor=image_cache.prepare),
+                bbox_format="pixel",
+                prompt_style=prompt_style,
+            ),
+            env_config={
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "\nWhat is it?"}]},
+                ],
+                "images": [Image.new("RGB", (56, 56))],
+                "tools_enabled": tools_enabled,
+            },
             inference_engine=object(),
             sampling_params=SamplingParams(n=1, seed=1),
-            processor=qwen2_5_vl_tool_processor if prompt_style == "native" else qwen2_5_vl_processor,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "\nWhat is it?"}]},
-            ],
-            source_images=[Image.new("RGB", (56, 56))],
+            processor=processor,
             sample_index=0,
             rollout_index=0,
             image_config=AgentImageConfig(min_pixels=3136, max_pixels=200704, limit_images=7),
+            env_seed=0,
             scheduler=VLLMAgentBatchScheduler(object()),
+            image_cache=image_cache,
             max_model_len=4096,
-            bbox_format="pixel",
-            tools_enabled=tools_enabled,
-            prompt_style=prompt_style,
         )
     )
     assert type(captured["adapter"]).__name__ == adapter_name
     assert captured["config"].max_tool_calls == max_tool_calls == captured["adapter"].max_tool_calls
-    assert len(captured["registry"].schemas(1)) == (1 if tools_enabled else 0)
+    assert len(captured["environment"].registry.schemas(1)) == (1 if tools_enabled else 0)

@@ -15,6 +15,7 @@
 from .chat import NativeToolChatAdapter, render_deepeyes_system_prompt
 from .loop import AgentLoop
 from .protocol import (
+    AgentEnvironment,
     AgentImageConfig,
     AgentLoopConfig,
     AgentSeedContext,
@@ -22,10 +23,14 @@ from .protocol import (
     AgentTrajectory,
     EncodedObservation,
     EncodedPrompt,
+    EnvOutcome,
+    EnvReset,
+    EnvStep,
     GenerationOutput,
     GenerationRequest,
     ObservationEncodingRequest,
     derive_agent_seed,
+    derive_environment_seed,
 )
 from .tool_call import NativeToolCallCodec
 from .trajectory import (
@@ -37,6 +42,7 @@ from .trajectory import (
 
 
 __all__ = [
+    "AgentEnvironment",
     "AgentImageConfig",
     "AgentLoop",
     "AgentLoopConfig",
@@ -47,6 +53,9 @@ __all__ = [
     "AgentTrajectoryRejected",
     "EncodedObservation",
     "EncodedPrompt",
+    "EnvOutcome",
+    "EnvReset",
+    "EnvStep",
     "GenerationOutput",
     "GenerationRequest",
     "MaterializedAgentTrajectory",
@@ -55,5 +64,6 @@ __all__ = [
     "ObservationEncodingRequest",
     "collate_materialized_agent_trajectories",
     "derive_agent_seed",
+    "derive_environment_seed",
     "render_deepeyes_system_prompt",
 ]

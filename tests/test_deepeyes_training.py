@@ -51,7 +51,8 @@ from verl.workers.agent import (
     derive_agent_seed,
 )
 from verl.workers.agent.backends import VLLMAgentBatchScheduler
-from verl.workers.agent.inference import run_deepeyes_inference
+from verl.workers.agent.environments import DeepEyesEnvironment, EnvironmentContext, LocalToolEnvironment
+from verl.workers.agent.inference import run_agent_inference
 from verl.workers.agent.protocol import AgentMetrics, AgentStep, AgentTrajectory
 from verl.workers.agent.tools import ImageZoomInTool, ToolRegistry
 from verl.workers.agent.trajectory import measure_expanded_observation
@@ -687,7 +688,7 @@ def test_agent_loop_applies_expanded_observation_budget_atomically():
     loop = AgentLoop(
         _ScriptedBackend(GenerationOutput([10, 11], tool_call)),
         _ExpandedObservationEncoder(),
-        ToolRegistry([ImageZoomInTool()]),
+        LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), [Image.new("RGB", (100, 100))]),
         config=AgentLoopConfig(max_response_tokens=6, max_tokens_per_turn=6),
     )
 
@@ -789,11 +790,11 @@ def test_vllm_rollout_passes_the_row_tool_switch_and_prompt_style(monkeypatch):
     rollout, prompts = _make_agentic_materialization_test_case(monkeypatch, [])
     calls = []
 
-    async def fake_run_deepeyes_inference(**kwargs):
-        calls.append((kwargs["tools_enabled"], kwargs["prompt_style"]))
+    async def fake_run_agent_inference(**kwargs):
+        calls.append((kwargs["env_config"]["tools_enabled"], kwargs["environment"].prompt_style))
         return _make_trajectory(kwargs["rollout_index"])
 
-    monkeypatch.setattr("verl.workers.agent.inference.run_deepeyes_inference", fake_run_deepeyes_inference)
+    monkeypatch.setattr("verl.workers.agent.inference.run_agent_inference", fake_run_agent_inference)
     rollout.generate_sequences(copy.deepcopy(prompts))
     assert calls == [(True, "native")] * 2  # no env_name column: every row has the tool
 
@@ -822,7 +823,7 @@ def test_group_rollout_and_turn_seeds_are_stable_and_distinct():
 
 
 def _make_agentic_materialization_test_case(monkeypatch, inference_calls):
-    async def fake_run_deepeyes_inference(**kwargs):
+    async def fake_run_agent_inference(**kwargs):
         inference_calls.append((kwargs["rollout_index"], kwargs["base_seed"]))
         trajectory = _make_trajectory(kwargs["rollout_index"])
         trajectory._test_rollout_index = kwargs["rollout_index"]
@@ -830,8 +831,8 @@ def _make_agentic_materialization_test_case(monkeypatch, inference_calls):
         return trajectory
 
     monkeypatch.setattr(
-        "verl.workers.agent.inference.run_deepeyes_inference",
-        fake_run_deepeyes_inference,
+        "verl.workers.agent.inference.run_agent_inference",
+        fake_run_agent_inference,
     )
     config = RolloutConfig(
         interaction_mode="agentic",
@@ -1129,7 +1130,7 @@ def test_agent_loop_uses_explicit_group_identity_for_generation_seed():
             AgentLoop(
                 backend,
                 _ExpandedObservationEncoder(),
-                ToolRegistry([ImageZoomInTool()]),
+                LocalToolEnvironment(ToolRegistry([ImageZoomInTool()]), [Image.new("RGB", (8, 8))]),
                 seed_context=AgentSeedContext(
                     base_seed=7,
                     sample_index=3,
@@ -1149,15 +1150,18 @@ def test_agent_loop_uses_explicit_group_identity_for_generation_seed():
 def test_deepeyes_inference_rejects_insufficient_vllm_image_capacity_before_rollout():
     with pytest.raises(ValueError, match="required at least 7"):
         asyncio.run(
-            run_deepeyes_inference(
+            run_agent_inference(
+                environment=DeepEyesEnvironment(
+                    EnvironmentContext(processor=_FakeQwen3VLProcessor(), image_preprocessor=lambda image: image)
+                ),
+                env_config={"messages": [], "images": [Image.new("RGB", (8, 8))]},
                 inference_engine=object(),
                 sampling_params=SamplingParams(n=1),
                 processor=_FakeQwen3VLProcessor(),
-                messages=[],
-                source_images=[Image.new("RGB", (8, 8))],
                 sample_index=0,
                 rollout_index=0,
                 image_config=AgentImageConfig(limit_images=6),
+                env_seed=0,
                 base_seed=1,
                 scheduler=VLLMAgentBatchScheduler(object()),
                 max_model_len=128,

@@ -168,6 +168,65 @@ class ObservationEncoder(Protocol):
 
 
 @dataclass
+class EnvReset:
+    """The task one episode starts from.
+
+    ``messages`` are chat messages whose image parts are ``{"type": "image"}`` placeholders, filled from
+    ``images`` in order. Empty ``tool_schemas`` mean that the model answers in one turn without tools.
+    ``max_images_per_step`` bounds the images one step returns; it sizes the per-prompt image limit.
+    """
+
+    messages: list[dict[str, Any]]
+    images: list[Image.Image]
+    tool_schemas: list[Mapping[str, Any]] = field(default_factory=list)
+    max_images_per_step: int = 1
+
+
+@dataclass
+class EnvStep:
+    """The environment's response to one well-formed tool call."""
+
+    result: ToolResult
+
+
+@dataclass
+class EnvOutcome:
+    """What an environment reports when its episode ends."""
+
+    reward: Optional[float]
+    components: Mapping[str, float] = field(default_factory=dict)
+    metrics: Mapping[str, float] = field(default_factory=dict)
+
+
+class AgentEnvironment(Protocol):
+    """One episode of an environment; every trajectory gets its own instance.
+
+    In the batched rollout the event loop switches between trajectories only at awaits that suspend.
+    In-process environments therefore must not suspend (no awaiting futures, threads, I/O or sleeps): an
+    ``await`` on them completes at once and leaves the scheduler's batches as they were.
+    ``chat_adapter`` returns the encoder that renders this environment's prompt and observations.
+    """
+
+    async def reset(self, config: Mapping[str, Any], seed: int) -> EnvReset: ...
+
+    async def step(self, call: ToolCall) -> EnvStep: ...
+
+    async def finalize(self, final_answer: Optional[str], status: AgentStatus) -> Optional[EnvOutcome]: ...
+
+    async def close(self) -> None: ...
+
+    def chat_adapter(
+        self,
+        processor: Any,
+        reset: EnvReset,
+        *,
+        max_tool_calls: int,
+        image_config: AgentImageConfig,
+        image_preprocessor: Any,
+    ) -> Any: ...
+
+
+@dataclass
 class AgentStep:
     model_text: str
     model_token_ids: list[int]
@@ -241,6 +300,8 @@ class AgentTrajectory:
     # Evaluation uses it to turn the final action into a standalone,
     # score-facing reply without deleting other model-specific special tokens.
     assistant_termination_token_ids: tuple[int, ...] = ()
+    # What the environment reported at the end of the episode (None: it reports nothing).
+    env_outcome: Optional[EnvOutcome] = None
 
     @property
     def all_images(self) -> list[Image.Image]:
@@ -263,6 +324,20 @@ def derive_agent_seed(
     if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in values):
         raise ValueError("agent seed components must be non-negative integers")
     payload = ":".join(str(value) for value in values).encode("ascii")
+    return int.from_bytes(hashlib.blake2b(payload, digest_size=8).digest(), "big") % (2**31)
+
+
+def derive_environment_seed(base_seed: int, sample_index: int) -> int:
+    """Seed of ``AgentEnvironment.reset``.
+
+    It depends on the prompt only, not on the rollout index or the retry, so all rollouts of a group and
+    their retries start from the same task state.
+    """
+
+    values = (base_seed, sample_index)
+    if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in values):
+        raise ValueError("environment seed components must be non-negative integers")
+    payload = f"env:{base_seed}:{sample_index}".encode("ascii")
     return int.from_bytes(hashlib.blake2b(payload, digest_size=8).digest(), "big") % (2**31)
 
 
