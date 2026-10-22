@@ -166,3 +166,25 @@ def test_first_round_needs_whole_rounds():
     config.algorithm.online_filtering_fallback = "keep_round"  # accumulates rounds; partial rounds are fine
     config.data.mini_rollout_batch_size = ROLLOUT_BATCH_SIZE // 2
     config.post_init()
+
+
+def test_reward_counts_do_not_depend_on_how_the_rounds_split_the_candidates(monkeypatch):
+    """A metric that only the first round's samples report is counted over all candidates (4 of 8)."""
+
+    class PartialReward(_Reward):
+        def _compute(self, batch):
+            rewards, metrics = super()._compute(batch)
+            if not hasattr(self, "rounds_seen"):
+                self.rounds_seen = 0
+            self.rounds_seen += 1
+            if self.rounds_seen == 1:
+                metrics["density"] = [0.8, 0.6, 0.4, 0.2]
+            return rewards, metrics
+
+    trainer = _trainer(monkeypatch, _config(), [[MIXED, SOLVED], [FAILED, MIXED]])
+    trainer.reward_fn = PartialReward([[MIXED, SOLVED], [FAILED, MIXED]])
+    metrics = {}
+    trainer._make_batch_data(metrics)
+
+    assert metrics["reward/density"] == pytest.approx(0.5) and metrics["reward_count/density"] == 4
+    assert "reward_count/accuracy" not in metrics

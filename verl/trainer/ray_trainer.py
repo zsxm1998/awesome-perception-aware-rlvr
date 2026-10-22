@@ -86,7 +86,9 @@ from .metrics import (
     compute_length_metrics,
     compute_throughout_metrics,
     compute_timing_metrics,
+    extend_reward_metrics,
     reduce_metrics,
+    reduce_reward_metrics,
 )
 from .perception_reasoning_data import (
     PerceptionReasoningCorruptionBuilder,
@@ -767,7 +769,9 @@ class RayPPOTrainer:
         eligible_sample_mask = None
         if self.grounding_consistency_scorer is not None and "grounding_consistency" not in batch.non_tensor_batch:
             _, pre_reward_metrics = ray.get(reward_fn.compute_reward.remote(self._reward_rpc_input(batch)))
-            accuracy_values = pre_reward_metrics.get("accuracy")
+            accuracy_values = self._per_sample_reward_values(
+                pre_reward_metrics, "accuracy", "grounding consistency gating", required=False
+            )
             uids = batch.non_tensor_batch.get("uid")
             if accuracy_values is not None and uids is not None:
                 eligible_sample_mask = compute_group_eligibility_mask(uids, accuracy_values)
@@ -780,11 +784,36 @@ class RayPPOTrainer:
         claim probes: as on the other filtered paths, reward/overall describes the kept batch and the metrics online
         filtering logged describe every candidate, except the probe-dependent ones, whose filtering-pass values are
         placeholders."""
-        values = {f"reward/{k}": v for k, v in reduce_metrics(reward_metrics).items()}
+        values = self._reward_metric_values(reward_metrics)
         if self.config.algorithm.online_filtering:
             rescored = {"reward/overall", *(f"reward/{k}" for k in PERCEPTION_REWARD_METRICS)}
             values = {k: v for k, v in values.items() if k in rescored or k not in metrics}
         metrics.update(values)
+
+    @staticmethod
+    def _reward_metric_values(reward_metrics: dict[str, list[Any]]) -> dict[str, Any]:
+        """reward/<key>: the mean over the samples that reported the key; reward_count/<key>: how many did, for the
+        keys that some samples did not report."""
+        means, counts = reduce_reward_metrics(reward_metrics)
+        return {
+            **{f"reward/{key}": value for key, value in means.items()},
+            **{f"reward_count/{key}": value for key, value in counts.items()},
+        }
+
+    @staticmethod
+    def _per_sample_reward_values(
+        reward_metrics: dict[str, list[Any]], key: str, purpose: str, *, required: bool = True
+    ) -> Optional[list[Any]]:
+        """A reward metric used per sample (by position): every sample must report it."""
+        if not required and key not in reward_metrics:
+            return None
+        values = reward_metrics[key]
+        if any(value is None for value in values):
+            raise ValueError(
+                f"{purpose} needs the reward metric {key!r} from every sample, but the reward function left it out "
+                "for some samples"
+            )
+        return values
 
     def _attach_claim_probe_scores(self, batch: DataProto, metrics: dict[str, Any]) -> None:
         """Probe the responses with accuracy 1 and write their perception scores (see claim_probes.py).
@@ -798,7 +827,9 @@ class RayPPOTrainer:
         _, pre_reward_metrics = ray.get(self.reward_fn.compute_reward.remote(self._reward_rpc_input(batch)))
         if "accuracy" not in pre_reward_metrics:
             raise KeyError("claim probes need the reward function to report `accuracy`")
-        rows = claim_probe_rows(batch, pre_reward_metrics["accuracy"], count)
+        rows = claim_probe_rows(
+            batch, self._per_sample_reward_values(pre_reward_metrics, "accuracy", "claim probes"), count
+        )
         probe_output = None
         if rows:
             probes = build_claim_probe_batch(batch, rows, self.config.data.seed, self.global_step)
@@ -1069,7 +1100,8 @@ class RayPPOTrainer:
             if hasattr(values, "tolist"):
                 values = values.tolist()
             for index, value in enumerate(values[:batch_size]):
-                details[index][key] = value
+                if value is not None:  # a sample has the keys it reported (collect_reward_metrics aligns them)
+                    details[index][key] = value
         return details
 
     @staticmethod
@@ -1219,7 +1251,8 @@ class RayPPOTrainer:
     def _validate(self) -> dict[str, Any]:
         reward_tensor_lst = []
         generation_samples = []
-        reward_metrics_lst = defaultdict(list)
+        reward_metrics_lst: dict[str, list[Any]] = {}
+        num_scored = 0
         length_metrics_lst = defaultdict(list)
         print("Start validation...")
         self.actor_rollout_ref_wg.prepare_rollout_engine()
@@ -1275,8 +1308,7 @@ class RayPPOTrainer:
                 )
 
             reward_tensor_lst.append(reward_tensor)
-            for key, value in reward_metrics.items():
-                reward_metrics_lst[key].extend(value)
+            num_scored = extend_reward_metrics(reward_metrics_lst, reward_metrics, num_scored)
 
             for key, value in compute_length_metrics(test_batch).items():
                 length_metrics_lst[key].append(value)
@@ -1284,7 +1316,11 @@ class RayPPOTrainer:
         self.actor_rollout_ref_wg.release_rollout_engine()
         self._maybe_log_val_generations(generation_samples)
         self.val_reward_score = torch.cat(reward_tensor_lst, dim=0).sum(-1).mean().item()
-        val_reward_metrics = {f"val/{key}_reward": value for key, value in reduce_metrics(reward_metrics_lst).items()}
+        val_reward_means, val_reward_counts = reduce_reward_metrics(reward_metrics_lst)
+        val_reward_metrics = {
+            **{f"val/{key}_reward": value for key, value in val_reward_means.items()},
+            **{f"val/{key}_reward_count": value for key, value in val_reward_counts.items()},
+        }
         val_length_metrics = {f"val_{key}": value for key, value in reduce_metrics(length_metrics_lst).items()}
         print("Finish validation.")
         return {
@@ -1338,7 +1374,11 @@ class RayPPOTrainer:
     def _make_batch_data(self, metrics: dict[str, Any]) -> DataProto:
         batch = None
         first_round_batch = None  # online_filtering_fallback=first_round trains on it when the rounds run out
-        all_metrics = defaultdict(list)
+        # reward metrics of every candidate, aligned across rounds (extend_reward_metrics); grounding rewards of the
+        # two-pass path describe the kept samples only, so they are gathered apart
+        all_metrics: dict[str, list[Any]] = {}
+        num_candidates = 0
+        kept_grounding_consistency: list[Any] = []
         scorer_metrics = defaultdict(list)
         num_try_make_batch = 0
         print("Start generating batch...")
@@ -1438,17 +1478,23 @@ class RayPPOTrainer:
                     _, pre_reward_metrics = ray.get(
                         self.reward_fn.compute_reward.remote(self._reward_rpc_input(new_batch))
                     )
-                    for k, v in pre_reward_metrics.items():
-                        # accuracy/format metrics still describe all candidates; grounding rewards
-                        # are only computed for kept samples and get appended after the second pass
-                        if k != "grounding_consistency":
-                            all_metrics[k].extend(v)
+                    # accuracy/format metrics still describe all candidates; grounding rewards
+                    # are only computed for kept samples and get appended after the second pass
+                    num_candidates = extend_reward_metrics(
+                        all_metrics,
+                        {k: v for k, v in pre_reward_metrics.items() if k != "grounding_consistency"},
+                        num_candidates,
+                    )
 
                     kept_sample_idxs = self._select_filtered_sample_idxs(
                         new_batch.non_tensor_batch["uid"],
-                        pre_reward_metrics[self.config.algorithm.filter_key],
+                        self._per_sample_reward_values(
+                            pre_reward_metrics, self.config.algorithm.filter_key, "online filtering (filter_key)"
+                        ),
                     )
-                    accuracy_values = pre_reward_metrics.get("accuracy")
+                    accuracy_values = self._per_sample_reward_values(
+                        pre_reward_metrics, "accuracy", "grounding consistency gating", required=False
+                    )
                     new_batch = new_batch[kept_sample_idxs]
                     eligible_sample_mask = None
                     if accuracy_values is not None:
@@ -1463,7 +1509,7 @@ class RayPPOTrainer:
                         self.reward_fn.compute_reward.remote(self._reward_rpc_input(new_batch))
                     )
                     if "grounding_consistency" in reward_metrics:
-                        all_metrics["grounding_consistency"].extend(reward_metrics["grounding_consistency"])
+                        kept_grounding_consistency.extend(reward_metrics["grounding_consistency"])
                     new_batch.batch["token_level_scores"] = reward_tensor
                     new_batch.non_tensor_batch["reward_details"] = np.array(
                         self._build_reward_details(reward_metrics, len(new_batch)),
@@ -1481,12 +1527,13 @@ class RayPPOTrainer:
                         self._build_reward_details(reward_metrics, len(new_batch)),
                         dtype=object,
                     )
-                    for k, v in reward_metrics.items():
-                        all_metrics[k].extend(v)
+                    num_candidates = extend_reward_metrics(all_metrics, reward_metrics, num_candidates)
 
                     kept_sample_idxs = self._select_filtered_sample_idxs(
                         new_batch.non_tensor_batch["uid"],
-                        reward_metrics[self.config.algorithm.filter_key],
+                        self._per_sample_reward_values(
+                            reward_metrics, self.config.algorithm.filter_key, "online filtering (filter_key)"
+                        ),
                     )
                     if first_round_batch is None and self.config.algorithm.online_filtering_fallback == "first_round":
                         first_round_batch = new_batch
@@ -1517,7 +1564,10 @@ class RayPPOTrainer:
             if first_round_batch is not None:
                 metrics["reward/filter_first_round_fallback"] = float(batch is first_round_batch)
             if self.config.algorithm.online_filtering:
-                metrics.update({f"reward/{k}": v for k, v in reduce_metrics(all_metrics).items()})
+                metrics.update(self._reward_metric_values(all_metrics))
+                if kept_grounding_consistency:
+                    grounding = {"grounding_consistency": kept_grounding_consistency}
+                    metrics.update(self._reward_metric_values(grounding))
             if scorer_metrics:
                 metrics.update(
                     {

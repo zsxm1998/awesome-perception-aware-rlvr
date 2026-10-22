@@ -19,7 +19,7 @@ import os
 import sys
 from collections import defaultdict
 from functools import partial
-from typing import Any, Callable, NotRequired, Tuple, TypedDict
+from typing import Any, Callable, Mapping, NotRequired, Sequence, Tuple, TypedDict
 
 import torch
 from transformers import PreTrainedTokenizer
@@ -230,13 +230,22 @@ def _attach_agent_reward_fields(
         reward_input[key] = value
 
 
+def collect_reward_metrics(scores: Sequence[Mapping[str, Any]]) -> dict[str, list[Any]]:
+    """Per-metric lists aligned with the samples. Samples may report different metrics (e.g. an environment's
+    components that apply to some tasks only): a sample without a metric has None at its position."""
+    keys: dict[str, None] = {}
+    for score in scores:
+        keys.update(dict.fromkeys(score))
+    return defaultdict(list, {key: [score.get(key) for score in scores] for key in keys})
+
+
 class SequentialFunctionRewardManagerMixin:
     reward_fn: SequentialRewardFunction
     add_response_ids: bool = False
 
     def compute_reward_sequential(self, data: DataProto) -> Tuple[torch.Tensor, dict[str, list[float]]]:
         reward_tensor = torch.zeros_like(data.batch["responses"], dtype=torch.float32)
-        reward_metrics = defaultdict(list)
+        scores = []
         for i in range(len(data)):
             response_str, cur_response_length, reward_position = _response_payload(
                 data,
@@ -265,10 +274,9 @@ class SequentialFunctionRewardManagerMixin:
             _add_perception_score(reward_input, data, i)
             score = self.reward_fn(reward_input)
             reward_tensor[i, reward_position] = score["overall"]
-            for key, value in score.items():
-                reward_metrics[key].append(value)
+            scores.append(score)
 
-        return reward_tensor, reward_metrics
+        return reward_tensor, collect_reward_metrics(scores)
 
 
 class BatchFunctionRewardManagerMixin:
@@ -309,13 +317,10 @@ class BatchFunctionRewardManagerMixin:
 
         scores = self.reward_fn(reward_inputs)
         reward_tensor = torch.zeros_like(data.batch["responses"], dtype=torch.float32)
-        reward_metrics = defaultdict(list)
         for i, score in enumerate(scores):
             reward_tensor[i, reward_positions[i]] = score["overall"]
-            for key, value in score.items():
-                reward_metrics[key].append(value)
 
-        return reward_tensor, reward_metrics
+        return reward_tensor, collect_reward_metrics(scores)
 
 
 class AutoRewardManager(BatchFunctionRewardManagerMixin, SequentialFunctionRewardManagerMixin):
