@@ -209,11 +209,21 @@ class EnvStep:
 
 @dataclass
 class EnvOutcome:
-    """What an environment reports when its episode ends."""
+    """What an environment reports when its episode ends.
+
+    ``reward`` None means that the environment does not score the episode (a reward function that reads the answer
+    scores it, e.g. DeepEyes over HTTP); the environment reward function and evaluation scorer then fail rather than
+    count it as 0. ``components`` and ``metrics`` are finite numbers, logged as ``reward/env/<name>``; an episode may
+    report only the names that apply to it. ``details`` is any JSON object, kept verbatim in the trajectory records
+    (not aggregated, not given to reward functions). ``episode_id`` is the environment's own name of the episode
+    (remote_http: the server's episode_id), to match the records with the environment's logs.
+    """
 
     reward: Optional[float]
     components: Mapping[str, float] = field(default_factory=dict)
     metrics: Mapping[str, float] = field(default_factory=dict)
+    details: Mapping[str, Any] = field(default_factory=dict)
+    episode_id: Optional[str] = None
 
 
 class AgentEnvironment(Protocol):
@@ -335,6 +345,39 @@ class AgentTrajectory:
     @property
     def input_ids(self) -> list[int]:
         return [*self.prompt_ids, *self.response_ids]
+
+
+def environment_report(steps: Sequence[Any], outcome: Optional[EnvOutcome]) -> dict[str, Any]:
+    """What an environment reported during an episode, as trajectory records keep it (training generations,
+    evaluation outputs): ``env_steps`` for the tool calls it answered with a state, cost, reward, done
+    or info, and ``env_outcome``. Empty for an environment that reports neither (DeepEyes)."""
+
+    env_steps = [
+        {
+            "turn_index": turn_index,
+            "tool": step.tool_call.name,
+            "state_key": step.state_key,
+            "cost": step.cost,
+            "reward": step.env_reward,
+            "done": step.env_done,
+            "info": dict(step.env_info),
+        }
+        for turn_index, step in enumerate(steps)
+        if step.tool_call is not None
+        and (step.state_key is not None or step.cost or step.env_reward is not None or step.env_done or step.env_info)
+    ]
+    report: dict[str, Any] = {}
+    if env_steps:
+        report["env_steps"] = env_steps
+    if outcome is not None:
+        report["env_outcome"] = {
+            "reward": outcome.reward,
+            "components": dict(outcome.components),
+            "metrics": dict(outcome.metrics),
+            "details": dict(outcome.details),
+            "episode_id": outcome.episode_id,
+        }
+    return report
 
 
 def derive_agent_seed(

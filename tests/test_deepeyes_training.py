@@ -830,7 +830,9 @@ def test_vllm_rollout_gives_other_environments_their_row_configuration(monkeypat
     async def fake_run_agent_inference(**kwargs):
         calls.append((type(kwargs["environment"]).__name__, kwargs["env_config"], kwargs["env_seed"]))
         trajectory = _make_trajectory(kwargs["rollout_index"])
-        trajectory.env_outcome = EnvOutcome(reward=0.5, components={"task": 1.0}, metrics={})
+        trajectory.env_outcome = EnvOutcome(
+            reward=0.5, components={"task": 1.0}, metrics={}, details={"note": "x"}, episode_id="ep1"
+        )
         return trajectory
 
     monkeypatch.setattr("verl.workers.agent.inference.run_agent_inference", fake_run_agent_inference)
@@ -846,7 +848,10 @@ def test_vllm_rollout_gives_other_environments_their_row_configuration(monkeypat
     assert calls[0][2] == calls[1][2]  # one reset seed for the group
     assert [item["env_outcome"] for item in output.non_tensor_batch["agent_reward_input"]] == [
         {"reward": 0.5, "components": {"task": 1.0}, "metrics": {}}
-    ] * 2
+    ] * 2  # reward functions get the numbers only
+    assert [report["env_outcome"] for report in output.non_tensor_batch["agent_environment"]] == [
+        {"reward": 0.5, "components": {"task": 1.0}, "metrics": {}, "details": {"note": "x"}, "episode_id": "ep1"}
+    ] * 2  # the records keep the details and the episode
     assert "env_config" not in output.non_tensor_batch
     with pytest.raises(ValueError, match="'env_config'"):
         rollout.generate_sequences(missing)

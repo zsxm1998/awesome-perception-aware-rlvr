@@ -480,7 +480,7 @@ class vLLMRollout(BaseRollout):
         )
         from ..agent.environments import EnvironmentContext, environment_factory
         from ..agent.inference import run_agent_inference
-        from ..agent.protocol import AgentImageConfig, AgentLoopConfig, derive_environment_seed
+        from ..agent.protocol import AgentImageConfig, AgentLoopConfig, derive_environment_seed, environment_report
         from ..agent.tool_call import NativeToolCallCodec
         from ..agent.trajectory import (
             AgentTrajectoryMaterializer,
@@ -747,4 +747,10 @@ class vLLMRollout(BaseRollout):
             diagnostics,
             dtype=object,
         )
+        if self.config.resolved_agent_environment != "deepeyes":
+            # what the environment reported per trajectory (training generation records keep it)
+            output.non_tensor_batch["agent_environment"] = np.array(
+                [environment_report(trajectory.steps, trajectory.env_outcome) for trajectory in trajectories],
+                dtype=object,
+            )
         return output

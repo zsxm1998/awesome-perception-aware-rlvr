@@ -96,6 +96,7 @@ def test_toy_search_runs_over_http_with_the_remote_environment():
     assert zoom.result.success and zoom.state_key == "level2:cell00" and max(zoom.result.images[0].size) == 512
     assert not bad.result.success and bad.result.error_code == "invalid_bbox"
     assert outcome.reward == 1.0 and outcome.metrics == {"zoom_calls": 1.0}
+    assert outcome.details == {"digit": digit} and outcome.episode_id is not None
 
 
 def test_deepeyes_http_episode_writes_the_native_prompt_and_observation_layout(tmp_path):

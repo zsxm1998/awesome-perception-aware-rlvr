@@ -14,9 +14,13 @@
 """The episode reward that an agent environment reports when the episode ends (its finalize).
 
 The environment scores the answer itself (it holds the ground truth), so this function only passes its
-reward on and logs its components and metrics as ``reward/<name>``. A trajectory without an environment
-outcome, or with a null reward, fails: that is an integration error, not a zero reward. Use it with
-``worker.rollout.agent_environment`` set to an environment that reports rewards (e.g. ``remote_http``).
+reward on and logs its components and metrics under ``env/``: ``reward/env/<name>`` in training,
+``val/env/<name>_reward`` in validation (the environment's names never meet the trainer's own, such as
+``overall``). An episode may report only the names that apply to it; a name is averaged over the episodes
+that reported it, and ``reward_count/env/<name>`` counts them when some did not. A trajectory without an
+environment outcome, or with a null reward (an environment that does not score its episodes), fails: that is
+an integration error, not a zero reward. Use it with ``worker.rollout.agent_environment`` set to an
+environment that reports rewards (e.g. ``remote_http``).
 """
 
 from __future__ import annotations
@@ -27,10 +31,9 @@ from typing import Any
 REWARD_NAME = "environment"
 REWARD_TYPE = "batch"
 
-# Trajectory statistics of the agent loop, logged next to the environment's own numbers; an environment
-# component or metric of the same name is an error, not a replacement.
+# Trajectory statistics of the agent loop, logged next to the environment's numbers.
 _LOOP_STATISTICS = ("tool_call_attempts", "tool_call_errors", "trajectory_retries")
-_RESERVED = ("overall", *_LOOP_STATISTICS, "answered", "truncated")
+ENVIRONMENT_PREFIX = "env/"
 
 
 def compute_score(reward_inputs: list[dict[str, Any]]) -> list[dict[str, float]]:
@@ -43,20 +46,23 @@ def compute_score(reward_inputs: list[dict[str, Any]]) -> list[dict[str, float]]
                 "worker.rollout.agent_environment to an environment that reports one (e.g. remote_http)"
             )
         if outcome["reward"] is None:
-            raise ValueError("the environment returned no episode reward (finalize gave reward: null)")
+            raise ValueError(
+                "the environment returned no episode reward (finalize gave reward: null, i.e. it does not score "
+                "its episodes); use a reward function that scores the answer"
+            )
         score = {"overall": float(outcome["reward"])}
         for name in _LOOP_STATISTICS:
             if name in reward_input:
                 score[name] = float(reward_input[name])
         score["answered"] = float(reward_input.get("agent_status") == "answered")
         score["truncated"] = float(bool(reward_input.get("truncated", False)))
+        repeated = set(outcome["components"]) & set(outcome["metrics"])
+        if repeated:
+            raise ValueError(
+                f"the environment reported {sorted(repeated)} both as components and as metrics; give each name once"
+            )
         for group in ("components", "metrics"):
             for name, value in outcome[group].items():
-                if name in _RESERVED or name in score:
-                    raise ValueError(
-                        f"environment {group} name {name!r} collides with a reward metric of the trainer "
-                        f"({', '.join(_RESERVED)}) or another environment value; rename it"
-                    )
-                score[name] = float(value)
+                score[ENVIRONMENT_PREFIX + name] = float(value)
         scores.append(score)
     return scores

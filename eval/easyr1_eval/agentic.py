@@ -33,6 +33,7 @@ from verl.workers.agent.protocol import (
     AgentStatus,
     AgentTrajectory,
     derive_environment_seed,
+    environment_report,
 )
 from verl.workers.agent.tool_call import NativeToolCallCodec
 
@@ -530,28 +531,7 @@ def trajectory_to_generation_output(
         "tool_errors": tool_errors,
     }
     # What an environment reported, per tool call and for the episode (absent for DeepEyes, which reports none).
-    env_steps = [
-        {
-            "turn_index": turn_index,
-            "tool": step.tool_call.name,
-            "state_key": step.state_key,
-            "cost": step.cost,
-            "reward": step.env_reward,
-            "done": step.env_done,
-            "info": step.env_info,
-        }
-        for turn_index, step in enumerate(trajectory.steps)
-        if step.tool_call is not None
-        and (step.state_key is not None or step.cost or step.env_reward is not None or step.env_done or step.env_info)
-    ]
-    if env_steps:
-        agent_diagnostics["env_steps"] = env_steps
-    if trajectory.env_outcome is not None:
-        agent_diagnostics["env_outcome"] = {
-            "reward": trajectory.env_outcome.reward,
-            "components": dict(trajectory.env_outcome.components),
-            "metrics": dict(trajectory.env_outcome.metrics),
-        }
+    agent_diagnostics.update(environment_report(trajectory.steps, trajectory.env_outcome))
     return GenerationOutput(
         text=scoring_text,
         finish_reason=finish_reason,

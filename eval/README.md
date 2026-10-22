@@ -589,11 +589,15 @@ benchmarks:
 The environment writes the prompt (so `--system-prompt` and `--format-prompt` are not used)
 and scores the episode: the metric is the mean of the episode rewards that `finalize` reports
 (normalized as 100 x the mean, for rewards in [0, 1]); a trajectory that ends without an
-outcome (a failed request) counts as 0 and is reported as `trajectories_without_outcome`. The
-predictions keep each trajectory's `env_outcome` and per-call `env_steps` (state key, cost,
-reward) in `agent_diagnostics`. `--agent-environment` defaults to `remote_http`; it can also
-be `path/to/file.py:ClassName`. The environment and its options (e.g. the server url) enter
-the result fingerprint.
+outcome (a failed request) counts as 0 and is reported as `trajectories_without_outcome`, and
+an outcome with `reward: null` (an environment that does not score its episodes) is an error,
+as in training. The metric's details give the mean of each component and metric over the
+episodes that reported it, with their number (`component_counts`, `metric_counts`). The
+predictions keep each trajectory's `env_outcome` (with the environment's `details` and
+`episode_id`) and per-call `env_steps` (state key, cost, reward, info) in `agent_diagnostics`
+([docs/agent_environments.md](../docs/agent_environments.md#training-configuration)).
+`--agent-environment` defaults to `remote_http`; it can also be `path/to/file.py:ClassName`.
+The environment and its options (e.g. the server url) enter the result fingerprint.
 
 ## Output layout
 

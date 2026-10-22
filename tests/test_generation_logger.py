@@ -288,3 +288,14 @@ def test_trainer_generation_samples_keep_special_tokens_without_padding():
     assert "<|image_pad|><|image_pad|>" not in samples[0].prompt
     assert "<|video_pad|><|video_pad|>" not in samples[0].prompt
     assert "<IMG_CONTEXT><IMG_CONTEXT>" not in samples[0].prompt
+
+
+def test_generation_records_keep_what_the_environment_reported(tmp_path):
+    report = {"env_outcome": {"reward": 1.0, "details": {"why": "R1"}, "episode_id": "ep3"}}
+    sample = GenerationSample(step=1, split="train", uid="u", prompt="p", completion="c", environment=report)
+    plain = GenerationSample(step=1, split="train", uid="u", prompt="p", completion="c")
+
+    assert sample.to_record()["environment"] == report
+    assert "environment" not in plain.to_record()  # runs without an environment keep their records
+    assert "environment" in gen_logger._table_columns([plain, sample])
+    assert "environment" not in gen_logger._table_columns([plain])

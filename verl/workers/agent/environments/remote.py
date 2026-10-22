@@ -225,6 +225,13 @@ class RemoteHTTPEnvironment:
     async def step(self, call: ToolCall) -> EnvStep:
         if self.episode_id is None:
             raise RemoteEnvironmentError("step() before reset()")
+        step_index = self.step_index
+        try:
+            return await self._step(call)
+        except RemoteEnvironmentError as exc:
+            raise RemoteEnvironmentError(f"episode {self.episode_id}, step {step_index}: {exc}") from exc
+
+    async def _step(self, call: ToolCall) -> EnvStep:
         response = await self._post(
             "/step",
             {
@@ -281,15 +288,23 @@ class RemoteHTTPEnvironment:
     async def finalize(self, final_answer: Optional[str], status: AgentStatus) -> EnvOutcome:
         if self.episode_id is None:
             raise RemoteEnvironmentError("finalize() before reset()")
-        response = await self._post(
-            "/finalize",
-            {"episode_id": self.episode_id, "final_answer": final_answer, "status": AgentStatus(status).value},
-        )
-        return EnvOutcome(
-            reward=_optional_number(response.get("reward"), "/finalize reward"),
-            components=_number_map(response.get("components", {}), "/finalize components"),
-            metrics=_number_map(response.get("metrics", {}), "/finalize metrics"),
-        )
+        try:
+            response = await self._post(
+                "/finalize",
+                {"episode_id": self.episode_id, "final_answer": final_answer, "status": AgentStatus(status).value},
+            )
+            details = response.get("details", {})
+            if not isinstance(details, dict):
+                raise RemoteEnvironmentError("/finalize details must be a JSON object")
+            return EnvOutcome(
+                reward=_optional_number(response.get("reward"), "/finalize reward"),
+                components=_number_map(response.get("components", {}), "/finalize components"),
+                metrics=_number_map(response.get("metrics", {}), "/finalize metrics"),
+                details=details,
+                episode_id=self.episode_id,
+            )
+        except RemoteEnvironmentError as exc:
+            raise RemoteEnvironmentError(f"episode {self.episode_id}, finalize: {exc}") from exc
 
     async def close(self) -> None:
         if self.episode_id is None:

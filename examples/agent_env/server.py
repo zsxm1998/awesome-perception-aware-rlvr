@@ -46,7 +46,7 @@ class Episode(Protocol):
         """{"content": [...], "success": bool, "error_code"?, "done"?, "reward"?, "state_key"?, "cost"?, "info"?}"""
 
     def finalize(self, final_answer: Optional[str], status: str) -> dict[str, Any]:
-        """{"reward": float | None, "components": {...}, "metrics": {...}}"""
+        """{"reward": float | None, "components": {...}, "metrics": {...}, "details"?: {...}}"""
 
 
 def text_part(text: str) -> dict[str, Any]:
