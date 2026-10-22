@@ -16,6 +16,7 @@ from .deepeyes import DeepEyesEnvironment
 from .local import LocalToolEnvironment
 from .registry import (
     EnvironmentContext,
+    class_from_file,
     environment_factory,
     register_environment,
     registered_environments,
@@ -30,6 +31,7 @@ __all__ = [
     "LocalToolEnvironment",
     "RemoteEnvironmentError",
     "RemoteHTTPEnvironment",
+    "class_from_file",
     "environment_factory",
     "register_environment",
     "registered_environments",

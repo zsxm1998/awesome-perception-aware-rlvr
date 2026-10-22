@@ -349,7 +349,7 @@ class AgentTrajectory:
 
 def environment_report(steps: Sequence[Any], outcome: Optional[EnvOutcome]) -> dict[str, Any]:
     """What an environment reported during an episode, as trajectory records keep it (training generations,
-    evaluation outputs): ``env_steps`` for the tool calls it answered with a state, cost, reward, done
+    evaluation outputs, SFT exports): ``env_steps`` for the tool calls it answered with a state, cost, reward, done
     or info, and ``env_outcome``. Empty for an environment that reports neither (DeepEyes)."""
 
     env_steps = [

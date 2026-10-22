@@ -531,7 +531,10 @@ class EnvironmentChatAdapter(NativeToolChatAdapter):
         return EncodedPrompt(token_ids=self._encode_raw_text(rendered), rendered_text=rendered)
 
     async def encode(self, request: ObservationEncodingRequest) -> EncodedObservation:
-        result = request.result
+        return self._encode_tool_message(self.tool_message_content(request.result), request.result.images)
+
+    def tool_message_content(self, result: Any) -> Any:
+        """The content of the tool message an observation is rendered as: its text, or its parts in order."""
         if result.parts is None:
             if result.observation_text is not None:
                 text = result.observation_text
@@ -554,10 +557,8 @@ class EnvironmentChatAdapter(NativeToolChatAdapter):
                     f"observation has {len(result.images)} images but {num_images} image placeholders in its parts"
                 )
         if not result.images and len(parts) == 1:
-            tool_content: Any = parts[0]["text"]
-        else:
-            tool_content = parts
-        return self._encode_tool_message(tool_content, result.images)
+            return parts[0]["text"]
+        return parts
 
     def _check_environment_strings(self, value: Any) -> None:
         """Every string inside a JSON-like value (tool schemas are rendered as JSON by the template)."""
