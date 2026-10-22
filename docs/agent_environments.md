@@ -27,8 +27,8 @@ token, with DeepEyes' reward function on the trainer).
 3. The episode ends when the model answers in `<answer>...</answer>`, when it uses up the tool-call limit
    (`worker.rollout.agent_max_tool_calls`; after it, one more turn may only answer), when a length budget
    runs out, or when a step returns `done`.
-4. `finalize(final_answer, status)` reports the episode reward with its components and metrics (or nothing);
-   `close()` releases the episode.
+4. `finalize(final_answer, status)` reports the episode reward with its components and metrics, and any
+   details (or nothing); `close()` releases the episode.
 
 Rendering. Tool schemas are rendered by the model's chat template (`tools=`), as in DeepEyes' native prompt.
 The environment's messages and observation texts are rendered verbatim, so they must not contain the
@@ -47,10 +47,31 @@ own tokens are never re-encoded.
 Data rows of an environment task need the configuration column, a prompt column (`data.prompt_key`; only
 used for the length filter and logs, as the model's prompt comes from `reset`) and an answer column
 (`data.answer_key`, required by the dataset class; the environment's own reward does not read it). They do
-not need images. Rewards: `worker.reward.reward_function=examples/reward_function/environment.py:compute_score`
-takes the episode reward that `finalize` reports (and logs its components and metrics as `reward/<name>`);
-a trajectory without one fails the step. Any other reward function still works on the final answer, as
-DeepEyes over HTTP does.
+not need images.
+
+Rewards: `worker.reward.reward_function=examples/reward_function/environment.py:compute_score` takes the
+episode reward that `finalize` reports. A trajectory without it, or with `reward: null`, fails the step: null
+means that the environment does not score its episodes, and a reward function that reads the answer has to
+(DeepEyes over HTTP does this with DeepEyes' reward function). The environment's components and metrics are
+logged under `env/`, apart from the trainer's own names (`overall`, `tool_call_errors`, ...):
+
+| Where | Name |
+| --- | --- |
+| training step | `reward/env/<name>`, and `reward_count/env/<name>` |
+| validation | `val/env/<name>_reward`, and `val/env/<name>_reward_count` |
+| generation records (`trainer.train_generations_to_log`, `val_generations_to_log`) | `reward/env/<name>` per sample |
+
+An episode may report only the names that apply to it. Each name is averaged over the samples that reported
+it; the `*_count` entries give their number and appear only when some samples of the batch (or of the
+validation set) did not report the name. The same holds for any reward function whose samples return
+different keys. A name used per sample, `algorithm.filter_key` of online filtering or `accuracy`, must come
+from every sample. A name given both as a component and as a metric is an error.
+
+Trajectory records keep what the environment reported, as given: the generation records have an
+`environment` field, and evaluation outputs (`agent_diagnostics`) the same entries:
+`env_steps` (per tool call: `turn_index`, `tool`, `state_key`, `cost`, `reward`, `done`, `info`, for the calls
+where the environment gave any of them) and `env_outcome` (`reward`, `components`, `metrics`, `details`,
+`episode_id`). Reward functions receive the reward, components and metrics only.
 
 `remote_http` options: `url`; `timeout_s` (60) per request; `retries` (3) after a network error, a timeout,
 HTTP 408, 429 or 5xx, with exponential backoff from `backoff_s` (0.5); `max_concurrency` (64) requests at a
@@ -58,7 +79,8 @@ time from one rollout worker; `max_images_per_step` (1), the most images one ste
 `worker.rollout.limit_images` (it must hold the initial images plus `agent_max_tool_calls` steps of them);
 `trust_env` (false): proxy variables such as `HTTP_PROXY` or `ALL_PROXY` are ignored unless it is true,
 since an environment server usually runs on the same machine or cluster. After the retries a failing
-request fails the training step, which can resume from the last checkpoint.
+request fails the training step, which can resume from the last checkpoint; the error names the episode and
+the step.
 
 The batched rollout runs every trajectory on each rank of a tensor-parallel group, so `remote_http` needs
 `worker.rollout.tensor_parallel_size=1`. While a trajectory waits for the server, the other trajectories'
@@ -73,7 +95,7 @@ JSON bodies, `POST`, HTTP 200 on success. Images are PNG, base64-encoded.
 | --- | --- | --- |
 | `/reset` | `{"config": {...}, "seed": int, "max_tool_calls": int}` | `{"episode_id": str, "system_prompt": str or null, "user_content": [part, ...], "tool_schemas": [schema, ...]}` |
 | `/step` | `{"episode_id": str, "step_index": int, "tool_call": {"name": str, "arguments": {...}}}` | `{"content": [part, ...], "success": bool, "error_code": str (when not success), "done": bool, "reward": float or null, "state_key": str or null, "cost": float, "info": {...}}` |
-| `/finalize` | `{"episode_id": str, "final_answer": str or null, "status": str}` | `{"reward": float or null, "components": {name: float}, "metrics": {name: float}}` |
+| `/finalize` | `{"episode_id": str, "final_answer": str or null, "status": str}` | `{"reward": float or null, "components": {name: float}, "metrics": {name: float}, "details": {...}}` (`details` optional) |
 | `/close` | `{"episode_id": str}` | `{}` |
 
 A part is `{"type": "text", "text": str}` or `{"type": "image", "png_base64": str}`, in the order the model
@@ -95,6 +117,10 @@ and must be present; an empty list means a single turn without tools.
   null unless `status` is `answered`. The other statuses: `invalid_final_answer`, `invalid_turn_end`,
   `no_action`, `tool_call_limit`, `length_limit`, `environment_done`. The environment parses the answer and
   scores the episode.
+- `reward`, `components` and `metrics` are finite numbers; `reward: null` means that the environment does
+  not score the episode (see Rewards above). `details` is any JSON object (text included), kept verbatim in the
+  trajectory records with the `episode_id`, for matching them with the server's own logs; it is not checked
+  or aggregated.
 - `/finalize` called again returns the same result; `/close` of an unknown or closed episode returns `{}`.
   A server should drop episodes that stay idle for long: a crashed trainer never closes them, and a retried
   `/reset` leaves one behind.

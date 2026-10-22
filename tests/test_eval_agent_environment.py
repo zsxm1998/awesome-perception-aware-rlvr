@@ -74,6 +74,32 @@ def test_environment_reward_scorer_averages_the_reported_rewards(tmp_path):
     assert result.raw_score == pytest.approx(0.375) and result.normalized_score_0_100 == pytest.approx(37.5)
     assert result.details["trajectories_without_outcome"] == 1
     assert result.details["components"] == {"task": 0.75} and result.details["metrics"] == {"orders": 3.0}
+    assert result.details["component_counts"] == {"task": 2} and result.details["metric_counts"] == {"orders": 2}
+
+
+def test_environment_reward_scorer_averages_each_name_over_the_episodes_that_report_it(tmp_path):
+    rows = [
+        {
+            "sample_id": "a",
+            "agent_diagnostics": [
+                {"env_outcome": {"reward": 1.0, "components": {"density": 0.8}, "metrics": {}}},
+                {"env_outcome": {"reward": 0.0, "components": {"region": 0.2}, "metrics": {}}},
+            ],
+        }
+    ]
+
+    result = score_environment_reward(_spec(tmp_path), rows, None, tmp_path)
+
+    assert result.details["components"] == {"density": 0.8, "region": 0.2}
+    assert result.details["component_counts"] == {"density": 1, "region": 1}
+
+
+def test_environment_reward_scorer_rejects_an_unscored_episode(tmp_path):
+    """reward: null means that the environment does not score its episodes, as in training."""
+    rows = [{"sample_id": "a", "agent_diagnostics": [{"env_outcome": {"reward": None, "components": {}}}]}]
+
+    with pytest.raises(ValueError, match="no episode reward"):
+        score_environment_reward(_spec(tmp_path), rows, None, tmp_path)
 
 
 def _args(*extra):
@@ -174,7 +200,7 @@ def test_agentic_backend_runs_environment_tasks_and_records_the_outcome(monkeypa
             status=AgentStatus.ANSWERED,
             metrics=AgentMetrics(),
             final_answer="x",
-            env_outcome=EnvOutcome(reward=0.5, components={"task": 1.0}),
+            env_outcome=EnvOutcome(reward=0.5, components={"task": 1.0}, details={"note": "ok"}, episode_id="e7"),
         )
 
     backend.agent_runner = fake_runner
@@ -186,7 +212,21 @@ def test_agentic_backend_runs_environment_tasks_and_records_the_outcome(monkeypa
 
     assert seen == [("RemoteHTTPEnvironment", {"task": "F1"}, 20)]
     agent = output.diagnostics["agent"]
-    assert agent["env_outcome"] == {"reward": 0.5, "components": {"task": 1.0}, "metrics": {}}
+    assert agent["env_outcome"] == {
+        "reward": 0.5,
+        "components": {"task": 1.0},
+        "metrics": {},
+        "details": {"note": "ok"},
+        "episode_id": "e7",
+    }
     assert agent["env_steps"] == [
         {"turn_index": 0, "tool": "order", "state_key": "s", "cost": 1.0, "reward": None, "done": False, "info": {}}
     ]
+
+
+def test_the_environment_reward_scores_of_the_released_version_are_recomputed():
+    """environment_reward changed (a null reward is an error, counts in the details): its score fingerprints change,
+    so finished scores of the earlier version are not reused."""
+    from easyr1_eval.scorers import SCORER_REVISIONS
+
+    assert SCORER_REVISIONS["environment_reward"] == 2

@@ -425,7 +425,12 @@ class _FakeServer:
         if path == "/finalize":
             return httpx.Response(
                 200,
-                json={"reward": 0.75, "components": {"task": 1.0, "cost_penalty": -0.25}, "metrics": {"orders": 1}},
+                json={
+                    "reward": 0.75,
+                    "components": {"task": 1.0, "cost_penalty": -0.25},
+                    "metrics": {"orders": 1},
+                    "details": {"verdict": "high", "evidence": ["R1"]},
+                },
             )
         if path == "/close":
             episode["closed"] = True
@@ -490,7 +495,71 @@ def test_remote_environment_runs_an_episode_over_http():
         {"task": 1.0, "cost_penalty": -0.25},
         {"orders": 1.0},
     )
+    assert outcome.details == {"verdict": "high", "evidence": ["R1"]} and outcome.episode_id == "ep0"
     assert server.episodes["ep0"]["closed"]
+
+
+def test_remote_environment_errors_name_the_episode_and_details_must_be_an_object():
+    import httpx
+
+    from verl.workers.agent.environments import RemoteEnvironmentError
+
+    def server(request):
+        path = request.url.path
+        if path == "/reset":
+            return httpx.Response(200, json={"episode_id": "ep9", "user_content": [], "tool_schemas": []})
+        if path == "/step":
+            return httpx.Response(200, json={"content": [], "success": "yes"})
+        if path == "/finalize":
+            return httpx.Response(200, json={"reward": 1.0, "details": ["not", "an", "object"]})
+        return httpx.Response(200, json={})
+
+    context, environment = _remote_environment(server)
+
+    async def run():
+        await environment.reset({}, seed=0)
+        with pytest.raises(RemoteEnvironmentError, match="episode ep9, step 0: /step success must be a boolean"):
+            await environment.step(ToolCall(name="order", arguments={}, raw_text=""))
+        with pytest.raises(RemoteEnvironmentError, match="episode ep9, finalize: /finalize details must be a JSON"):
+            await environment.finalize("x", AgentStatus.ANSWERED)
+        await environment.close()
+        await context.aclose()
+
+    asyncio.run(run())
+
+
+def test_environment_report_keeps_steps_and_outcome_as_trajectory_records_store_them():
+    from verl.workers.agent.protocol import AgentStep, EnvOutcome, environment_report
+
+    answered = AgentStep(model_text="", model_token_ids=[])
+    called = AgentStep(model_text="", model_token_ids=[], tool_call=ToolCall("order", {}, ""), state_key="s1")
+    called.cost, called.env_info = 1.0, {"budget_left": 3}
+    quiet = AgentStep(model_text="", model_token_ids=[], tool_call=ToolCall("view", {}, ""))
+    outcome = EnvOutcome(reward=1.0, components={"task": 1.0}, details={"why": "R1"}, episode_id="ep3")
+
+    report = environment_report([called, quiet, answered], outcome)
+
+    assert report == {
+        "env_steps": [
+            {
+                "turn_index": 0,
+                "tool": "order",
+                "state_key": "s1",
+                "cost": 1.0,
+                "reward": None,
+                "done": False,
+                "info": {"budget_left": 3},
+            }
+        ],
+        "env_outcome": {
+            "reward": 1.0,
+            "components": {"task": 1.0},
+            "metrics": {},
+            "details": {"why": "R1"},
+            "episode_id": "ep3",
+        },
+    }
+    assert environment_report([answered], None) == {}  # DeepEyes reports nothing
 
 
 def test_remote_environment_retries_with_the_same_step_index_and_shares_decoded_images():
@@ -635,8 +704,8 @@ def test_environment_reward_passes_the_episode_reward_on():
 
     assert score == {
         "overall": 0.75,
-        "task": 1.0,
-        "orders": 2.0,
+        "env/task": 1.0,
+        "env/orders": 2.0,
         "tool_call_attempts": 3.0,
         "answered": 1.0,
         "truncated": 0.0,
@@ -645,8 +714,8 @@ def test_environment_reward_passes_the_episode_reward_on():
         compute_score([{}])
     with pytest.raises(ValueError, match="no episode reward"):
         compute_score([{"env_outcome": {**outcome, "reward": None}}])
-    with pytest.raises(ValueError, match="collides"):
-        compute_score([{"env_outcome": {**outcome, "components": {"overall": 1.0}}}])
+    with pytest.raises(ValueError, match="both as components and as metrics"):
+        compute_score([{"env_outcome": {**outcome, "components": {"orders": 1.0}}}])
 
 
 def test_reward_input_validates_the_environment_outcome():
@@ -712,16 +781,16 @@ def test_environment_outcome_must_be_finite():
             _validated_env_outcome(outcome)
 
 
-def test_environment_reward_keeps_the_trainers_statistics():
+def test_environment_reward_keeps_the_environments_names_apart_from_the_trainers():
+    """The environment's names go under env/, so they never replace the trainer's own (overall, tool_call_errors)."""
     compute_score = _environment_reward().compute_score
     trajectory = {"agent_status": "no_action", "tool_call_errors": 3, "truncated": False}
+    names = {"overall": 0.5, "tool_call_errors": 0.0, "answered": 1.0, "truncated": 1.0, "trajectory_retries": 2.0}
 
-    for name in ("tool_call_errors", "answered", "truncated", "trajectory_retries"):
-        outcome = {"reward": 1.0, "components": {}, "metrics": {name: 0.0}}
-        with pytest.raises(ValueError, match=f"'{name}' collides"):
-            compute_score([{**trajectory, "env_outcome": outcome}])
-    (score,) = compute_score([{**trajectory, "env_outcome": {"reward": 0.0, "components": {}, "metrics": {}}}])
-    assert (score["tool_call_errors"], score["answered"]) == (3.0, 0.0)
+    (score,) = compute_score([{**trajectory, "env_outcome": {"reward": 0.0, "components": {}, "metrics": names}}])
+
+    assert (score["overall"], score["tool_call_errors"], score["answered"], score["truncated"]) == (0.0, 3.0, 0.0, 0.0)
+    assert {f"env/{name}": value for name, value in names.items()}.items() <= score.items()
 
 
 def test_remote_environment_requires_valid_tool_schemas():

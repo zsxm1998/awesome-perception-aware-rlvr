@@ -1195,6 +1195,7 @@ class RayPPOTrainer:
         scores = self._sequence_scores(batch, reward_tensor=reward_tensor)
         advantages = self._sequence_advantages(batch)
         reward_details = self._generation_reward_details(batch, reward_metrics=reward_metrics)
+        environment_reports = batch.non_tensor_batch.get("agent_environment")
 
         samples = []
         for index, (prompt, completion) in enumerate(zip(prompt_texts, completion_texts)):
@@ -1214,6 +1215,7 @@ class RayPPOTrainer:
                     video_count=len(videos or []),
                     images=images,
                     videos=videos,
+                    environment=None if environment_reports is None else environment_reports[index],
                 )
             )
         return samples

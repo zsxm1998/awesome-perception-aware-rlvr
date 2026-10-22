@@ -181,6 +181,8 @@ class GenerationSample:
     video_paths: list[str] = field(default_factory=list)
     images: Any = field(default=None, repr=False)
     videos: Any = field(default=None, repr=False)
+    # What an agent environment reported (env_steps, env_outcome); None outside environment rollouts.
+    environment: Optional[dict[str, Any]] = None
 
     def to_record(self) -> dict[str, Any]:
         record = {
@@ -199,6 +201,8 @@ class GenerationSample:
         }
         for key, value in sorted((self.reward_details or {}).items()):
             record[f"reward/{key}"] = value
+        if self.environment is not None:
+            record["environment"] = self.environment
 
         return _json_safe(record)
 
@@ -281,12 +285,15 @@ def _table_columns(samples: Sequence[GenerationSample]) -> list[str]:
         "score",
         "advantages",
         *reward_columns,
+        *(["environment"] if any(sample.environment is not None for sample in samples) else []),
     ]
 
 
 def _table_row(sample: GenerationSample, columns: Sequence[str], image_value: Any = None) -> list[Any]:
     record = sample.to_record()
     record["image"] = image_value
+    if record.get("environment") is not None:  # a nested record: one JSON cell
+        record["environment"] = json.dumps(record["environment"], ensure_ascii=False)
     return [record.get(column) for column in columns]
 
 

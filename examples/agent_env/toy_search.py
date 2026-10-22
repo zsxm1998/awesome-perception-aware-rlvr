@@ -131,7 +131,12 @@ class ToySearchEpisode:
 
     def finalize(self, final_answer: Optional[str], status: str) -> dict[str, Any]:
         correct = float(final_answer is not None and final_answer.strip() == self.digit)
-        return {"reward": correct, "components": {"correct": correct}, "metrics": {"zoom_calls": self.zoom_calls}}
+        return {
+            "reward": correct,
+            "components": {"correct": correct},
+            "metrics": {"zoom_calls": self.zoom_calls},
+            "details": {"digit": self.digit},  # kept in the trajectory records as is
+        }
 
     def _error(self, code: str, message: str) -> dict[str, Any]:
         return {"content": [text_part(f"Error: {message}")], "success": False, "error_code": code}
