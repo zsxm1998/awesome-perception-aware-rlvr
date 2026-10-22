@@ -133,6 +133,12 @@ and must be present; an empty list means a single turn without tools.
 the Python standard library: write an `Episode` class with `reset`, `step` and `finalize`, and call `serve`. It
 drops idle episodes when a later request arrives, never one with a request in progress.
 
+## Evaluation and API models
+
+`--agent-profile environment` evaluates a checkpoint in an environment, and `--backend api` a model behind an
+OpenAI-compatible API (a commercial model, or a large open model served by vLLM) on the same tasks, tools,
+limits and scorer: [eval/README.md](../eval/README.md#agent-environments).
+
 ## SFT data
 
 A warm-up by supervised fine-tuning before RL needs demonstrations in the format RL will train on.

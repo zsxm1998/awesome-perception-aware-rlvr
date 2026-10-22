@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import re
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
@@ -37,6 +36,9 @@ from verl.workers.agent.protocol import (
 )
 from verl.workers.agent.tool_call import NativeToolCallCodec
 
+from .agent_common import AgenticSampleError
+from .agent_common import failed_trajectory_output as _failed_trajectory_output
+from .agent_common import stable_sample_index as _stable_sample_index
 from .backends import VLLMBackend, image_size_records, process_eval_image
 from .schemas import EvalSample, GenerationConfig, GenerationOutput
 
@@ -62,10 +64,6 @@ _TOOL_CALL_BLOCK_PATTERN = re.compile(
 
 class AgenticConfigurationError(ValueError):
     """An evaluation configuration that cannot represent the requested rollout."""
-
-
-class AgenticSampleError(ValueError):
-    """A malformed or unreadable individual evaluation sample."""
 
 
 class AgenticVLLMBackend:
@@ -596,27 +594,6 @@ def _stop_token_ids(stop_reason: Any) -> tuple[int, ...]:
     ):
         return tuple(stop_reason)
     return ()
-
-
-def _failed_trajectory_output(exc: BaseException) -> GenerationOutput:
-    return GenerationOutput(
-        text="",
-        finish_reason="error",
-        token_count=0,
-        truncated=False,
-        diagnostics={
-            "agent": {
-                "status": "sample_error",
-                "error_type": type(exc).__name__,
-                "error": str(exc),
-            }
-        },
-    )
-
-
-def _stable_sample_index(sample: EvalSample) -> int:
-    payload = f"{sample.benchmark}\0{sample.sample_id}".encode("utf-8")
-    return int.from_bytes(hashlib.blake2b(payload, digest_size=8).digest(), "big") % (2**31)
 
 
 def _decode_stop_reason(tokenizer: Any, stop_reason: Any) -> str | None:

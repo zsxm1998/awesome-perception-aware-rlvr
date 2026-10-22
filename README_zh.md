@@ -69,6 +69,7 @@ RLVR 能提升大视觉语言模型的推理能力，但它的奖励只检查最
 
 ## 🔥 更新
 
+- **2026-10**：在 agent 环境中，通过 OpenAI 兼容接口调用的模型可以和本地检查点在同样的任务、工具与评分下评测（[评测说明](eval/README.md#api-models-in-agent-environments)）；脚本写好的示范轨迹经 rollout 回放后导出为 ms-swift 的 SFT 数据，分词与 rollout 完全一致（[文档](docs/agent_environments.md#sft-data)）。
 - **2026-10**：多轮 agent 强化学习与评测的环境接口（进程内或通过 HTTP，[文档](docs/agent_environments.md)），回合奖励可由环境给出；DeepEyes 改为进程内环境，并提供[示例](examples/agent_env/README.md)（玩具视觉搜索、通过 HTTP 提供的 DeepEyes）。
 - **2026-10**：复现 [S-OPD](examples/reproduction/s_opd/README.md)（给 OPD 加两项学生侧损失：经教师门控的原图与遮挡图对比，以及原图与加噪图的一致），S-OPD 加入 [OPD 统一对比](examples/comparison/opd_qwen3_vl_2b/README_zh.md)，评测新增 VisualPuzzles 和 ZeroBench（子问题）。
 - **2026-10**：两个[统一设定对比](#-统一设定对比)的结果，每个方法给出最后一步和验证最优步；[论文清单](#-论文清单)新增 30 篇感知导向的 OPD 论文。

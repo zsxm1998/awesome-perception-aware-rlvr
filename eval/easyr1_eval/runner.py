@@ -196,7 +196,62 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Skip benchmarks whose data has not been prepared instead of aborting.",
     )
-    parser.add_argument("--backend", choices=["vllm", "transformers", "dummy"], default="vllm")
+    parser.add_argument(
+        "--backend",
+        choices=["vllm", "transformers", "dummy", "api"],
+        default="vllm",
+        help="vllm (default), transformers, dummy (tests) or api: a model behind an OpenAI-compatible Chat "
+        "Completions endpoint, with --interaction-mode agentic --agent-profile environment; --model is the API's "
+        "model name (see the --api-* options).",
+    )
+    parser.add_argument(
+        "--api-base-url",
+        help="With --backend api: the endpoint, e.g. http://127.0.0.1:8001/v1 (default $OPENAI_BASE_URL).",
+    )
+    parser.add_argument(
+        "--api-key-env",
+        default="OPENAI_API_KEY",
+        help="With --backend api: the environment variable that holds the API key (none sent when it is unset).",
+    )
+    parser.add_argument("--api-concurrency", type=int, default=8, help="With --backend api: requests at a time.")
+    parser.add_argument("--api-request-retries", type=int, default=5)
+    parser.add_argument("--api-timeout", type=float, default=300.0, help="With --backend api: seconds per request.")
+    parser.add_argument(
+        "--api-extra-body",
+        type=json.loads,
+        default=None,
+        help="With --backend api: JSON merged into every request, e.g. '{\"enable_thinking\": false}' (a null value "
+        "removes a field).",
+    )
+    parser.add_argument(
+        "--api-max-tokens-field",
+        choices=["max_tokens", "max_completion_tokens"],
+        default="max_tokens",
+        help="With --backend api: the request field of the per-turn token limit (OpenAI's newer models take "
+        "max_completion_tokens).",
+    )
+    parser.add_argument(
+        "--api-max-total-tokens",
+        type=int,
+        default=None,
+        help="With --backend api: stop the run once the API reports this many prompt + completion tokens.",
+    )
+    parser.add_argument(
+        "--api-tool-images",
+        choices=["user", "tool"],
+        default="user",
+        help="With --backend api: where the images of a tool result go. user (default): a user message after the "
+        "tool message, since Chat Completions tool messages take text only; tool: in the tool message with its text, "
+        "as local rollouts render it, for endpoints that accept it (vLLM's server).",
+    )
+    parser.add_argument(
+        "--api-images",
+        choices=["as_local", "original"],
+        default="as_local",
+        help="With --backend api: as_local (default) resizes images into --min-pixels/--max-pixels before sending "
+        "them, as local agent runs prepare them, so API and local models see the same images; original sends them "
+        "as the environment gives them.",
+    )
     parser.add_argument(
         "--interaction-mode",
         choices=["one_shot", "agentic"],
@@ -402,15 +457,31 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         args.chat_template = None
     elif args.chat_template is not None and not Path(args.chat_template).is_file():
         parser.error(f"--chat-template file not found: {args.chat_template}")
+    api_backend = args.backend == "api"
+    if api_backend:
+        if args.interaction_mode != "agentic" or args.agent_profile != "environment":
+            parser.error(
+                "--backend api runs agent environments: add --interaction-mode agentic --agent-profile environment"
+            )
+        if args.chat_template_explicit:
+            parser.error("--backend api: the API renders the conversation; drop --chat-template")
+        args.api_base_url = args.api_base_url or os.environ.get("OPENAI_BASE_URL")
+        if not args.api_base_url:
+            parser.error("--backend api needs --api-base-url (or OPENAI_BASE_URL)")
+        if args.api_concurrency < 1 or args.api_request_retries < 0:
+            parser.error("--api-concurrency must be positive and --api-request-retries non-negative")
+        if args.api_extra_body is not None and not isinstance(args.api_extra_body, dict):
+            parser.error("--api-extra-body must be a JSON object")
     if args.interaction_mode == "agentic":
         args.box_format, args.box_format_reason = resolve_agentic_box_format(args)
         select_agentic_system_prompt(args)
-        apply_agentic_chat_template_default(args)
+        if not api_backend:
+            apply_agentic_chat_template_default(args)
     else:
         args.box_format, args.box_format_reason = resolve_box_format(args)
     if args.interaction_mode == "agentic":
-        if args.backend != "vllm":
-            parser.error("--interaction-mode agentic currently requires --backend vllm")
+        if args.backend not in {"vllm", "api"}:
+            parser.error("--interaction-mode agentic requires --backend vllm (or api, for agent environments)")
         if args.prompt_mode != "chat":
             parser.error("--interaction-mode agentic requires --prompt-mode chat")
         if args.max_new_tokens is not None:
@@ -446,7 +517,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         from verl.workers.agent.coordinates import check_chat_template_supports_tools
 
         try:
-            check_chat_template_supports_tools(args.model, args.chat_template)
+            if not api_backend:  # an API model renders its own conversation
+                check_chat_template_supports_tools(args.model, args.chat_template)
         except ValueError as exc:
             parser.error(f"{exc}. In eval: pass --chat-template {PROJECT_ROOT / AGENT_TOOL_CHAT_TEMPLATE}")
         if args.agent_max_images_per_prompt <= 0:
@@ -891,6 +963,7 @@ def write_run_summaries(results, args: argparse.Namespace, run_id: str) -> None:
     }
     if getattr(args, "interaction_mode", "one_shot") == "agentic":
         run_metadata.update(_agent_fingerprint_fields(args))
+    run_metadata.update(_api_fingerprint_fields(args))
     run_metadata.update(perturbation_metadata(args.perturbation, args.perturbation_seed))
     groups = all_suite_groups(args)
     write_summary_csv(args.output_dir / "summary.csv", results, run_metadata=run_metadata, suite_groups=groups)
@@ -991,10 +1064,12 @@ def run_inference(
     failures: dict[str, str] | None = None,
 ) -> None:
     failures = failures if failures is not None else {}
-    if args.backend == "dummy":
+    if args.backend in {"dummy", "api"}:  # in this process, without GPU workers
+        # one API backend for the run, so that --api-max-total-tokens holds for all its benchmarks together
+        backend = build_eval_backend(args) if args.backend == "api" else None
         for spec in specs:
             try:
-                infer_benchmark_shard(spec, args, shard_index=0, num_shards=1)
+                infer_benchmark_shard(spec, args, shard_index=0, num_shards=1, backend=backend)
             except Exception as exc:  # noqa: BLE001
                 traceback.print_exc()
                 failures[spec.key] = f"inference failed: {type(exc).__name__}: {exc}"
@@ -1453,6 +1528,27 @@ def agent_loop_config_from_args(args: argparse.Namespace):
 
 
 def build_eval_backend(args: argparse.Namespace):
+    if args.backend == "api":
+        from .api_agent import AgenticAPIBackend
+
+        options = _agent_environment_options(args)
+        return AgenticAPIBackend(
+            args.model,
+            base_url=args.api_base_url,
+            api_key_env=args.api_key_env,
+            agent_config=agent_loop_config_from_args(args),
+            agent_environment=options["agent_environment"],
+            agent_environment_kwargs=options["agent_environment_kwargs"],
+            concurrency=args.api_concurrency,
+            request_retries=args.api_request_retries,
+            timeout_s=args.api_timeout,
+            extra_body=args.api_extra_body,
+            max_tokens_field=args.api_max_tokens_field,
+            max_total_tokens=args.api_max_total_tokens,
+            pixels=_api_pixels(args),
+            tool_images=args.api_tool_images,
+            output_dir=args.output_dir,
+        )
     return build_backend(
         args.backend,
         args.model,
@@ -1558,6 +1654,7 @@ def task_fingerprint_fields(
         "phase": phase,
         "model": args.model,
         "backend": args.backend,
+        **_api_fingerprint_fields(args),
         **_agent_fingerprint_fields(args),
         "spec": spec.__dict__,
         # top_k only when set, so runs without it keep their fingerprints
@@ -1724,6 +1821,31 @@ def print_dry_run(specs: list[BenchmarkSpec], args: argparse.Namespace) -> None:
             f"temp={gen.temperature} top_p={gen.top_p} top_k={gen.top_k} n={gen.num_samples} "
             f"max_new_tokens={gen.max_new_tokens}" + (f"  [{'; '.join(notes)}]" if notes else "")
         )
+
+
+def _api_pixels(args: argparse.Namespace) -> tuple[int | None, int | None]:
+    """The pixel bounds of the images sent to an API (--api-images)."""
+    if args.api_images == "original":
+        return None, None
+    return args.min_pixels, args.max_pixels
+
+
+def _api_fingerprint_fields(args: argparse.Namespace) -> dict[str, Any]:
+    """--backend api: what reaches the model besides --model (not the key, the concurrency or the retries)."""
+    if getattr(args, "backend", None) != "api":
+        return {}
+    from .api_agent import API_RUNNER_VERSION
+
+    return {
+        "api": {
+            "runner_version": API_RUNNER_VERSION,
+            "base_url": args.api_base_url,
+            "extra_body": args.api_extra_body or {},
+            "max_tokens_field": args.api_max_tokens_field,
+            "pixels": list(_api_pixels(args)),
+            "tool_images": args.api_tool_images,
+        }
+    }
 
 
 def _agent_environment_options(args: argparse.Namespace) -> dict[str, Any]:
