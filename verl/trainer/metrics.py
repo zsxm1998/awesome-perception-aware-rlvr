@@ -24,6 +24,34 @@ def reduce_metrics(metrics: dict[str, list[Any]]) -> dict[str, Any]:
     return {key: np.mean(value) for key, value in metrics.items()}
 
 
+def extend_reward_metrics(accumulated: dict[str, list[Any]], batch: dict[str, list[Any]], num_accumulated: int) -> int:
+    """Append a batch's aligned reward metrics to ``accumulated`` (aligned over ``num_accumulated`` samples so far),
+    keeping the alignment when the batches report different keys; returns the new number of samples."""
+    num_batch = max((len(values) for values in batch.values()), default=0)
+    for key in batch:
+        if key not in accumulated:
+            accumulated[key] = [None] * num_accumulated
+    for key, values in accumulated.items():
+        values.extend(batch[key] if key in batch else [None] * num_batch)
+    return num_accumulated + num_batch
+
+
+def reduce_reward_metrics(metrics: dict[str, list[Any]]) -> tuple[dict[str, Any], dict[str, int]]:
+    """Means of the reward metrics over the samples that reported them, and how many samples did, for the metrics
+    that some samples did not report (None in the aligned lists of ``collect_reward_metrics``)."""
+    means: dict[str, Any] = {}
+    counts: dict[str, int] = {}
+    for key, values in metrics.items():
+        if any(value is None for value in values):
+            reported = [value for value in values if value is not None]
+            counts[key] = len(reported)
+            if reported:
+                means[key] = np.mean(reported)
+        else:
+            means[key] = np.mean(values)
+    return means, counts
+
+
 def compute_length_metrics(batch: DataProto) -> dict[str, Any]:
     max_response_length = batch.batch["responses"].size(-1)
     max_prompt_length = batch.batch["attention_mask"].size(-1) - max_response_length
