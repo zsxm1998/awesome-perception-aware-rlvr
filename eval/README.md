@@ -647,7 +647,8 @@ Finished trajectories are appended to `<output-dir>/api_trajectories/<benchmark>
 run with the same settings reuses them and only runs the missing or failed ones, so an
 interrupted or over-budget run does not pay twice. The endpoint, `--api-extra-body`, the token
 field, the image options and the model name enter the result fingerprint; the key, the
-concurrency and the retries do not.
+concurrency and the retries do not. The same options let a model behind an API write SFT
+demonstrations in the environment ([docs/agent_environments.md](../docs/agent_environments.md#sft-data)).
 
 ## Output layout
 

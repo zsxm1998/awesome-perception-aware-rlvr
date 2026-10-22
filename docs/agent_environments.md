@@ -146,7 +146,8 @@ A warm-up by supervised fine-tuning before RL needs demonstrations in the format
 through the rollout's own agent loop, chat adapter, budgets and image handling
 (`verl/workers/agent/replay.py`), and writes them as [ms-swift](https://github.com/modelscope/ms-swift) data.
 The turns come from a scripted policy over a task file (`--policy path/to/file.py:ClassName --tasks`), which sees
-each step's result and may decide on it, or from recorded episodes (`--episodes`):
+each step's result and may decide on it, from a model behind an API (`--api-model`, below), or from recorded
+episodes (`--episodes`):
 
 ```python
 class MyPolicy:
@@ -160,6 +161,30 @@ class MyPolicy:
         }
         # or {"content": "... <answer>...</answer>"}, or the raw assistant text as a string
 ```
+
+Demonstrations of another model (distillation, or rejection sampling with several samples per task): with
+`--api-model`, a model behind any OpenAI-compatible endpoint writes the turns, a local vLLM server or a cloud
+API (GLM, Gemini, Qwen on Model Studio, GPT, ...), with the `--api-*` options of `--backend api` evaluation
+([eval/README.md](../eval/README.md#api-models-in-agent-environments)). Its native tool calls are rendered in the
+trained model's own format, and each episode still runs once, live, through the rollout's loop:
+
+```bash
+export GLM_API_KEY=...
+python scripts/agent/export_sft.py --model Qwen/Qwen3-VL-4B-Instruct \
+    --environment remote_http --environment-kwargs '{"url": "http://127.0.0.1:8000"}' \
+    --api-model glm-4.5v --api-base-url https://open.bigmodel.cn/api/paas/v4 --api-key-env GLM_API_KEY \
+    --tasks data/agent_env/toy_search/train.parquet --samples-per-task 4 --temperature 1.0 --min-reward 1.0 \
+    --max-tool-calls 4 --max-response-tokens 8192 --max-tokens-per-turn 2048 \
+    --min-pixels 200704 --max-pixels 1048576 --out data/agent_env/toy_search_sft_glm
+```
+
+The samples of a task share its environment seed (one task state) and differ in the API's sampling;
+`--min-reward` keeps the successful ones. The model is sent the images resized as the trained model will see
+them, so that its replies refer only to what the trained model can see. A reply the rollout could not take as it
+is (cut off at `--max-tokens-per-turn`, a malformed or second tool call, more tokens than the budget in the trained
+model's tokenizer) leaves its episode out and is counted in `export_summary.json`, with the API's token usage.
+Reasoning that an API returns apart from its reply is not kept. Whether a provider's outputs may be used to train
+other models is set by its terms of service; check them first.
 
 A structured turn is rendered into the model's native tool-call text by its chat template, then tokenized as
 the rollout would tokenize a model that wrote it. A turn that the rollout could not have produced (a malformed

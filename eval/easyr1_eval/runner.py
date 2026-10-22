@@ -1546,6 +1546,7 @@ def build_eval_backend(args: argparse.Namespace):
             max_tokens_field=args.api_max_tokens_field,
             max_total_tokens=args.api_max_total_tokens,
             pixels=_api_pixels(args),
+            observation_pixels=_api_pixels(args, observation=True),
             tool_images=args.api_tool_images,
             output_dir=args.output_dir,
         )
@@ -1823,11 +1824,13 @@ def print_dry_run(specs: list[BenchmarkSpec], args: argparse.Namespace) -> None:
         )
 
 
-def _api_pixels(args: argparse.Namespace) -> tuple[int | None, int | None]:
-    """The pixel bounds of the images sent to an API (--api-images)."""
+def _api_pixels(args: argparse.Namespace, *, observation: bool = False) -> tuple[int | None, int | None]:
+    """The pixel bounds of the images sent to an API (--api-images): those of local runs, whose tool results use
+    --agent-observation-min-pixels when it is set."""
     if args.api_images == "original":
         return None, None
-    return args.min_pixels, args.max_pixels
+    observation_min = getattr(args, "agent_observation_min_pixels", None) if observation else None
+    return observation_min or args.min_pixels, args.max_pixels
 
 
 def _api_fingerprint_fields(args: argparse.Namespace) -> dict[str, Any]:

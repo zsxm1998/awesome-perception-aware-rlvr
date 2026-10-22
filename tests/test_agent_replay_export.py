@@ -273,6 +273,40 @@ def test_a_replayed_toy_episode_becomes_a_swift_sample_with_the_rollout_tokens()
     assert len(sample.rollout["image_grid_thw"]) == len(sample.images) == len(episode.trajectory.all_images)
 
 
+def test_an_api_model_writes_a_replayed_episode():
+    import httpx
+
+    from verl.workers.agent.api_loop import APIPolicy, APISampling, ChatCompletionsClient
+
+    replies = iter(
+        [
+            {
+                "content": "Check region 2.",
+                "tool_calls": [
+                    {"id": "c", "type": "function", "function": {"name": "view", "arguments": '{"region": 2}'}}
+                ],
+            },
+            {"content": "<answer>A</answer>"},
+        ]
+    )
+
+    def endpoint(request):
+        return httpx.Response(200, json={"choices": [{"message": next(replies), "finish_reason": "stop"}]})
+
+    processor = _qwen3_vl_processor()
+    client = ChatCompletionsClient("http://api.test/v1", "m", None, transport=httpx.MockTransport(endpoint))
+    policy = APIPolicy(client, sampling=APISampling(), max_tokens=128)
+
+    run, environment = _replay(policy, processor=processor)
+
+    first, second = run.trajectory.steps
+    assert run.trajectory.status == AgentStatus.ANSWERED and environment.calls == [{"region": 2}]
+    assert (
+        first.model_text == 'Check region 2.\n<tool_call>\n{"name": "view", "arguments": {"region": 2}}\n</tool_call>'
+    )
+    assert second.model_text == "<answer>A</answer>"
+
+
 _FAILING_ENVIRONMENT = """
 import asyncio
 

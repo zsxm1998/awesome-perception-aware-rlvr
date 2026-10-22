@@ -48,6 +48,8 @@ from .protocol import (
     AgentSeedContext,
     AgentStatus,
     EnvOutcome,
+    EnvReset,
+    EnvStep,
     ToolCall,
     ToolResult,
 )
@@ -320,6 +322,68 @@ def _native_tool_call(tool_calls: Sequence[Any]) -> tuple[Optional[ToolCall], Op
     return ToolCall(name=name, arguments=arguments, raw_text=raw if isinstance(raw, str) else json.dumps(raw)), None
 
 
+def _check_tool_images(tool_images: str) -> None:
+    if tool_images not in {"user", "tool"}:
+        raise ValueError("tool_images must be 'user' or 'tool'")
+
+
+class APIConversation:
+    """The Chat Completions messages of one episode: the environment's task, then each reply of the model with the
+    observation of its tool call.
+
+    Images are resized into ``pixels`` (min, max) for the task and ``observation_pixels`` for tool results, as a
+    local rollout prepares them (the model's view of small details depends on it); (None, None) sends them as the
+    environment gives them. ``tool_images`` places the images of a native call's observation: ``user`` in a user
+    message after the tool message (Chat Completions tool messages take text only), ``tool`` in the tool message with
+    its text, in order, for endpoints that accept that (vLLM's server), which renders observations as local rollouts
+    do.
+    """
+
+    def __init__(
+        self,
+        reset: EnvReset,
+        *,
+        pixels: tuple[Optional[int], Optional[int]] = (None, None),
+        observation_pixels: Optional[tuple[Optional[int], Optional[int]]] = None,
+        tool_images: str = "user",
+    ) -> None:
+        _check_tool_images(tool_images)
+        self.pixels = tuple(pixels)
+        self.observation_pixels = self.pixels if observation_pixels is None else tuple(observation_pixels)
+        self.tool_images = tool_images
+        self.tools = [dict(schema) for schema in reset.tool_schemas] or None
+        images = iter(reset.images)
+        self.messages: list[dict[str, Any]] = []
+        for message in reset.messages:
+            content = message.get("content")
+            if not isinstance(content, str):
+                parts = list(content or [])
+                task_images = [next(images) for part in parts if part.get("type") == "image"]
+                content = chat_content(parts, task_images, self.pixels)
+            self.messages.append({"role": message["role"], "content": content})
+
+    def add_turn(self, text: str, native_calls: Sequence[Any], result: ToolResult) -> None:
+        """The model's reply (with its native tool calls, if any) and the observation its call got."""
+        parts = observation_parts(result)
+        observation_text = "".join(part.get("text", "") for part in parts if part.get("type") == "text")
+        pixels = self.observation_pixels
+        if native_calls and self.tool_images == "tool":
+            self.messages.append({"role": "assistant", "content": text, "tool_calls": list(native_calls)})
+            content = chat_content(parts, result.images, pixels) if result.images else observation_text
+            for native in native_calls:
+                self.messages.append({"role": "tool", "tool_call_id": native.get("id"), "content": content})
+        elif native_calls:
+            self.messages.append({"role": "assistant", "content": text, "tool_calls": list(native_calls)})
+            for native in native_calls:
+                self.messages.append({"role": "tool", "tool_call_id": native.get("id"), "content": observation_text})
+            if result.images:
+                image_parts = [{"type": "image"} for _ in result.images]
+                self.messages.append({"role": "user", "content": chat_content(image_parts, result.images, pixels)})
+        else:
+            self.messages.append({"role": "assistant", "content": text})
+            self.messages.append({"role": "user", "content": chat_content(parts, result.images, pixels)})
+
+
 async def run_api_episode(
     environment: AgentEnvironment,
     env_config: Mapping[str, Any],
@@ -330,19 +394,12 @@ async def run_api_episode(
     sampling: APISampling,
     seed_context: Optional[AgentSeedContext] = None,
     pixels: tuple[Optional[int], Optional[int]] = (None, None),
+    observation_pixels: Optional[tuple[Optional[int], Optional[int]]] = None,
     tool_images: str = "user",
 ) -> APIEpisode:
-    """Run one episode of ``environment`` with the model behind ``client``, then finalize and close it.
-
-    ``pixels`` (min, max) resizes every image before it is sent, as a local rollout prepares images (the model's
-    view of small text depends on it); (None, None) sends them as the environment gives them.
-
-    ``tool_images`` places the images of a native call's observation: ``user`` in a user message after the tool
-    message (Chat Completions tool messages take text only), ``tool`` in the tool message with its text, in order,
-    for endpoints that accept that (vLLM's server), which renders observations as local rollouts do.
-    """
-    if tool_images not in {"user", "tool"}:
-        raise ValueError("tool_images must be 'user' or 'tool'")
+    """Run one episode of ``environment`` with the model behind ``client``, then finalize and close it (the images
+    and ``tool_images`` as in ``APIConversation``)."""
+    _check_tool_images(tool_images)
 
     codec = NativeToolCallCodec()
     turns: list[APITurn] = []
@@ -352,15 +409,9 @@ async def run_api_episode(
     try:
         reset = await environment.reset(env_config, env_seed)
         max_tool_calls = config.max_tool_calls if reset.tool_schemas else 0
-        images = iter(reset.images)
-        messages: list[dict[str, Any]] = []
-        for message in reset.messages:
-            content = message.get("content")
-            if not isinstance(content, str):
-                parts = list(content or [])
-                content = chat_content(parts, [next(images) for part in parts if part.get("type") == "image"], pixels)
-            messages.append({"role": message["role"], "content": content})
-        tools = [dict(schema) for schema in reset.tool_schemas] or None
+        conversation = APIConversation(
+            reset, pixels=pixels, observation_pixels=observation_pixels, tool_images=tool_images
+        )
         completion_used = 0
         while True:
             remaining = config.max_response_tokens - completion_used
@@ -371,7 +422,9 @@ async def run_api_episode(
             tools_allowed = metrics.tool_call_attempts < max_tool_calls
             max_tokens = min(remaining, config.max_tokens_per_turn)
             seed = sampling.seed if seed_context is None else seed_context.for_turn(len(turns))
-            reply = await client.complete(messages, tools, max_tokens=max_tokens, sampling=sampling, seed=seed)
+            reply = await client.complete(
+                conversation.messages, conversation.tools, max_tokens=max_tokens, sampling=sampling, seed=seed
+            )
             if reply["completion_tokens"] is None:
                 raise APIError(
                     "the reply has no token usage (usage.completion_tokens), which the trajectory's token budget "
@@ -444,23 +497,7 @@ async def run_api_episode(
                 turn.env_done = True
                 status = AgentStatus.ENVIRONMENT_DONE
                 break
-            parts = observation_parts(result)
-            observation_text = "".join(part.get("text", "") for part in parts if part.get("type") == "text")
-            if native_calls and tool_images == "tool":
-                messages.append({"role": "assistant", "content": text, "tool_calls": native_calls})
-                content = chat_content(parts, result.images, pixels) if result.images else observation_text
-                for native in native_calls:
-                    messages.append({"role": "tool", "tool_call_id": native.get("id"), "content": content})
-            elif native_calls:
-                messages.append({"role": "assistant", "content": text, "tool_calls": native_calls})
-                for native in native_calls:
-                    messages.append({"role": "tool", "tool_call_id": native.get("id"), "content": observation_text})
-                if result.images:
-                    image_parts = [{"type": "image"} for _ in result.images]
-                    messages.append({"role": "user", "content": chat_content(image_parts, result.images, pixels)})
-            else:
-                messages.append({"role": "assistant", "content": text})
-                messages.append({"role": "user", "content": chat_content(parts, result.images, pixels)})
+            conversation.add_turn(text, native_calls, result)
             if result.success:
                 metrics.tool_call_successes += 1
             metrics.visual_observations += len(result.images)
@@ -468,3 +505,76 @@ async def run_api_episode(
         return APIEpisode(turns=turns, status=status, metrics=metrics, final_answer=final_answer, env_outcome=outcome)
     finally:
         await environment.close()
+
+
+class APIPolicy:
+    """A policy for ``replay_episode`` (verl/workers/agent/replay.py) whose turns come from a model behind an API, to
+    make SFT demonstrations of it (distillation; with several samples per task and a reward threshold, rejection
+    sampling).
+
+    Each ``act`` sends the conversation so far (``APIConversation``; images resized as the local rollout prepares
+    them, so that the model's replies refer only to what the trained model will see) and returns the reply as a turn:
+    a native tool call as ``{"content", "tool_call"}``, which the trained model's chat template renders, an answer or a
+    ``<tool_call>`` written in the text as the text itself. The replay then runs it through the rollout's loop. A
+    reply the rollout could not take as it is (cut off at the token limit, a malformed or second tool call) raises
+    ReplayError, which leaves the episode out. Reasoning that an API returns apart from the reply is not kept.
+    """
+
+    def __init__(
+        self,
+        client: ChatCompletionsClient,
+        *,
+        sampling: APISampling,
+        max_tokens: int,
+        seed_context: Optional[AgentSeedContext] = None,
+        pixels: tuple[Optional[int], Optional[int]] = (None, None),
+        observation_pixels: Optional[tuple[Optional[int], Optional[int]]] = None,
+        tool_images: str = "user",
+    ) -> None:
+        _check_tool_images(tool_images)
+        self.client = client
+        self.sampling = sampling
+        self.max_tokens = max_tokens
+        self.seed_context = seed_context
+        self.pixels = pixels
+        self.observation_pixels = observation_pixels
+        self.tool_images = tool_images
+        self.codec = NativeToolCallCodec()
+        self.conversation: Optional[APIConversation] = None
+
+    def start(self, env_config: Mapping[str, Any], seed: int, reset: EnvReset) -> None:
+        self.conversation = APIConversation(
+            reset, pixels=self.pixels, observation_pixels=self.observation_pixels, tool_images=self.tool_images
+        )
+        self.turns = 0
+        self.previous: Optional[tuple[str, list[Any]]] = None
+
+    async def act(self, step: Optional[EnvStep]) -> dict[str, Any]:
+        from .replay import ReplayError
+
+        if self.conversation is None:
+            raise RuntimeError("APIPolicy.start() must run before act()")
+        if step is not None:
+            assert self.previous is not None
+            self.conversation.add_turn(*self.previous, step.result)
+        seed = self.sampling.seed if self.seed_context is None else self.seed_context.for_turn(self.turns)
+        reply = await self.client.complete(
+            self.conversation.messages,
+            self.conversation.tools,
+            max_tokens=self.max_tokens,
+            sampling=self.sampling,
+            seed=seed,
+        )
+        self.turns += 1
+        if reply["finish_reason"] == "length":
+            raise ReplayError(f"the model's reply {self.turns} was cut off at {self.max_tokens} tokens")
+        message = reply["message"]
+        text = _reply_text(message)
+        native_calls = list(message.get("tool_calls") or [])
+        self.previous = (text, native_calls)
+        if not native_calls or self.codec.parse(text).final_answer is not None:
+            return {"text": text}  # an answer takes precedence over a call, as in the rollout
+        call, error = _native_tool_call(native_calls)
+        if error is not None:
+            raise ReplayError(f"the model's reply {self.turns}: {error}")
+        return {"content": text, "tool_call": {"name": call.name, "arguments": dict(call.arguments)}}
