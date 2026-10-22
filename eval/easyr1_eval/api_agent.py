@@ -71,6 +71,7 @@ class AgenticAPIBackend:
         max_tokens_field: str = "max_tokens",
         max_total_tokens: int | None = None,
         pixels: tuple[int | None, int | None] = (None, None),
+        observation_pixels: tuple[int | None, int | None] | None = None,
         tool_images: str = "user",
         output_dir: Any = None,
         transport: Any = None,
@@ -91,6 +92,7 @@ class AgenticAPIBackend:
         self.max_tokens_field = max_tokens_field
         self.max_total_tokens = max_total_tokens
         self.pixels = tuple(pixels)
+        self.observation_pixels = self.pixels if observation_pixels is None else tuple(observation_pixels)
         self.tool_images = tool_images
         self.cache_dir = None if output_dir is None else Path(output_dir) / "api_trajectories"
         self.tokens_used = 0
@@ -150,6 +152,7 @@ class AgenticAPIBackend:
                     sampling=sampling,
                     seed_context=AgentSeedContext(config.seed, sample_index, rollout_index),
                     pixels=self.pixels,
+                    observation_pixels=self.observation_pixels,
                     tool_images=self.tool_images,
                 )
             output = api_episode_to_generation_output(episode)
@@ -186,6 +189,7 @@ class AgenticAPIBackend:
             "extra_body": self.extra_body,
             "max_tokens_field": self.max_tokens_field,
             "pixels": list(self.pixels),
+            "observation_pixels": list(self.observation_pixels),
             "tool_images": self.tool_images,
             "agent_config": self.agent_config.__dict__,
             "environment": self.agent_environment,

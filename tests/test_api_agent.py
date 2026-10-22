@@ -32,7 +32,15 @@ from verl.workers.agent.api_loop import (
     run_api_episode,
     uses_environment_proxies,
 )
-from verl.workers.agent.protocol import AgentLoopConfig, AgentStatus, EnvOutcome, EnvReset, EnvStep, ToolResult
+from verl.workers.agent.protocol import (
+    AgentLoopConfig,
+    AgentStatus,
+    EnvOutcome,
+    EnvReset,
+    EnvStep,
+    ToolCall,
+    ToolResult,
+)
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "eval"))
@@ -321,6 +329,94 @@ def test_runner_options_and_fingerprint_of_the_api_backend(monkeypatch):
     assert fields["api"]["extra_body"] == {"enable_thinking": False}
     assert "sk-test-not-recorded" not in json.dumps(fields) and args.chat_template is None
     assert runner._api_fingerprint_fields(runner.parse_args(["--model", "m"])) == {}
+
+
+# ----------------------------------------------------------------------------- API models as demonstration policies
+def _policy(endpoint, **kwargs):
+    from verl.workers.agent.api_loop import APIPolicy
+
+    client = _client(endpoint)
+    policy = APIPolicy(client, sampling=APISampling(temperature=1.0), max_tokens=256, **kwargs)
+    reset = asyncio.run(_Environment().reset({}, 0))
+    policy.start({}, 0, reset)
+    return policy, client
+
+
+def test_an_api_policy_turns_replies_into_turns_for_the_rollouts_loop():
+    endpoint = _Endpoint(
+        [
+            ({"content": "Look closer.", "tool_calls": [_native_call()]}, "tool_calls"),
+            ({"content": "It is 7.\n<answer>7</answer>", "tool_calls": [_native_call()]}, "stop"),
+        ]
+    )
+    policy, client = _policy(endpoint, pixels=(None, 1000), observation_pixels=(None, 500))
+
+    async def run():
+        first = await policy.act(None)
+        step = await _Environment().step(ToolCall("zoom_in", {}, ""))
+        second = await policy.act(step)
+        await client.aclose()
+        return first, second
+
+    first, second = asyncio.run(run())
+
+    assert first == {
+        "content": "Look closer.",
+        "tool_call": {"name": "zoom_in", "arguments": {"bbox_2d": [0, 0, 500, 500]}},
+    }
+    assert second == {"text": "It is 7.\n<answer>7</answer>"}  # the answer takes precedence over the call
+    assert endpoint.requests[0]["max_tokens"] == 256 and endpoint.requests[0]["tools"] == [TOOL]
+    assistant, tool, images = endpoint.requests[1]["messages"][2:]
+    assert assistant["tool_calls"] == [_native_call()] and tool["content"] == "Zoomed:"
+    assert images["role"] == "user" and images["content"][0]["type"] == "image_url"
+
+
+def test_an_api_policy_leaves_out_replies_the_rollout_could_not_take():
+    from verl.workers.agent.replay import ReplayError
+
+    for reply, match in (
+        (({"content": "half a th"}, "length"), "cut off at 256 tokens"),
+        (({"content": "", "tool_calls": [_native_call(), _native_call(call_id="c2")]}, "tool_calls"), "exactly one"),
+        (({"content": "", "tool_calls": [_native_call(arguments="{")]}, "tool_calls"), "not valid JSON"),
+    ):
+        policy, client = _policy(_Endpoint([reply]))
+        with pytest.raises(ReplayError, match=match):
+            asyncio.run(policy.act(None))
+        asyncio.run(client.aclose())
+
+
+def test_export_options_for_api_models():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "export_sft", Path(__file__).resolve().parents[1] / "scripts/agent/export_sft.py"
+    )
+    export = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(export)
+    base = ["--model", "m", "--environment", "remote_http", "--out", "x"]
+
+    args = export.parse_args(
+        [
+            *base,
+            "--api-model",
+            "glm",
+            "--api-base-url",
+            "http://h/v1",
+            "--tasks",
+            "t.jsonl",
+            "--samples-per-task",
+            "4",
+            "--temperature",
+            "1.0",
+        ]
+    )
+    assert (args.api_model, args.samples_per_task, args.temperature) == ("glm", 4, 1.0)
+    for extra in (
+        ["--api-model", "glm", "--api-base-url", "http://h/v1"],
+        ["--episodes", "e.jsonl", "--samples-per-task", "2"],
+    ):
+        with pytest.raises(SystemExit):
+            export.parse_args([*base, *extra])
 
 
 def test_a_used_up_budget_stops_requests_that_waited_for_a_slot():

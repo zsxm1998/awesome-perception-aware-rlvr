@@ -101,9 +101,9 @@ before drawing conclusions.
 ## 🔥 News
 
 - **2026-10**: In agent environments, models behind an OpenAI-compatible API are evaluated on the same tasks,
-  tools and scorer as local checkpoints ([eval](eval/README.md#api-models-in-agent-environments)), and scripted
-  demonstrations are replayed through the rollout and exported for SFT in ms-swift with the rollout's tokens
-  ([docs](docs/agent_environments.md#sft-data)).
+  tools and scorer as local checkpoints ([eval](eval/README.md#api-models-in-agent-environments)), and
+  demonstrations, scripted or written by a model behind an API, are replayed through the rollout and exported for
+  SFT in ms-swift with the rollout's tokens ([docs](docs/agent_environments.md#sft-data)).
 - **2026-10**: Agent environments for multi-turn agentic RL and evaluation: an environment interface (in
   process or over HTTP, [docs](docs/agent_environments.md)), episode rewards from the environment, DeepEyes as
   the in-process environment and [examples](examples/agent_env/README.md) (a toy visual search, DeepEyes over HTTP).

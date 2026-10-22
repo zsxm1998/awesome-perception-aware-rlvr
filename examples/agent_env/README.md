@@ -49,6 +49,13 @@ python scripts/agent/export_sft.py --model Qwen/Qwen3-VL-4B-Instruct \
     --min-pixels 200704 --max-pixels 1048576 --out data/agent_env/toy_search_sft
 # in an environment with ms-swift:
 python scripts/agent/check_swift_export.py --model Qwen/Qwen3-VL-4B-Instruct --export data/agent_env/toy_search_sft
+# or demonstrations of a model behind an API, keeping its successes (here the vLLM server above):
+python scripts/agent/export_sft.py --model Qwen/Qwen3-VL-4B-Instruct \
+    --environment remote_http --environment-kwargs '{"url": "http://127.0.0.1:8000"}' \
+    --api-model qwen3-vl-4b --api-base-url http://127.0.0.1:8002/v1 \
+    --tasks data/agent_env/toy_search/train.parquet --samples-per-task 2 --temperature 1.0 --min-reward 1.0 \
+    --max-tool-calls 4 --max-response-tokens 8192 --max-tokens-per-turn 2048 \
+    --min-pixels 200704 --max-pixels 1048576 --out data/agent_env/toy_search_sft_api
 ```
 
 `AGENT_ENV_URL` points a training script at another server. In a 2-step test of each script on 4 GPUs (8
@@ -62,3 +69,6 @@ On 16 validation tasks, Qwen3-VL-4B solved all of them both as a local checkpoin
 vLLM's OpenAI-compatible server (`--backend api`, native tool calls, images resized as for local runs). Sent at
 the environment's own size (`--api-images original`), the 1024x1024 canvas is larger than in local runs, and the
 same model solved 13 of 16.
+With Qwen3-VL-4B behind the same server as the demonstrating model (2 samples per task, temperature 1.0), the
+16 episodes of 8 training tasks were all correct and written, and ms-swift 4.6.0 encoded every sample with the
+rollout's tokens.
