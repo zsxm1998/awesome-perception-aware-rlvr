@@ -68,7 +68,7 @@ different keys. A name used per sample, `algorithm.filter_key` of online filteri
 from every sample. A name given both as a component and as a metric is an error.
 
 Trajectory records keep what the environment reported, as given: the generation records have an
-`environment` field, and evaluation outputs (`agent_diagnostics`) the same entries:
+`environment` field, and evaluation outputs (`agent_diagnostics`) and SFT exports the same entries:
 `env_steps` (per tool call: `turn_index`, `tool`, `state_key`, `cost`, `reward`, `done`, `info`, for the calls
 where the environment gave any of them) and `env_outcome` (`reward`, `components`, `metrics`, `details`,
 `episode_id`). Reward functions receive the reward, components and metrics only.
@@ -132,6 +132,60 @@ and must be present; an empty list means a single turn without tools.
 [examples/agent_env/server.py](../examples/agent_env/server.py) implements the server side of these rules on
 the Python standard library: write an `Episode` class with `reset`, `step` and `finalize`, and call `serve`. It
 drops idle episodes when a later request arrives, never one with a request in progress.
+
+## SFT data
+
+A warm-up by supervised fine-tuning before RL needs demonstrations in the format RL will train on.
+[scripts/agent/export_sft.py](../scripts/agent/export_sft.py) replays scripted demonstrations in an environment
+through the rollout's own agent loop, chat adapter, budgets and image handling
+(`verl/workers/agent/replay.py`), and writes them as [ms-swift](https://github.com/modelscope/ms-swift) data.
+The turns come from a scripted policy over a task file (`--policy path/to/file.py:ClassName --tasks`), which sees
+each step's result and may decide on it, or from recorded episodes (`--episodes`):
+
+```python
+class MyPolicy:
+    def start(self, env_config, seed, reset):  # optional; reset holds the messages, images and tool schemas
+        ...
+
+    def act(self, step):  # step: the EnvStep of the previous tool call, None on the first turn
+        return {
+            "content": "The tumor border is unclear; I will zoom in.",
+            "tool_call": {"name": "zoom_in", "arguments": {"bbox_2d": [0, 0, 500, 500]}},
+        }
+        # or {"content": "... <answer>...</answer>"}, or the raw assistant text as a string
+```
+
+A structured turn is rendered into the model's native tool-call text by its chat template, then tokenized as
+the rollout would tokenize a model that wrote it. A turn that the rollout could not have produced (a malformed
+call, more tokens than the per-turn or trajectory budget) is reported and its episode left out; by default only
+answered episodes are written (`--keep all`, `--min-reward`). Give the model, chat template, budgets and pixel
+bounds of the RL run.
+
+The output (`--out`): `train.jsonl` for `swift sft --dataset`, with system, user, assistant and tool messages,
+the tool definitions (`tools`), `<image>` tags and absolute image paths; `images/`; `rollout_tokens.jsonl`, the rollout's tokens, loss mask and
+image grids with what the environment reported; `export_summary.json`. Three details make ms-swift encode a
+sample exactly as the rollout did:
+
+- the tool definitions are ms-swift's `tools` field (a JSON string, kept as written by its dataset loader) and the
+  system message is the environment's own; ms-swift renders the tool descriptions after it as the chat template
+  does. Without a system message, ms-swift would put two extra newlines before them, so such a sample carries the
+  system block the chat template rendered, tool descriptions included, instead of a `tools` field;
+- tool results use the `tool` role, which ms-swift's hermes agent template (the default for Qwen models) wraps in
+  the same `<tool_response>` user turn as the chat template;
+- images are saved at the size the model's image processor resizes them to, resized the same way, so that
+  neither side resizes them again (the export checks that the saved image gives the processor's input).
+
+[scripts/agent/check_swift_export.py](../scripts/agent/check_swift_export.py) proves it for a model: it runs in
+an environment with ms-swift (it does not import this repository; the export runs it itself when ms-swift is
+importable) and encodes each sample with ms-swift's own template in training mode, then compares the token ids,
+the trained tokens and each image's grid and pixel values with the rollout. The one difference it allows is
+ms-swift's own: it also trains the newline after each `<|im_end|>` that ends an assistant turn, which the model
+never generates, since generation stops at `<|im_end|>`. For Qwen3-VL-4B-Instruct, every sample of the toy
+example matched with ms-swift 4.6.0, as did samples with images that both sides had to resize. One setting to
+keep the same on both sides: when training tokenizes `<think>` as plain text
+(`worker.actor.model.plain_think_tokens`, applied by default to Qwen3-VL Instruct tokenizers that have it as an
+added token) and ms-swift loads the released tokenizer, demonstrations with `<think>` tags are tokenized
+differently, and the check reports it.
 
 ## In-process environments
 

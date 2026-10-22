@@ -69,6 +69,12 @@ TOOL_SCHEMA = {
 
 def render_task(image_seed: int) -> tuple[Image.Image, str]:
     """The canvas and its digit; the same seed always gives the same task."""
+    canvas, digit, _ = render_task_layout(image_seed)
+    return canvas, digit
+
+
+def render_task_layout(image_seed: int) -> tuple[Image.Image, str, tuple[int, int]]:
+    """The canvas, its digit and where the digit is drawn (top-left canvas pixel; the glyph is about 7x11 px)."""
     rng = random.Random(image_seed)
     canvas = Image.new("RGB", (CANVAS, CANVAS), (236, 236, 228))
     draw = ImageDraw.Draw(canvas)
@@ -84,8 +90,9 @@ def render_task(image_seed: int) -> tuple[Image.Image, str]:
             (rng.randrange(20, CANVAS - 30), rng.randrange(20, CANVAS - 30)), letter, fill=(30, 30, 30), font=font
         )
     digit = str(rng.randrange(10))
-    draw.text((rng.randrange(20, CANVAS - 30), rng.randrange(20, CANVAS - 30)), digit, fill=(30, 30, 30), font=font)
-    return canvas, digit
+    position = (rng.randrange(20, CANVAS - 30), rng.randrange(20, CANVAS - 30))
+    draw.text(position, digit, fill=(30, 30, 30), font=font)
+    return canvas, digit, position
 
 
 class ToySearchEpisode:

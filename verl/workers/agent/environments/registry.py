@@ -60,17 +60,23 @@ def environment_class(name: str) -> type:
             f"unknown agent environment {name!r}; registered: {registered_environments()}, "
             "or give path/to/file.py:ClassName"
         )
-    path, class_name = name.rsplit(":", 1)
+    return class_from_file(name, what="agent environment")
+
+
+def class_from_file(spec: str, *, what: str = "class") -> type:
+    """The class of ``path/to/file.py:ClassName``; each file is loaded once per process."""
+
+    path, class_name = spec.rsplit(":", 1)
     path = os.path.abspath(path)
     module = _LOADED_FILES.get(path)
     if module is None:
         if not os.path.isfile(path):
-            raise FileNotFoundError(f"agent environment file not found: {path}")
+            raise FileNotFoundError(f"{what} file not found: {path}")
         module_name = "agent_environment_" + hashlib.sha1(path.encode()).hexdigest()[:12]
-        spec = importlib.util.spec_from_file_location(module_name, path)
-        module = importlib.util.module_from_spec(spec)
+        spec_ = importlib.util.spec_from_file_location(module_name, path)
+        module = importlib.util.module_from_spec(spec_)
         sys.modules[module_name] = module
-        spec.loader.exec_module(module)
+        spec_.loader.exec_module(module)
         _LOADED_FILES[path] = module
     cls = getattr(module, class_name, None)
     if not isinstance(cls, type):

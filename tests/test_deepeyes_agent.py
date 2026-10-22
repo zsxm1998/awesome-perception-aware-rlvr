@@ -1817,7 +1817,7 @@ def test_deepeyes_inference_picks_the_adapter_and_tools_per_row(
     adapter_name,
     max_tool_calls,
 ):
-    from verl.workers.agent import inference
+    from verl.workers.agent import episode, inference
     from verl.workers.agent.environments import DeepEyesEnvironment, EnvironmentContext
     from verl.workers.agent.protocol import AgentImageConfig
 
@@ -1830,7 +1830,7 @@ def test_deepeyes_inference_picks_the_adapter_and_tools_per_row(
         async def run(self, **kwargs):
             return SimpleNamespace(final_answer=None, status=None)
 
-    monkeypatch.setattr(inference, "AgentLoop", CapturingLoop)
+    monkeypatch.setattr(episode, "AgentLoop", CapturingLoop)  # the loop of run_agent_inference's episode
     from verl.workers.agent.chat import OFFICIAL_DEEPEYES_SYSTEM_PROMPT
 
     system = "Think, then answer."
