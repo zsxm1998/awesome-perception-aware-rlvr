@@ -515,6 +515,7 @@ Common runner options:
 | `--resume` / `--no-resume`, `--score-only`, `--summary-only` | reuse or rebuild results |
 | `--dry-run` | print the plan (benchmarks, decoding, missing data) without loading a model |
 | `--backend transformers` | slow Hugging Face backend for debugging (`dummy` echoes the reference) |
+| `--backend api` | a model behind an OpenAI-compatible API, in agent environments ([below](#api-models-in-agent-environments)) |
 
 Inference runs one vLLM engine per GPU group. As soon as every shard of a benchmark is done
 it is scored on a single scoring thread while the GPUs continue with the next benchmark. Set
@@ -598,6 +599,55 @@ predictions keep each trajectory's `env_outcome` (with the environment's `detail
 ([docs/agent_environments.md](../docs/agent_environments.md#training-configuration)).
 `--agent-environment` defaults to `remote_http`; it can also be `path/to/file.py:ClassName`.
 The environment and its options (e.g. the server url) enter the result fingerprint.
+
+### API models in agent environments
+
+`--backend api` runs the same environment tasks with a model behind an OpenAI-compatible Chat
+Completions endpoint (a commercial API, Alibaba Cloud Model Studio, or a model served by vLLM),
+so that local checkpoints and API models are compared on the same environment, tools, limits
+and scorer. `--model` is the API's model name; the key is read from the environment variable
+named by `--api-key-env` (default `OPENAI_API_KEY`) and is never written to the outputs:
+
+```bash
+export OPENAI_API_KEY=...   # not needed for a local vLLM server
+python eval/run_all_benchmarks.py --model qwen3-vl-plus --backend api \
+    --api-base-url https://dashscope.aliyuncs.com/compatible-mode/v1 \
+    --interaction-mode agentic --agent-profile environment \
+    --agent-environment-kwargs '{"url": "http://127.0.0.1:8000"}' --config my_benchmarks.yaml \
+    --benchmarks toy_search --api-max-total-tokens 2000000
+```
+
+The loop follows the local one (verl/workers/agent/api_loop.py): an `<answer>` ends the
+episode, one tool call per turn, after `--agent-max-tool-calls` calls one more turn may only
+answer, `--agent-max-tokens-per-turn` is each request's token limit and
+`--agent-max-response-tokens` caps the completion tokens of a trajectory (the API's count;
+observations are not counted, unlike local runs), so the endpoint must report token usage in its
+replies (a reply without it is an error). Tool calls are the API's native `tool_calls`,
+or `<tool_call>` text for endpoints without function calling. A tool result goes back as a
+`tool` message with its text and a `user` message with its images (Chat Completions tool
+messages take text only); `--api-tool-images tool` keeps the images in the tool message, as local
+rollouts render them, for endpoints that accept it (vLLM's server). Images are resized into
+`--min-pixels`/`--max-pixels` as local runs prepare them (`--api-images original` sends them as
+the environment gives them; how much detail a model reads depends on it). The predictions keep
+each conversation without its images (`turns`) and the API's token counts (`api_usage`).
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--api-base-url` | `$OPENAI_BASE_URL` | the endpoint (`.../v1`); proxy variables are not used for a local one |
+| `--api-key-env` | `OPENAI_API_KEY` | environment variable with the key (none sent when unset) |
+| `--api-concurrency` | `8` | requests at a time |
+| `--api-request-retries`, `--api-timeout` | `5`, `300` | retries of a failed request (HTTP 408, 429, 5xx, network), seconds per request |
+| `--api-extra-body` | none | JSON merged into each request, e.g. `{"enable_thinking": false}`; `null` removes a field |
+| `--api-max-tokens-field` | `max_tokens` | `max_completion_tokens` for OpenAI's newer models |
+| `--api-max-total-tokens` | none | no new request once the API has reported this many prompt + completion tokens in the run (all benchmarks together; requests already sent finish) |
+| `--api-tool-images` | `user` | `tool`: images in the tool message |
+| `--api-images` | `as_local` | `original`: images at the environment's size |
+
+Finished trajectories are appended to `<output-dir>/api_trajectories/<benchmark>.jsonl`; a later
+run with the same settings reuses them and only runs the missing or failed ones, so an
+interrupted or over-budget run does not pay twice. The endpoint, `--api-extra-body`, the token
+field, the image options and the model name enter the result fingerprint; the key, the
+concurrency and the retries do not.
 
 ## Output layout
 

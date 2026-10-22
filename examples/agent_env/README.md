@@ -24,6 +24,19 @@ python examples/agent_env/deepeyes_http.py serve --data-dir data/deepeyes --port
 bash examples/agent_env/qwen3_vl_8b_deepeyes_http.sh
 ```
 
+Evaluation in the same environment, with a local checkpoint or a model behind an OpenAI-compatible API
+([eval/README.md](../../eval/README.md#agent-environments)); here Qwen3-VL-4B served by vLLM with its tool
+parser stands in for an API model:
+
+```bash
+vllm serve Qwen/Qwen3-VL-4B-Instruct --port 8002 --served-model-name qwen3-vl-4b \
+    --enable-auto-tool-choice --tool-call-parser hermes &
+python eval/run_all_benchmarks.py --model qwen3-vl-4b --backend api --api-base-url http://127.0.0.1:8002/v1 \
+    --interaction-mode agentic --agent-profile environment \
+    --agent-environment-kwargs '{"url": "http://127.0.0.1:8000"}' --config my_benchmarks.yaml --benchmarks toy_search \
+    --agent-max-tool-calls 4 --agent-max-response-tokens 8192 --agent-max-tokens-per-turn 2048
+```
+
 SFT demonstrations for a warm-up before RL ([docs/agent_environments.md](../../docs/agent_environments.md#sft-data)):
 the scripted policy runs in the environment through the rollout's own loop and the result is written for
 ms-swift, tokenized exactly as RL training tokenizes the same turns.
@@ -44,3 +57,8 @@ DeepEyes over HTTP gave the same first-step accuracy as the in-process environme
 
 The scripted policy answered all 32 training tasks it was given, and ms-swift 4.6.0 (also development
 versions of 4.3 and 3.12) encoded every exported sample with the rollout's tokens.
+
+On 16 validation tasks, Qwen3-VL-4B solved all of them both as a local checkpoint (`--backend vllm`) and behind
+vLLM's OpenAI-compatible server (`--backend api`, native tool calls, images resized as for local runs). Sent at
+the environment's own size (`--api-images original`), the 1024x1024 canvas is larger than in local runs, and the
+same model solved 13 of 16.
