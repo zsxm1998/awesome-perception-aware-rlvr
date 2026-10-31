@@ -93,8 +93,10 @@ def test_toy_search_runs_over_http_with_the_remote_environment():
         http.shutdown()
 
     assert "at most 4 times" in reset.messages[0]["content"] and reset.images[0].size == (1024, 1024)
+    assert reset.state_key == "level0:canvas"
     assert zoom.result.success and zoom.state_key == "level2:cell00" and max(zoom.result.images[0].size) == 512
     assert not bad.result.success and bad.result.error_code == "invalid_bbox"
+    assert bad.state_key == "level2:cell00"  # a rejected call leaves the view as it was
     assert outcome.reward == 1.0 and outcome.metrics == {"zoom_calls": 1.0}
     assert outcome.details == {"digit": digit} and outcome.episode_id is not None
 

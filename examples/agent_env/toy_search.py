@@ -16,7 +16,9 @@
 Each task draws colored boxes, small letters and one small digit on a 1024x1024 canvas, determined by the
 task's ``image_seed``. The model sees the canvas, may call ``zoom_in`` (a 0-1000 box, returned at 512 px on its long
 side) and answers the digit in <answer></answer>. The episode reward is 1 for the right digit. ``state_key``
-is the view after a zoom-in (zoom level and 4x4 grid cell of its center), for grouping steps across rollouts.
+names the view: the whole canvas after ``reset``, then the last zoom-in (zoom level and 4x4 grid cell of its
+center); a rejected call leaves it as it was. GiGPO groups steps across rollouts by it with
+``algorithm.step_state_key=environment``.
 
     python examples/agent_env/toy_search.py tasks --out data/agent_env/toy_search   # train/val parquet
     python examples/agent_env/toy_search.py serve --port 8000
@@ -100,10 +102,12 @@ class ToySearchEpisode:
         # the task is fully given by the configuration; ``seed`` (shared by a group) is not needed
         self.canvas, self.digit = render_task(int(config["image_seed"]))
         self.zoom_calls = 0
+        self.view = "level0:canvas"
         return {
             "system_prompt": SYSTEM_PROMPT.format(max_tool_calls=max_tool_calls),
             "user_content": [image_part(self.canvas), text_part("Which digit is hidden in this image?")],
             "tool_schemas": [TOOL_SCHEMA],
+            "state_key": self.view,
         }
 
     def step(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -129,10 +133,11 @@ class ToySearchEpisode:
         side = max(x2 - x1, y2 - y1)
         level = 1 if side > 500 else 2 if side > 250 else 3
         cell = (min(3, int((x1 + x2) / 2 / 250)), min(3, int((y1 + y2) / 2 / 250)))
+        self.view = f"level{level}:cell{cell[0]}{cell[1]}"
         return {
             "content": [text_part(f"Zoomed into [{x1:.0f}, {y1:.0f}, {x2:.0f}, {y2:.0f}]:"), image_part(region)],
             "success": True,
-            "state_key": f"level{level}:cell{cell[0]}{cell[1]}",
+            "state_key": self.view,
             "info": {"zoom_level": level},
         }
 
@@ -146,7 +151,13 @@ class ToySearchEpisode:
         }
 
     def _error(self, code: str, message: str) -> dict[str, Any]:
-        return {"content": [text_part(f"Error: {message}")], "success": False, "error_code": code}
+        # a rejected call leaves the view as it was
+        return {
+            "content": [text_part(f"Error: {message}")],
+            "success": False,
+            "error_code": code,
+            "state_key": self.view,
+        }
 
 
 def write_tasks(out: Path, num_train: int, num_val: int) -> None:

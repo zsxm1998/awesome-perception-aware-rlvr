@@ -100,6 +100,9 @@ before drawing conclusions.
 
 ## 🔥 News
 
+- **2026-10**: GiGPO's step-level advantages for multi-turn agents ([docs](docs/agent_environments.md#step-level-advantages-gigpo)),
+  checked value for value against verl-agent's implementation; rewards an environment gives for single tool
+  calls now count in the return of every estimator.
 - **2026-10**: In agent environments, models behind an OpenAI-compatible API are evaluated on the same tasks,
   tools and scorer as local checkpoints ([eval](eval/README.md#api-models-in-agent-environments)), and
   demonstrations, scripted or written by a model behind an API, are replayed through the rollout and exported for
