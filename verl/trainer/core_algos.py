@@ -79,6 +79,7 @@ class AdvantageEstimator(str, Enum):
     """
 
     GAE = "gae"
+    GIGPO = "gigpo"
     GRPO = "grpo"
     GRPO_PASSK = "grpo_passk"
     REINFORCE_PLUS_PLUS = "reinforce_plus_plus"
@@ -215,6 +216,15 @@ def compute_grpo_outcome_advantage(
 
     returns = scores.unsqueeze(-1) * response_mask
     return returns, returns
+
+
+@register_adv_estimator(AdvantageEstimator.GIGPO)
+def compute_gigpo_advantage(**kwargs) -> tuple[torch.Tensor, torch.Tensor]:
+    """Step-level advantages of multi-turn agent trajectories (GiGPO), see ``verl/trainer/step_advantage.py``."""
+    from .step_advantage import compute_gigpo_advantage as compute
+
+    kwargs.pop("lam", None)
+    return compute(**kwargs)
 
 
 @register_adv_estimator(AdvantageEstimator.GRPO_PASSK)

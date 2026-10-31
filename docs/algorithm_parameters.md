@@ -14,6 +14,24 @@ This note only lists which `algorithm.*` parameters are used by each perception-
   `worker.rollout.agent_environment_config_key` (the data column with each row's configuration, default `env_config`):
   the environment of agentic rollouts. Protocol, options and examples: [agent_environments.md](agent_environments.md).
 
+## Step-Level Advantages (GiGPO)
+
+`algorithm.adv_estimator=gigpo` (agentic rollouts, `worker.rollout.n > 1`, `worker.actor.loss_avg_mode=token`); what
+each turn's advantage is: [agent_environments.md](agent_environments.md#step-level-advantages-gigpo).
+
+- `algorithm.gamma` (default 1.0; verl-agent's scripts use 0.95): discount of the step returns.
+- `algorithm.step_advantage_weight` (default 1.0): w in A = A_E + w * A_S.
+- `algorithm.group_advantage_norm` (`mean` | `mean_std`, default `mean`): subtract the group mean, or also divide by
+  the unbiased std (+1e-6); for the episode and the step groups (verl-agent's `mean_norm`, `mean_std_norm`).
+- `algorithm.episode_group_stats` (`steps` | `trajectories`, default `steps`): the episode statistics over every
+  turn of a prompt's rollouts (verl-agent's default, a long trajectory counting once per turn) or over one score per
+  trajectory (the paper's Eq. 3).
+- `algorithm.step_state_key` (`observation` | `environment`, default `observation`) and
+  `algorithm.step_similarity_threshold` (default null: exact): which turns act in the same state.
+- `algorithm.invalid_action_penalty` (default 0.0): taken from an invalid turn's episode score and step return.
+  verl-agent turns it on by default with 0.1 for success rewards of 10, and its search example uses 0.01 for success
+  rewards of 1 (1% of the success reward in each); it is off here, since the right value depends on the reward scale.
+
 ## Loss Averaging
 
 - `worker.actor.loss_avg_mode`: `token` (default) weights every response token of a mini-batch equally; `seq` averages over each response's tokens, then weights every response equally across micro-batches and ranks (verl's seq-mean-token-mean). Used by the PEPO GRPO arms and GRIT. See [implementation notes](implementation_notes.md#seq-and-token-loss-averaging).

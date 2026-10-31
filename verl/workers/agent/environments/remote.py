@@ -215,11 +215,15 @@ class RemoteHTTPEnvironment:
             raise RemoteEnvironmentError(
                 '/reset tool_schemas must be a list of {"type": "function", "function": {"name": ..., ...}}'
             )
+        state_key = response.get("state_key")
+        if state_key is not None and not isinstance(state_key, str):
+            raise RemoteEnvironmentError("/reset state_key must be a string or null")
         return EnvReset(
             messages=messages,
             images=images,
             tool_schemas=tool_schemas,
             max_images_per_step=self.max_images_per_step,
+            state_key=state_key,
         )
 
     async def step(self, call: ToolCall) -> EnvStep:

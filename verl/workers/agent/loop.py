@@ -34,6 +34,7 @@ from .protocol import (
     ObservationEncoder,
     ObservationEncodingRequest,
     ToolResult,
+    checked_step_reward,
 )
 from .tool_call import NativeToolCallCodec, ToolCallCodec
 from .tools.base import tool_error
@@ -248,7 +249,7 @@ class AgentLoop:
             step.tool_result = result
             self._record_tool_result(metrics, result)
             if env_step is not None:
-                step.env_reward = env_step.reward
+                step.env_reward = checked_step_reward(env_step.reward)
                 step.state_key = env_step.state_key
                 step.cost = env_step.cost
                 step.env_info = dict(env_step.info)
@@ -297,6 +298,7 @@ class AgentLoop:
 
             step.observation_token_ids = observation_token_ids
             step.observation_committed = True
+            step.observation_image_count = len(encoded.images)
             response_ids.extend(observation_token_ids)
             response_mask.extend([0] * len(observation_token_ids))
             effective_response_tokens += observation_effective_tokens

@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping, Optional, Protocol, Sequence
@@ -180,23 +181,26 @@ class EnvReset:
     ``messages`` are chat messages whose image parts are ``{"type": "image"}`` placeholders, filled from
     ``images`` in order. Empty ``tool_schemas`` mean that the model answers in one turn without tools.
     ``max_images_per_step`` bounds the images one step returns; it sizes the per-prompt image limit.
+    ``state_key`` optionally names the initial state, as ``EnvStep.state_key`` names the state after a call.
     """
 
     messages: list[dict[str, Any]]
     images: list[Image.Image]
     tool_schemas: list[Mapping[str, Any]] = field(default_factory=list)
     max_images_per_step: int = 1
+    state_key: Optional[str] = None
 
 
 @dataclass
 class EnvStep:
     """The environment's response to one well-formed tool call.
 
-    ``done`` ends the episode after this step (its observation is not shown to the model). ``reward``,
-    ``state_key`` and ``cost`` are recorded on the step for step-level credit assignment and diagnostics.
-    ``state_key`` names the environment state after this call, the state the next action is taken in, so that
-    actions of different rollouts taken in the same state can be grouped; the first actions of a group share
-    the initial state (``reset`` gets one seed per group).
+    ``done`` ends the episode after this step (its observation is not shown to the model). ``reward`` is what
+    this call earned: it is added to the episode's return, the reward function's score being the reward of the
+    last turn. ``state_key`` names the environment state after this call, the state the next action is taken in,
+    so that actions of different rollouts taken in the same state can be grouped (GiGPO with
+    ``step_state_key=environment``); the first actions of a group share the initial state (``reset`` gets one
+    seed per group). ``cost`` and ``info`` are recorded for diagnostics.
     """
 
     result: ToolResult
@@ -205,6 +209,16 @@ class EnvStep:
     state_key: Optional[str] = None
     cost: float = 0.0
     info: Mapping[str, Any] = field(default_factory=dict)
+
+
+def checked_step_reward(reward: Any) -> Optional[float]:
+    """``EnvStep.reward`` as a float, or None; anything but a finite number is an environment error (it would make
+    the return NaN or infinite)."""
+    if reward is None:
+        return None
+    if isinstance(reward, bool) or not isinstance(reward, (int, float)) or not math.isfinite(reward):
+        raise ValueError(f"EnvStep.reward must be a finite number or None, got {reward!r}")
+    return float(reward)
 
 
 @dataclass
@@ -272,6 +286,8 @@ class AgentStep:
     tool_result: Optional[ToolResult] = None
     observation_token_ids: list[int] = field(default_factory=list)
     observation_committed: bool = False
+    # How many of the trajectory's observation images this step's committed observation added.
+    observation_image_count: int = 0
     # What the environment reported for this step's tool call (EnvStep). They keep their defaults when no call
     # reached the environment (a malformed call), which leaves the environment's state unchanged.
     env_reward: Optional[float] = None
@@ -337,6 +353,8 @@ class AgentTrajectory:
     assistant_termination_token_ids: tuple[int, ...] = ()
     # What the environment reported at the end of the episode (None: it reports nothing).
     env_outcome: Optional[EnvOutcome] = None
+    # The environment's name of the initial state (EnvReset.state_key), if it gives one.
+    initial_state_key: Optional[str] = None
 
     @property
     def all_images(self) -> list[Image.Image]:
@@ -347,10 +365,13 @@ class AgentTrajectory:
         return [*self.prompt_ids, *self.response_ids]
 
 
-def environment_report(steps: Sequence[Any], outcome: Optional[EnvOutcome]) -> dict[str, Any]:
+def environment_report(
+    steps: Sequence[Any], outcome: Optional[EnvOutcome], initial_state_key: Optional[str] = None
+) -> dict[str, Any]:
     """What an environment reported during an episode, as trajectory records keep it (training generations,
-    evaluation outputs, SFT exports): ``env_steps`` for the tool calls it answered with a state, cost, reward, done
-    or info, and ``env_outcome``. Empty for an environment that reports neither (DeepEyes)."""
+    evaluation outputs, SFT exports): ``initial_state_key`` when it named the initial state, ``env_steps`` for the
+    tool calls it answered with a state, cost, reward, done or info, and ``env_outcome``. Empty for an environment
+    that reports none of them (DeepEyes)."""
 
     env_steps = [
         {
@@ -367,6 +388,8 @@ def environment_report(steps: Sequence[Any], outcome: Optional[EnvOutcome]) -> d
         and (step.state_key is not None or step.cost or step.env_reward is not None or step.env_done or step.env_info)
     ]
     report: dict[str, Any] = {}
+    if initial_state_key is not None:
+        report["initial_state_key"] = initial_state_key
     if env_steps:
         report["env_steps"] = env_steps
     if outcome is not None:

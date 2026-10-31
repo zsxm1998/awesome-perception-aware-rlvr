@@ -112,7 +112,26 @@ class AlgorithmConfig:
     adv_estimator: str = "grpo"
     """advantage estimator, support `gae`, `grpo`, `reinforce_plus_plus`, `remax`, `rloo`, `teacher_log_ratio`
     (on-policy distillation from sampled tokens: log q(y_t) - log pi_old(y_t) with the teacher of
-    `worker.teacher`)"""
+    `worker.teacher`), `gigpo` (step-level advantages of agentic rollouts, verl/trainer/step_advantage.py)"""
+    step_advantage_weight: float = 1.0
+    """gigpo: weight w of the step-level advantage in A = A_E + w * A_S (verl-agent `gigpo.step_advantage_w`)"""
+    group_advantage_norm: str = "mean"
+    """gigpo: `mean` subtracts the group mean, `mean_std` also divides by the unbiased std (+1e-6); applies to the
+    episode and the step groups (verl-agent `gigpo.mode`: mean_norm, mean_std_norm)"""
+    episode_group_stats: str = "steps"
+    """gigpo: the episode-level mean and std over every turn of the group (`steps`, verl-agent's default) or over
+    one score per trajectory (`trajectories`, the paper's Eq. 3)"""
+    step_state_key: str = "observation"
+    """gigpo: what makes two turns act in the same state: `observation` (the last observation before the turn is the
+    same, tokens and image pixels, as verl-agent matches raw observations) or `environment` (the environment names the
+    state after each call, EnvStep.state_key, and the initial one, EnvReset.state_key)"""
+    step_similarity_threshold: Optional[float] = None
+    """gigpo with step_state_key=observation: also group text-only observations whose difflib SequenceMatcher ratio
+    is at least this (verl-agent `gigpo.enable_similarity`, 0.95 by default there, 0.9 in its search example); null
+    matches exactly"""
+    invalid_action_penalty: float = 0.0
+    """gigpo: taken from an invalid turn's episode score and step return after discounting (verl-agent
+    `invalid_action_penalty_coef`, 0.1 with success rewards of 10, 0.01 with success rewards of 1)"""
     teacher_log_ratio_clip: Optional[float] = 10.0
     """clamp of the `teacher_log_ratio` advantage to [-clip, clip] (verl's on-policy distillation example uses 10);
     null keeps it unclamped"""
@@ -403,7 +422,48 @@ class AlgorithmConfig:
                     f"{', '.join(changed)} only apply to claim probes: set algorithm.claim_probe_count > 0."
                 )
 
+    def step_advantage_options(self) -> dict[str, Any]:
+        """The options of step-level advantages (gigpo), as compute_advantage takes them."""
+        return {
+            "step_advantage_weight": self.step_advantage_weight,
+            "group_advantage_norm": self.group_advantage_norm,
+            "episode_group_stats": self.episode_group_stats,
+            "step_state_key": self.step_state_key,
+            "step_similarity_threshold": self.step_similarity_threshold,
+            "invalid_action_penalty": self.invalid_action_penalty,
+        }
+
+    def _validate_step_advantage(self):
+        defaults = {
+            "step_advantage_weight": 1.0,
+            "group_advantage_norm": "mean",
+            "episode_group_stats": "steps",
+            "step_state_key": "observation",
+            "step_similarity_threshold": None,
+            "invalid_action_penalty": 0.0,
+        }
+        if self.adv_estimator != "gigpo":
+            changed = [name for name, value in defaults.items() if getattr(self, name) != value]
+            if changed:
+                raise ValueError(f"algorithm.{', algorithm.'.join(changed)} only apply to adv_estimator=gigpo.")
+            return
+        _validate_choice("algorithm.group_advantage_norm", self.group_advantage_norm, {"mean", "mean_std"})
+        _validate_choice("algorithm.episode_group_stats", self.episode_group_stats, {"steps", "trajectories"})
+        _validate_choice("algorithm.step_state_key", self.step_state_key, {"observation", "environment"})
+        if not 0.0 < self.gamma <= 1.0:
+            raise ValueError("algorithm.gamma must be in (0, 1] for adv_estimator=gigpo.")
+        if not math.isfinite(self.step_advantage_weight):
+            raise ValueError("algorithm.step_advantage_weight must be finite.")
+        if not (math.isfinite(self.invalid_action_penalty) and self.invalid_action_penalty >= 0.0):
+            raise ValueError("algorithm.invalid_action_penalty must be a non-negative number.")
+        if self.step_similarity_threshold is not None:
+            if self.step_state_key != "observation":
+                raise ValueError("algorithm.step_similarity_threshold applies to step_state_key=observation only.")
+            if not 0.0 < self.step_similarity_threshold < 1.0:
+                raise ValueError("algorithm.step_similarity_threshold must be in (0, 1).")
+
     def post_init(self):
+        self._validate_step_advantage()
         self.corrupt_image_kwargs = _parse_optional_json_dict(self.corrupt_image_kwargs, "corrupt_image_kwargs")
         self.incremental_image_kwargs = _parse_optional_json_dict(
             self.incremental_image_kwargs, "incremental_image_kwargs"
@@ -970,6 +1030,17 @@ class PPOConfig:
         self._validate_batch_sizes()
         self._validate_teacher()
         rollout = self.worker.rollout
+        rollout.agent_step_records = self.algorithm.adv_estimator == "gigpo"
+        if self.algorithm.adv_estimator == "gigpo":
+            if rollout.interaction_mode != "agentic":
+                raise ValueError("algorithm.adv_estimator=gigpo needs worker.rollout.interaction_mode=agentic.")
+            if rollout.n < 2:
+                raise ValueError(
+                    "algorithm.adv_estimator=gigpo compares the rollouts of a prompt: set worker.rollout.n > 1."
+                )
+            if self.worker.actor.loss_avg_mode != "token":
+                # with one row per trajectory, seq would weight trajectories equally, not steps as verl-agent's rows do
+                raise ValueError("algorithm.adv_estimator=gigpo needs worker.actor.loss_avg_mode=token.")
         if (
             rollout.agent_observation_min_pixels is not None
             and self.data.max_pixels is not None

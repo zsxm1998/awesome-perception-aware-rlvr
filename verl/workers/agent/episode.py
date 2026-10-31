@@ -104,6 +104,7 @@ async def run_environment_episode(
         )
         trajectory.effective_prompt_tokens = effective_prompt_tokens
         trajectory.prompt_visual_tokens = prompt_visual_tokens
+        trajectory.initial_state_key = reset.state_key
         trajectory.env_outcome = await environment.finalize(trajectory.final_answer, trajectory.status)
         return EpisodeRun(reset=reset, chat_adapter=chat_adapter, trajectory=trajectory)
     finally:

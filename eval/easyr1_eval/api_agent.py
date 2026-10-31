@@ -278,7 +278,7 @@ def api_episode_to_generation_output(episode: APIEpisode) -> GenerationOutput:
             for turn in episode.turns
         ],
     }
-    agent.update(environment_report(episode.turns, episode.env_outcome))
+    agent.update(environment_report(episode.turns, episode.env_outcome, episode.initial_state_key))
     return GenerationOutput(
         text=text.strip(),
         finish_reason="length" if episode.status == AgentStatus.LENGTH_LIMIT else (final and final.finish_reason),

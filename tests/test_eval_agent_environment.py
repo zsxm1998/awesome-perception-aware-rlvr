@@ -224,9 +224,30 @@ def test_agentic_backend_runs_environment_tasks_and_records_the_outcome(monkeypa
     ]
 
 
+def test_environment_reward_counts_the_environments_step_rewards():
+    from easyr1_eval.scorers import environment_row_rewards
+
+    row = {
+        "agent_diagnostics": [
+            {"env_outcome": {"reward": 1.0}, "env_steps": [{"reward": -0.25}, {"reward": None}]},
+            {"env_outcome": {"reward": 0.5}},
+            {},  # failed before the episode ended
+        ]
+    }
+    assert environment_row_rewards(row) == [0.75, 0.5, None]
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError, match="not finite"):
+            environment_row_rewards(
+                {"agent_diagnostics": [{"env_outcome": {"reward": 1.0}, "env_steps": [{"reward": bad}]}]}
+            )
+        with pytest.raises(ValueError, match="not finite"):
+            environment_row_rewards({"agent_diagnostics": [{"env_outcome": {"reward": bad}}]})
+
+
 def test_the_environment_reward_scores_of_the_released_version_are_recomputed():
-    """environment_reward changed (a null reward is an error, counts in the details): its score fingerprints change,
-    so finished scores of the earlier version are not reused."""
+    """environment_reward changed (2: a null reward is an error, counts in the details; 3: the environment's step
+    rewards count in the return): its score fingerprints change, so finished scores of earlier versions are not
+    reused."""
     from easyr1_eval.scorers import SCORER_REVISIONS
 
-    assert SCORER_REVISIONS["environment_reward"] == 2
+    assert SCORER_REVISIONS["environment_reward"] == 3

@@ -52,6 +52,7 @@ from .protocol import (
     EnvStep,
     ToolCall,
     ToolResult,
+    checked_step_reward,
 )
 from .tool_call import NativeToolCallCodec
 from .tools.base import tool_error
@@ -259,6 +260,7 @@ class APIEpisode:
     metrics: AgentMetrics
     final_answer: Optional[str] = None
     env_outcome: Optional[EnvOutcome] = None
+    initial_state_key: Optional[str] = None  # the environment's name of the initial state (EnvReset.state_key)
 
 
 def image_data_url(image: Image.Image, pixels: tuple[Optional[int], Optional[int]] = (None, None)) -> str:
@@ -484,7 +486,8 @@ async def run_api_episode(
                 turn.tool_call = call
                 env_step = await environment.step(call)
                 result = env_step.result
-                turn.env_reward, turn.state_key, turn.cost = env_step.reward, env_step.state_key, env_step.cost
+                turn.env_reward = checked_step_reward(env_step.reward)
+                turn.state_key, turn.cost = env_step.state_key, env_step.cost
                 turn.env_info = dict(env_step.info)
             turn.tool_result = result
             if result.success:
@@ -502,7 +505,14 @@ async def run_api_episode(
                 metrics.tool_call_successes += 1
             metrics.visual_observations += len(result.images)
         outcome = await environment.finalize(final_answer, status)
-        return APIEpisode(turns=turns, status=status, metrics=metrics, final_answer=final_answer, env_outcome=outcome)
+        return APIEpisode(
+            turns=turns,
+            status=status,
+            metrics=metrics,
+            final_answer=final_answer,
+            env_outcome=outcome,
+            initial_state_key=reset.state_key,
+        )
     finally:
         await environment.close()
 

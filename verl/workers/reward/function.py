@@ -230,6 +230,37 @@ def _attach_agent_reward_fields(
         reward_input[key] = value
 
 
+STEP_REWARDS_KEY = "step_rewards"
+
+
+def _add_env_step_rewards(score: dict[str, Any], reward_tensor: torch.Tensor, data: DataProto, idx: int) -> None:
+    """Add the rewards an environment gave for single tool calls (``EnvStep.reward``) to the sample's return: each
+    on the last action token of its turn, their sum to ``overall`` and, as ``step_rewards``, to the logs. The
+    reward function's score is the reward of the last turn; all estimators, logs and online filtering see the sum.
+    Samples without step rewards are left as they are."""
+    agent_inputs = data.non_tensor_batch.get("agent_reward_input")
+    step_rewards = None if agent_inputs is None else agent_inputs[idx].get("env_step_rewards")
+    if step_rewards is None:
+        return
+    if STEP_REWARDS_KEY in score:
+        raise ValueError(
+            f"the reward function returned {STEP_REWARDS_KEY!r}, which the trainer logs the step rewards as"
+        )
+    response_mask = data.batch["response_mask"][idx]
+    total = 0.0
+    for position, reward in step_rewards:
+        if isinstance(position, bool) or not isinstance(position, int) or not 0 <= position < response_mask.numel():
+            raise ValueError(f"env_step_rewards position {position!r} is outside the response")
+        if not response_mask[position]:
+            raise ValueError(f"env_step_rewards position {position} is not a model token")
+        if isinstance(reward, bool) or not isinstance(reward, (int, float)) or not math.isfinite(reward):
+            raise ValueError(f"env_step_rewards reward {reward!r} must be a finite number")
+        reward_tensor[idx, position] += reward
+        total += reward
+    score["overall"] = score["overall"] + total
+    score[STEP_REWARDS_KEY] = total
+
+
 def collect_reward_metrics(scores: Sequence[Mapping[str, Any]]) -> dict[str, list[Any]]:
     """Per-metric lists aligned with the samples. Samples may report different metrics (e.g. an environment's
     components that apply to some tasks only): a sample without a metric has None at its position."""
@@ -274,6 +305,7 @@ class SequentialFunctionRewardManagerMixin:
             _add_perception_score(reward_input, data, i)
             score = self.reward_fn(reward_input)
             reward_tensor[i, reward_position] = score["overall"]
+            _add_env_step_rewards(score, reward_tensor, data, i)
             scores.append(score)
 
         return reward_tensor, collect_reward_metrics(scores)
@@ -319,6 +351,7 @@ class BatchFunctionRewardManagerMixin:
         reward_tensor = torch.zeros_like(data.batch["responses"], dtype=torch.float32)
         for i, score in enumerate(scores):
             reward_tensor[i, reward_positions[i]] = score["overall"]
+            _add_env_step_rewards(score, reward_tensor, data, i)
 
         return reward_tensor, collect_reward_metrics(scores)
 

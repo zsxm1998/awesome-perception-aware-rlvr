@@ -442,6 +442,31 @@ def _contiguous_spans(mask: Sequence[int], value: int) -> tuple[tuple[int, int],
     return tuple(spans)
 
 
+def turn_action_spans(steps: Sequence[Any], response_mask: Sequence[int]) -> list[tuple[int, int]]:
+    """[start, end) of each turn's model tokens in the response coordinates of ``response_mask`` (a materialized,
+    image-expanded mask). Turns are counted by their action tokens, not by runs of the mask, in which two turns
+    with an empty observation between them would be one run. A turn without tokens gets an empty span."""
+    positions = [index for index, value in enumerate(response_mask) if value == 1]
+    spans = []
+    cursor = 0
+    for step in steps:
+        length = len(step.model_token_ids)
+        if length == 0:
+            at = positions[cursor - 1] + 1 if cursor else 0
+            spans.append((at, at))
+            continue
+        if cursor + length > len(positions):
+            raise RuntimeError("the response mask has fewer action tokens than the trajectory's turns")
+        start, last = positions[cursor], positions[cursor + length - 1]
+        if last - start != length - 1:
+            raise RuntimeError("a turn's action tokens are not contiguous in the response")
+        spans.append((start, last + 1))
+        cursor += length
+    if cursor != len(positions):
+        raise RuntimeError("the response mask has more action tokens than the trajectory's turns")
+    return spans
+
+
 class AgentTrajectoryMaterializer:
     """Convert a raw token-in/token-out trajectory to actor/ref model inputs."""
 
