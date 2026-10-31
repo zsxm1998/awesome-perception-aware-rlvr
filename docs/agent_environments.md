@@ -188,7 +188,8 @@ training differs in:
 verl-agent also copies random rows to pad the batch before computing the statistics; nothing is copied here. Its
 similarity grouping follows the length-balanced batch order; here it follows each rollout's index among the
 rollouts of its prompt, then the turn, whatever the batch order or its split across workers. verl-agent's results
-are not reproduced here.
+are not reproduced here. A GiGPO run on the toy environment:
+[examples/agent_env/qwen3_vl_4b_gigpo_toy_search.sh](../examples/agent_env/qwen3_vl_4b_gigpo_toy_search.sh).
 
 ## Evaluation and API models
 
