@@ -40,7 +40,7 @@ class Episode(Protocol):
     """One episode of an environment. Return values are the JSON bodies of docs/agent_environments.md."""
 
     def reset(self, config: dict[str, Any], seed: int, max_tool_calls: int) -> dict[str, Any]:
-        """{"user_content": [...], "tool_schemas": [...], "system_prompt": str | None}"""
+        """{"user_content": [...], "tool_schemas": [...], "system_prompt": str | None, "state_key"?: str}"""
 
     def step(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """{"content": [...], "success": bool, "error_code"?, "done"?, "reward"?, "state_key"?, "cost"?, "info"?}"""

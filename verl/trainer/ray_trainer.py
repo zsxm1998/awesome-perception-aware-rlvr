@@ -199,8 +199,10 @@ def compute_advantage(
     gamma: float = 1.0,
     lam: float = 1.0,
     teacher_log_ratio_clip: Optional[float] = None,
+    step_advantage_options: Optional[dict[str, Any]] = None,
 ):
-    """Compute advantage estimates for policy optimization."""
+    """Compute advantage estimates for policy optimization. With step-level advantages (gigpo), their statistics
+    are left in ``data.meta_info["advantage_metrics"]``."""
     adv_inputs = {
         "token_level_rewards": data.batch["token_level_rewards"],
         "response_mask": data.batch["response_mask"],
@@ -219,9 +221,18 @@ def compute_advantage(
         adv_inputs["old_log_probs"] = data.batch["old_log_probs"]
         adv_inputs["log_ratio_clip"] = teacher_log_ratio_clip
 
+    if adv_estimator == AdvantageEstimator.GIGPO:
+        if "agent_step_records" not in data.non_tensor_batch:
+            raise ValueError("adv_estimator=gigpo needs the rollout's agent_step_records (an agentic rollout)")
+        adv_inputs["step_records"] = data.non_tensor_batch["agent_step_records"]
+        adv_inputs.update(step_advantage_options or {})
+        adv_inputs["metrics"] = advantage_metrics = {}
+
     advantages, returns = compute_advantage_return(adv_estimator, **adv_inputs)
     data.batch["advantages"] = advantages
     data.batch["returns"] = returns
+    if adv_estimator == AdvantageEstimator.GIGPO:
+        data.meta_info["advantage_metrics"] = advantage_metrics
     return data
 
 
@@ -1762,7 +1773,10 @@ class RayPPOTrainer:
                         gamma=self.config.algorithm.gamma,
                         lam=self.config.algorithm.lam,
                         teacher_log_ratio_clip=self.config.algorithm.teacher_log_ratio_clip,
+                        step_advantage_options=self.config.algorithm.step_advantage_options(),
                     )
+                    metrics.update(batch.meta_info.pop("advantage_metrics", {}))
+                    batch.non_tensor_batch.pop("agent_step_records", None)
 
                 if ROLLOUT_IMAGE_TRANSFORMED_KEY in batch.non_tensor_batch:
                     metrics.update(compute_rollout_image_transform_metrics(batch))

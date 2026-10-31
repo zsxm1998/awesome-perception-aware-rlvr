@@ -346,6 +346,18 @@ def test_agent_loop_records_environment_steps_and_stops_when_the_environment_is_
     assert trajectory.metrics.tool_call_attempts == 2 and trajectory.metrics.tool_call_successes == 1
 
 
+@pytest.mark.parametrize("reward", [float("nan"), float("inf"), float("-inf"), True])
+def test_agent_loop_refuses_a_step_reward_that_is_not_a_finite_number(reward):
+    from verl.workers.agent.loop import AgentLoop
+    from verl.workers.agent.protocol import EnvStep, ToolResult
+
+    ok = ToolResult(tool_name="view", success=True, content={})
+    environment = _ScriptedEnvironment([EnvStep(result=ok, reward=reward)])
+    loop = AgentLoop(_ScriptedBackend([_tool_text(), "<answer>1</answer>"]), _OneTokenEncoder(), environment)
+    with pytest.raises(ValueError, match="EnvStep.reward must be a finite number"):
+        asyncio.run(loop.run(prompt_ids=[1], source_images=[]))
+
+
 def test_agent_loop_does_not_send_malformed_tool_calls_to_the_environment():
     from verl.workers.agent.loop import AgentLoop
 
@@ -453,6 +465,37 @@ def _remote_environment(server, **kwargs):
         ),
     )
     return context, environment
+
+
+def test_remote_environment_reads_the_initial_state_key():
+    import httpx
+
+    from verl.workers.agent.environments import RemoteEnvironmentError
+
+    def server(state_key):
+        def handle(request):
+            if request.url.path == "/reset":
+                body = {"episode_id": "e1", "user_content": [{"type": "text", "text": "Task"}], "tool_schemas": []}
+                if state_key != "absent":
+                    body["state_key"] = state_key
+                return httpx.Response(200, json=body)
+            return httpx.Response(200, json={})
+
+        return handle
+
+    async def reset(state_key):
+        context, environment = _remote_environment(server(state_key))
+        try:
+            return (await environment.reset({}, seed=0)).state_key
+        finally:
+            await environment.close()
+            await context.aclose()
+
+    assert asyncio.run(reset("view:full")) == "view:full"
+    assert asyncio.run(reset(None)) is None
+    assert asyncio.run(reset("absent")) is None
+    with pytest.raises(RemoteEnvironmentError, match="/reset state_key"):
+        asyncio.run(reset(3))
 
 
 def test_remote_environment_runs_an_episode_over_http():

@@ -111,7 +111,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-pixels", type=int, default=4194304, help="data.max_pixels")
     parser.add_argument("--observation-min-pixels", type=int, help="worker.rollout.agent_observation_min_pixels")
     parser.add_argument("--keep", choices=["answered", "all"], default="answered", help="which episodes to write")
-    parser.add_argument("--min-reward", type=float, help="also require at least this episode reward")
+    parser.add_argument(
+        "--min-reward",
+        type=float,
+        help="also require at least this return (the episode reward plus the environment's rewards for single calls)",
+    )
     parser.add_argument("--concurrency", type=int, default=8, help="episodes replayed at once")
     api = parser.add_argument_group("--api-model options (as eval --backend api; docs/agent_environments.md)")
     api.add_argument("--api-base-url", help="the endpoint, e.g. http://127.0.0.1:8001/v1 (default $OPENAI_BASE_URL)")
@@ -312,7 +316,7 @@ async def export(args: argparse.Namespace) -> dict[str, Any]:
                         **({"source": f"api:{args.api_model}", "sample": episode_sample} if args.api_model else {}),
                         **sample.rollout,
                         "status": trajectory.status.value,
-                        **environment_report(trajectory.steps, trajectory.env_outcome),
+                        **environment_report(trajectory.steps, trajectory.env_outcome, trajectory.initial_state_key),
                     },
                     ensure_ascii=False,
                 )

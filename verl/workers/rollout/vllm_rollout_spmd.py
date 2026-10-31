@@ -481,11 +481,13 @@ class vLLMRollout(BaseRollout):
         from ..agent.environments import EnvironmentContext, environment_factory
         from ..agent.inference import run_agent_inference
         from ..agent.protocol import AgentImageConfig, AgentLoopConfig, derive_environment_seed, environment_report
+        from ..agent.step_records import step_records
         from ..agent.tool_call import NativeToolCallCodec
         from ..agent.trajectory import (
             AgentTrajectoryMaterializer,
             AgentTrajectoryRejected,
             collate_materialized_agent_trajectories,
+            turn_action_spans,
         )
 
         if self.processor is None:
@@ -684,6 +686,18 @@ class vLLMRollout(BaseRollout):
             meta_info=prompts.meta_info,
         )
 
+        # where each turn's model tokens are, for the environment's step rewards and the step records
+        needs_spans = self.config.agent_step_records or any(
+            step.env_reward is not None for trajectory in trajectories for step in trajectory.steps
+        )
+        turn_spans = (
+            [
+                turn_action_spans(trajectory.steps, sample.response_mask)
+                for trajectory, sample in zip(trajectories, materialized)
+            ]
+            if needs_spans
+            else None
+        )
         reward_inputs = []
         diagnostics = []
         codec = NativeToolCallCodec()
@@ -720,6 +734,14 @@ class vLLMRollout(BaseRollout):
                     "components": dict(trajectory.env_outcome.components),
                     "metrics": dict(trajectory.env_outcome.metrics),
                 }
+            if any(step.env_reward is not None for step in trajectory.steps):
+                # each reward the environment gave for a call, on the last model token of its turn
+                spans = turn_spans[len(reward_inputs)]
+                reward_input["env_step_rewards"] = [
+                    [spans[turn][1] - 1, float(step.env_reward)]
+                    for turn, step in enumerate(trajectory.steps)
+                    if step.env_reward is not None
+                ]
             reward_inputs.append(reward_input)
             diagnostics.append(
                 {
@@ -750,7 +772,21 @@ class vLLMRollout(BaseRollout):
         if self.config.resolved_agent_environment != "deepeyes":
             # what the environment reported per trajectory (training generation records keep it)
             output.non_tensor_batch["agent_environment"] = np.array(
-                [environment_report(trajectory.steps, trajectory.env_outcome) for trajectory in trajectories],
+                [
+                    environment_report(trajectory.steps, trajectory.env_outcome, trajectory.initial_state_key)
+                    for trajectory in trajectories
+                ],
+                dtype=object,
+            )
+        if self.config.agent_step_records:  # step-level advantages (algorithm.adv_estimator=gigpo)
+            image_cache: dict[int, bytes] = {}
+            output.non_tensor_batch["agent_step_records"] = np.array(
+                [
+                    step_records(trajectory, spans, sample.multi_modal_data["images"], rollout_index, image_cache)
+                    for (_, _, rollout_index), trajectory, sample, spans in zip(
+                        identities, trajectories, materialized, turn_spans
+                    )
+                ],
                 dtype=object,
             )
         return output

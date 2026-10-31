@@ -529,7 +529,9 @@ def trajectory_to_generation_output(
         "tool_errors": tool_errors,
     }
     # What an environment reported, per tool call and for the episode (absent for DeepEyes, which reports none).
-    agent_diagnostics.update(environment_report(trajectory.steps, trajectory.env_outcome))
+    agent_diagnostics.update(
+        environment_report(trajectory.steps, trajectory.env_outcome, trajectory.initial_state_key)
+    )
     return GenerationOutput(
         text=scoring_text,
         finish_reason=finish_reason,

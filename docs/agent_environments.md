@@ -52,8 +52,13 @@ not need images.
 Rewards: `worker.reward.reward_function=examples/reward_function/environment.py:compute_score` takes the
 episode reward that `finalize` reports. A trajectory without it, or with `reward: null`, fails the step: null
 means that the environment does not score its episodes, and a reward function that reads the answer has to
-(DeepEyes over HTTP does this with DeepEyes' reward function). The environment's components and metrics are
-logged under `env/`, apart from the trainer's own names (`overall`, `tool_call_errors`, ...):
+(DeepEyes over HTTP does this with DeepEyes' reward function). A step's `reward`, what a single tool call
+earned, adds to the episode's return as in the usual RL definition (the return is the sum of the rewards): the
+trainer puts it on the last model token of its turn, and the reward function's score is the reward of the last
+turn. Every advantage estimator, the logs (`reward/overall`) and online filtering see the sum; the step rewards of
+an episode are also logged as `reward/step_rewards`. Do not count them again in the `finalize` reward. The
+environment's components and metrics are logged under `env/`, apart from the trainer's own names (`overall`,
+`tool_call_errors`, ...):
 
 | Where | Name |
 | --- | --- |
@@ -69,9 +74,10 @@ from every sample. A name given both as a component and as a metric is an error.
 
 Trajectory records keep what the environment reported, as given: the generation records have an
 `environment` field, and evaluation outputs (`agent_diagnostics`) and SFT exports the same entries:
-`env_steps` (per tool call: `turn_index`, `tool`, `state_key`, `cost`, `reward`, `done`, `info`, for the calls
-where the environment gave any of them) and `env_outcome` (`reward`, `components`, `metrics`, `details`,
-`episode_id`). Reward functions receive the reward, components and metrics only.
+`initial_state_key` (when `reset` named the initial state), `env_steps` (per tool call: `turn_index`, `tool`,
+`state_key`, `cost`, `reward`, `done`, `info`, for the calls where the environment gave any of them) and
+`env_outcome` (`reward`, `components`, `metrics`, `details`, `episode_id`). Reward functions receive the reward,
+components and metrics only.
 
 `remote_http` options: `url`; `timeout_s` (60) per request; `retries` (3) after a network error, a timeout,
 HTTP 408, 429 or 5xx, with exponential backoff from `backoff_s` (0.5); `max_concurrency` (64) requests at a
@@ -93,7 +99,7 @@ JSON bodies, `POST`, HTTP 200 on success. Images are PNG, base64-encoded.
 
 | Endpoint | Request | Response |
 | --- | --- | --- |
-| `/reset` | `{"config": {...}, "seed": int, "max_tool_calls": int}` | `{"episode_id": str, "system_prompt": str or null, "user_content": [part, ...], "tool_schemas": [schema, ...]}` |
+| `/reset` | `{"config": {...}, "seed": int, "max_tool_calls": int}` | `{"episode_id": str, "system_prompt": str or null, "user_content": [part, ...], "tool_schemas": [schema, ...], "state_key": str or null}` (`state_key` optional) |
 | `/step` | `{"episode_id": str, "step_index": int, "tool_call": {"name": str, "arguments": {...}}}` | `{"content": [part, ...], "success": bool, "error_code": str (when not success), "done": bool, "reward": float or null, "state_key": str or null, "cost": float, "info": {...}}` |
 | `/finalize` | `{"episode_id": str, "final_answer": str or null, "status": str}` | `{"reward": float or null, "components": {name: float}, "metrics": {name: float}, "details": {...}}` (`details` optional) |
 | `/close` | `{"episode_id": str}` | `{}` |
@@ -124,14 +130,65 @@ and must be present; an empty list means a single turn without tools.
 - `/finalize` called again returns the same result; `/close` of an unknown or closed episode returns `{}`.
   A server should drop episodes that stay idle for long: a crashed trainer never closes them, and a retried
   `/reset` leaves one behind.
-- `reward` and `state_key` of a step are recorded for step-level credit assignment, `cost` and `info` for
-  diagnostics. `state_key` names the state after the call, the one the next action is taken in, so that
-  actions of different rollouts taken in the same state can be grouped (the first actions of a group share the
-  initial state; a malformed call does not reach the environment and leaves the state unchanged).
+- A step's `reward` is what the call earned; it counts in the episode's return (see Rewards above), so the
+  `finalize` reward should not include it again. `cost` and `info` are recorded for diagnostics.
+- `state_key` names the state after the call, the one the next action is taken in, and `/reset` may name the
+  initial state: GiGPO with `algorithm.step_state_key=environment` groups the actions of a prompt's rollouts
+  taken in the same state (below). A call the environment rejects without changing its state should return
+  the unchanged key; `null` leaves the state unnamed, and the next action is then compared with no other. A
+  malformed call does not reach the environment and leaves the state as it was.
 
 [examples/agent_env/server.py](../examples/agent_env/server.py) implements the server side of these rules on
 the Python standard library: write an `Episode` class with `reset`, `step` and `finalize`, and call `serve`. It
 drops idle episodes when a later request arrives, never one with a request in progress.
+
+## Step-level advantages (GiGPO)
+
+`algorithm.adv_estimator=gigpo` gives each turn (one model reply) its own advantage, as GiGPO
+([Feng et al., NeurIPS 2025](https://arxiv.org/abs/2505.10978)): A = A_E + w * A_S. A_E normalizes the episode's
+return within the rollouts of a prompt, as GRPO does; A_S normalizes the turn's discounted return
+(`algorithm.gamma`) within the turns of that prompt's rollouts that acted in the same state. The arithmetic is
+that of verl-agent's `gigpo/core_gigpo.py` (commit 20bd331): it matched value for value on random inputs. The
+options are listed in [algorithm_parameters.md](algorithm_parameters.md#step-level-advantages-gigpo).
+
+Which turns act in the same state (`algorithm.step_state_key`):
+
+- `observation` (default, as in verl-agent): the observation before the turn is the same, tokens and image pixels
+  as the model receives them, after resizing to the pixel bounds (the last tool result; the prompt for the first
+  turn). With `algorithm.step_similarity_threshold`, text-only
+  observations whose `difflib.SequenceMatcher` ratio reaches the threshold are also grouped (verl-agent's
+  `enable_similarity`, 0.9 in its search example; OR-GiGPO, [arXiv 2606.12830](https://arxiv.org/abs/2606.12830),
+  uses it for tools whose outputs vary slightly between equal calls). Images are matched exactly.
+- `environment`: the environment names the states (`state_key` above). This suits tasks whose observations rarely
+  repeat exactly, crops of a large image for instance, while the environment knows which states are equivalent
+  (a quantized view, the regions selected so far).
+
+A turn's action is invalid when it is malformed, as verl-agent judges the format only: a malformed tool call or
+answer, a wrong turn end, a turn cut by a length limit, a turn without an action, a call after the tool-call
+limit. `algorithm.invalid_action_penalty` is taken from its episode score and its step return. A call that the
+environment rejects is a valid action. The logs report `gigpo/step_group_size_mean`,
+`gigpo/singleton_step_group_fraction` (a group of one gives no step advantage), `gigpo/turns_in_shared_groups`,
+`gigpo/turns_per_trajectory`, `gigpo/invalid_turn_fraction`, `gigpo/episode_advantage_abs` and
+`gigpo/step_advantage_abs`.
+
+verl-agent trains one row per step whose prompt holds the task, the current observation and the last few steps as
+text (two in its ALFWorld and WebShop scripts, without past reasoning or images). Here a trajectory is one row
+with every turn, as the model sees it at inference. For the same steps the advantages are the same, and the
+training differs in:
+
+1. the context of the policy: the whole history here, a window of past steps in verl-agent;
+2. the mini-batch unit: trajectories here, steps in verl-agent (GiGPO requires `worker.actor.loss_avg_mode=token`,
+   under which every model token of a mini-batch weighs the same in both);
+3. length: a whole trajectory must fit `data.max_response_length`, so tasks of tens of steps (verl-agent's
+   ALFWorld runs up to 50) do not fit;
+4. states: a state is grouped by its last observation while the policy sees the whole history, so turns with
+   different histories are compared (HGPO, [arXiv 2602.22817](https://arxiv.org/abs/2602.22817), discusses this
+   for verl-agent's window as well).
+
+verl-agent also copies random rows to pad the batch before computing the statistics; nothing is copied here. Its
+similarity grouping follows the length-balanced batch order; here it follows each rollout's index among the
+rollouts of its prompt, then the turn, whatever the batch order or its split across workers. verl-agent's results
+are not reproduced here.
 
 ## Evaluation and API models
 

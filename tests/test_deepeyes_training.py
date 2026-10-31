@@ -857,6 +857,50 @@ def test_vllm_rollout_gives_other_environments_their_row_configuration(monkeypat
         rollout.generate_sequences(missing)
 
 
+def test_vllm_rollout_places_step_rewards_and_writes_step_records(monkeypatch):
+    from verl.workers.agent.protocol import EnvOutcome, ToolCall
+
+    rollout, prompts = _make_agentic_materialization_test_case(monkeypatch, [])
+
+    async def fake_run_agent_inference(**kwargs):
+        trajectory = _make_trajectory(1)
+        first = trajectory.steps[0]
+        first.tool_call = ToolCall("zoom", {}, "")
+        first.env_reward = 0.25 if kwargs["rollout_index"] == 0 else None
+        first.state_key = "view:1"
+        first.observation_image_count = 1
+        trajectory.initial_state_key = "view:0"
+        trajectory.env_outcome = EnvOutcome(reward=1.0)
+        return trajectory
+
+    monkeypatch.setattr("verl.workers.agent.inference.run_agent_inference", fake_run_agent_inference)
+    rollout.config.agent_environment = "remote_http"
+    rollout.config.agent_environment_kwargs = {"url": "http://env.test"}
+    prompts.non_tensor_batch.pop("multi_modal_data")
+    prompts.non_tensor_batch["env_config"] = np.array(["{}"], dtype=object)
+    again = copy.deepcopy(prompts)
+
+    output = rollout.generate_sequences(prompts)
+    assert "agent_step_records" not in output.non_tensor_batch  # only for step-level advantages
+    first, second = output.non_tensor_batch["agent_reward_input"]
+    response_mask = output.batch["response_mask"][0]
+    ((position, reward),) = first["env_step_rewards"]
+    assert reward == 0.25 and response_mask[position] == 1 and response_mask[position + 1] == 0  # end of turn 1
+    assert "env_step_rewards" not in second
+    assert output.non_tensor_batch["agent_environment"][0]["initial_state_key"] == "view:0"
+
+    rollout.config.agent_step_records = True
+    output = rollout.generate_sequences(again)
+    record = output.non_tensor_batch["agent_step_records"][0]
+    assert [item["rollout_index"] for item in output.non_tensor_batch["agent_step_records"]] == [0, 1]
+    assert record["initial"]["state_key"] == "view:0"
+    assert [turn["valid"] for turn in record["turns"]] == [True, True]
+    assert record["turns"][0]["env_calls"] == [{"state_key": "view:1", "reward": 0.25}]
+    assert record["turns"][0]["span"][1] - 1 == position
+    spans = [turn["span"] for turn in record["turns"]]
+    assert sum(end - start for start, end in spans) == int(response_mask.sum())
+
+
 def test_vllm_rollout_failure_cancels_the_other_trajectories_before_closing_shared_resources(monkeypatch):
     import verl.workers.agent.environments.remote as remote
 

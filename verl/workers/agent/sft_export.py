@@ -201,7 +201,9 @@ def keep_episode(run: EpisodeRun, *, keep: str = "answered", min_reward: Optiona
         outcome = trajectory.env_outcome
         if outcome is None or outcome.reward is None:
             return "no episode reward"
-        if outcome.reward < min_reward:
+        # the episode's return: its reward plus the rewards the environment gave for single tool calls
+        step_rewards = sum(step.env_reward for step in trajectory.steps if step.env_reward is not None)
+        if outcome.reward + step_rewards < min_reward:
             return "reward below --min-reward"
     return None
 

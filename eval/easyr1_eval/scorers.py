@@ -53,7 +53,9 @@ SCORER_VERSION = 23
 SCORER_REVISIONS = {
     "hallusionbench": 2,  # aAcc / fAcc / qAcc and aqf_mean in the details
     "zoombench": 2,  # minus signs of counts are kept
-    "environment_reward": 2,  # a null episode reward is an error; counts of components and metrics in the details
+    # 2: a null episode reward is an error; counts of components and metrics in the details. 3: the rewards the
+    # environment gave for single tool calls count in the episode's return, as in training
+    "environment_reward": 3,
 }
 TOOL_CROP_IOGT_THRESHOLD = 0.5
 MM_VET_JUDGE_VERSION = "official_full_prediction_v1"
@@ -3099,9 +3101,10 @@ def resolve_judge_max_tokens(value: int | None, thinking: str | None) -> int:
 
 
 def environment_row_rewards(row: dict[str, Any]) -> list[float | None]:
-    """The episode reward of each of a row's trajectories (--agent-profile environment); None when the trajectory
-    has no environment outcome (it failed before the episode ended). An outcome with a null reward (an environment
-    that does not score its episodes) is an error, as for the environment reward function in training."""
+    """The return of each of a row's trajectories (--agent-profile environment): the episode reward plus the rewards
+    the environment gave for single tool calls, as in training; None when the trajectory has no environment outcome
+    (it failed before the episode ended). An outcome with a null reward (an environment that does not score its
+    episodes) is an error, as for the environment reward function in training."""
     rewards = []
     for diagnostic in row.get("agent_diagnostics") or []:
         outcome = diagnostic.get("env_outcome") if isinstance(diagnostic, dict) else None
@@ -3113,8 +3116,18 @@ def environment_row_rewards(row: dict[str, Any]) -> list[float | None]:
                 "environment_reward needs an environment that scores its episodes"
             )
         else:
-            rewards.append(float(outcome["reward"]))
+            step_rewards = [step.get("reward") for step in diagnostic.get("env_steps") or []]
+            values = [outcome["reward"], *(reward for reward in step_rewards if reward is not None)]
+            if not all(_finite_number(value) for value in values):
+                raise ValueError(
+                    f"sample {row.get('sample_id')}: the environment reported a reward that is not finite"
+                )
+            rewards.append(sum(float(value) for value in values))
     return rewards
+
+
+def _finite_number(value: Any) -> bool:
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
 
 
 def environment_row_score(row: dict[str, Any]) -> float:
@@ -3125,8 +3138,9 @@ def environment_row_score(row: dict[str, Any]) -> float:
 def score_environment_reward(
     spec: BenchmarkSpec, rows: PredictionRows, judge_config: JudgeConfig | None, output_dir: Path
 ) -> MetricResult:
-    """--agent-profile environment: the episode reward that the environment reported (its finalize), the mean
-    over a task's samples and then over tasks; normalized = 100 x mean reward (rewards in [0, 1]). A trajectory
+    """--agent-profile environment: the return that the environment reported (its finalize reward plus its rewards
+    for single tool calls), the mean over a task's samples and then over tasks; normalized = 100 x mean reward
+    (rewards in [0, 1]). A trajectory
     without an environment outcome (it failed before the episode ended) counts as 0 and is reported; a null reward
     is an error (environment_row_rewards)."""
 
