@@ -13,8 +13,6 @@
 # limitations under the License.
 
 import asyncio
-import hashlib
-import json
 import os
 from contextlib import contextmanager
 from typing import Any, Optional, Union
@@ -103,18 +101,6 @@ def _process_multi_modal_data(
     return None
 
 
-def _row_environment_config(value: Any) -> dict[str, Any]:
-    """One row's agent-environment configuration: a JSON object, stored as a string (parquet) or a mapping."""
-    if isinstance(value, str):
-        try:
-            value = json.loads(value)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"a row's environment configuration is not valid JSON: {exc}") from exc
-    if not isinstance(value, dict):
-        raise TypeError("a row's environment configuration must be a JSON object")
-    return value
-
-
 def _check_rollout_dependency_versions(model_path: str, trust_remote_code: bool) -> None:
     register_qwen3_5()
     model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code)
@@ -161,6 +147,46 @@ def _set_sampling_param(sampling_params: SamplingParams, key: str, value: Any) -
     setattr(sampling_params, key, value)
     if key in {"seed", "temperature"}:
         sampling_params.__dict__.pop("sampling_type", None)
+
+
+def rollout_sampling_params(
+    config: RolloutConfig, processor: Optional[ProcessorMixin], tokenizer: PreTrainedTokenizer, model_path: str
+) -> SamplingParams:
+    """The rollout's base sampling parameters: the response budget, the tokens never sampled (the image token,
+    and with ``ban_ids_beyond_tokenizer`` the ids beyond the tokenizer) and the RolloutConfig options that are
+    SamplingParams fields. Requests override them with the batch's meta_info (``sampling_params_with``)."""
+    logit_bias = _get_logit_bias(processor)
+    if config.ban_ids_beyond_tokenizer:
+        logit_bias = {
+            **(logit_bias or {}),
+            **_get_ids_beyond_tokenizer_bias(model_path, tokenizer, config.trust_remote_code),
+        }
+
+    sampling_kwargs = {
+        "max_tokens": config.response_length,
+        "detokenize": False,
+        "logit_bias": logit_bias,
+    }
+    default_sampling_params = SamplingParams()
+    for key in config.to_dict().keys():
+        if hasattr(default_sampling_params, key):
+            sampling_kwargs[key] = getattr(config, key)
+
+    print(f"Sampling params: {sampling_kwargs}.")
+    return SamplingParams(**sampling_kwargs)
+
+
+def sampling_params_with(sampling_params: SamplingParams, overrides: dict[str, Any]) -> SamplingParams:
+    """``sampling_params`` with the ``overrides`` that are SamplingParams fields (an ``eos_token_id`` list adds its
+    extra ids to the stop tokens); the same object when none applies."""
+    updated_sampling_params = sampling_params.clone()
+    has_updates = False
+    for key, value in overrides.items():
+        if not hasattr(updated_sampling_params, key):
+            continue
+        _set_sampling_param(updated_sampling_params, key, value)
+        has_updates = True
+    return updated_sampling_params if has_updates else sampling_params
 
 
 class vLLMRollout(BaseRollout):
@@ -238,25 +264,7 @@ class vLLMRollout(BaseRollout):
         # Offload vllm model to reduce peak memory usage
         self.inference_engine.sleep(level=1)
 
-        logit_bias = _get_logit_bias(processor)
-        if config.ban_ids_beyond_tokenizer:
-            logit_bias = {
-                **(logit_bias or {}),
-                **_get_ids_beyond_tokenizer_bias(model_path, tokenizer, config.trust_remote_code),
-            }
-
-        sampling_kwargs = {
-            "max_tokens": config.response_length,
-            "detokenize": False,
-            "logit_bias": logit_bias,
-        }
-        default_sampling_params = SamplingParams()
-        for key in config.to_dict().keys():
-            if hasattr(default_sampling_params, key):
-                sampling_kwargs[key] = getattr(config, key)
-
-        print(f"Sampling params: {sampling_kwargs}.")
-        self.sampling_params = SamplingParams(**sampling_kwargs)
+        self.sampling_params = rollout_sampling_params(config, processor, tokenizer, model_path)
 
     def _lora_requests(self, count: int) -> Optional[list[LoRARequest]]:
         """The current LoRA adapter for each of `count` requests (None without LoRA). The adapter is loaded next to
@@ -276,16 +284,7 @@ class vLLMRollout(BaseRollout):
             return
 
         original_sampling_params = self.sampling_params
-        updated_sampling_params = original_sampling_params.clone()
-        has_updates = False
-        for key, value in kwargs.items():
-            if not hasattr(updated_sampling_params, key):
-                continue
-            _set_sampling_param(updated_sampling_params, key, value)
-            has_updates = True
-
-        if has_updates:
-            self.sampling_params = updated_sampling_params
+        self.sampling_params = sampling_params_with(original_sampling_params, kwargs)
 
         try:
             yield
@@ -480,80 +479,30 @@ class vLLMRollout(BaseRollout):
         )
         from ..agent.environments import EnvironmentContext, environment_factory
         from ..agent.inference import run_agent_inference
-        from ..agent.protocol import (
-            AgentImageConfig,
-            AgentLoopConfig,
-            derive_environment_seed,
-            environment_report,
-            turn_env_reward,
+        from ..agent.rollout_batch import (
+            agent_environment_kwargs,
+            agent_image_config,
+            agent_loop_config,
+            agent_max_model_len,
+            agent_rollout_output,
+            agent_rollout_rows,
+            agent_rollout_tasks,
+            retry_base_seed,
         )
-        from ..agent.step_records import step_records
-        from ..agent.tool_call import NativeToolCallCodec
-        from ..agent.trajectory import (
-            AgentTrajectoryMaterializer,
-            AgentTrajectoryRejected,
-            collate_materialized_agent_trajectories,
-            turn_action_spans,
-        )
+        from ..agent.trajectory import AgentTrajectoryMaterializer, AgentTrajectoryRejected
 
         if self.processor is None:
             raise RuntimeError("agentic rollout requires a multimodal processor")
-        environment_name = self.config.resolved_agent_environment
-        messages_batch = prompts.non_tensor_batch.pop("raw_prompt", None)
-        raw_multi_modal_batch = prompts.non_tensor_batch.pop(
-            "multi_modal_data",
-            None,
-        )
-        uids = prompts.non_tensor_batch.pop("uid", None)
-        env_names = prompts.non_tensor_batch.pop("env_name", None)  # "" = no tool for that row
-        row_env_configs = prompts.non_tensor_batch.pop(self.config.agent_environment_config_key, None)
-        prompts.non_tensor_batch.pop("raw_prompt_ids", None)
+        rows = agent_rollout_rows(prompts, self.config)
         batch_size = len(prompts)
-        if environment_name == "deepeyes":
-            # DeepEyes' task is the row itself: its chat messages and source images.
-            if messages_batch is None or raw_multi_modal_batch is None or uids is None:
-                raise ValueError("agentic rollout requires aligned raw_prompt, multi_modal_data, and uid fields")
-            if not (len(messages_batch) == len(raw_multi_modal_batch) == len(uids) == batch_size):
-                raise ValueError("agentic rollout inputs do not align by sample")
-        else:
-            # Other environments build the task in reset() from the row's environment configuration.
-            if uids is None or row_env_configs is None:
-                raise ValueError(
-                    f"agent environment {environment_name!r} requires the uid field and the data column "
-                    f"{self.config.agent_environment_config_key!r} (worker.rollout.agent_environment_config_key)"
-                )
-            if not (len(uids) == len(row_env_configs) == batch_size):
-                raise ValueError("agentic rollout inputs do not align by sample")
-
-        image_config = AgentImageConfig(
-            min_pixels=prompts.meta_info.get("min_pixels"),
-            max_pixels=prompts.meta_info.get("max_pixels"),
-            limit_images=self.config.limit_images,
-            observation_min_pixels=self.config.agent_observation_min_pixels,
-        )
-        loop_config = AgentLoopConfig(
-            max_tool_calls=self.config.agent_max_tool_calls,
-            max_response_tokens=self.config.response_length,
-            max_tokens_per_turn=self.config.agent_max_tokens_per_turn,
-            max_tool_calls_per_turn=self.config.agent_max_tool_calls_per_turn,
-        )
-        max_model_len = self.config.max_model_len or self.config.prompt_length + self.config.response_length
+        image_config = agent_image_config(self.config, prompts.meta_info)
+        loop_config = agent_loop_config(self.config)
+        max_model_len = agent_max_model_len(self.config)
         materializer = AgentTrajectoryMaterializer(
             self.processor,
             max_prompt_tokens=self.config.prompt_length,
             max_model_len=max_model_len,
         )
-
-        source_images_batch = []
-        for multi_modal_data in raw_multi_modal_batch if environment_name == "deepeyes" else ():
-            if not isinstance(multi_modal_data, dict):
-                raise TypeError("DeepEyes currently requires image-based multi_modal_data")
-            if multi_modal_data.get("videos"):
-                raise ValueError("DeepEyes image_zoom_in_tool does not support videos")
-            images = multi_modal_data.get("images")
-            if not images:
-                raise ValueError("DeepEyes rollout requires at least one source image")
-            source_images_batch.append([process_image(image, None, None) for image in images])
 
         lora_requests = self._lora_requests(batch_size)
         with self.update_sampling_params(**prompts.meta_info):
@@ -564,6 +513,8 @@ class vLLMRollout(BaseRollout):
             base_sampling_params.n = 1
             if not isinstance(base_sampling_params.seed, int):
                 raise ValueError("agentic rollout requires an integer sampling seed")
+            base_seed = int(base_sampling_params.seed)
+            tasks = agent_rollout_tasks(rows, rollout_n=rollout_n, base_seed=base_seed, lora_requests=lora_requests)
             scheduler = VLLMAgentBatchScheduler(
                 self.inference_engine,
                 use_tqdm=self.use_tqdm,
@@ -579,92 +530,51 @@ class vLLMRollout(BaseRollout):
                 max_tool_calls=self.config.agent_max_tool_calls,
                 max_tool_calls_per_turn=self.config.agent_max_tool_calls_per_turn,
             )
-            environment_kwargs = dict(self.config.agent_environment_kwargs)
-            if environment_name == "deepeyes":
-                environment_kwargs.update(
-                    bbox_format=self.agent_bbox_format, prompt_style=self.config.agent_prompt_style
-                )
-            make_environment = environment_factory(environment_name, environment_context, environment_kwargs)
+            make_environment = environment_factory(
+                rows.environment_name,
+                environment_context,
+                agent_environment_kwargs(self.config, self.agent_bbox_format),
+            )
 
             async def run_batch():
                 try:
-                    identities = []
-                    requests = []
-                    for sample_position, uid in enumerate(uids):
-                        if environment_name == "deepeyes":
-                            env_config = {
-                                "messages": messages_batch[sample_position],
-                                "images": source_images_batch[sample_position],
-                                "tools_enabled": env_names is None or bool(env_names[sample_position]),
-                            }
-                        else:
-                            env_config = _row_environment_config(row_env_configs[sample_position])
-                        sample_identity = int.from_bytes(
-                            hashlib.blake2b(
-                                str(uid).encode("utf-8"),
-                                digest_size=8,
-                            ).digest(),
-                            byteorder="big",
-                            signed=False,
-                        )
-                        for rollout_index in range(rollout_n):
-                            identities.append(
-                                (
-                                    str(uid),
-                                    sample_position,
-                                    rollout_index,
-                                )
-                            )
-                            requests.append(
-                                {
-                                    "env_config": env_config,
-                                    "env_seed": derive_environment_seed(
-                                        int(base_sampling_params.seed), sample_identity
-                                    ),
-                                    "sample_index": sample_identity,
-                                    "rollout_index": rollout_index,
-                                    "lora_request": (
-                                        None if lora_requests is None else lora_requests[sample_position]
-                                    ),
-                                }
-                            )
 
-                    async def generate_one(request: dict[str, Any], retry_index: int = 0):
+                    async def generate_one(task, retry_index: int = 0):
                         # A retry retains group identity but changes the deterministic
                         # seed namespace, avoiding an identical invalid resample.
                         return await run_agent_inference(
                             environment=make_environment(),
-                            env_config=request["env_config"],
+                            env_config=task.env_config,
                             inference_engine=self.inference_engine,
                             sampling_params=base_sampling_params,
                             processor=self.processor,
-                            sample_index=request["sample_index"],
-                            rollout_index=request["rollout_index"],
+                            sample_index=task.sample_index,
+                            rollout_index=task.rollout_index,
                             image_config=image_config,
-                            env_seed=request["env_seed"],
+                            env_seed=task.env_seed,
                             config=loop_config,
-                            lora_request=request["lora_request"],
+                            lora_request=task.lora_request,
                             use_tqdm=False,
-                            base_seed=(int(base_sampling_params.seed) + retry_index * 1_000_003),
+                            base_seed=retry_base_seed(base_seed, retry_index),
                             scheduler=scheduler,
                             image_cache=image_cache,
                             max_model_len=max_model_len,
                         )
 
                     # gather creates the tasks in this order too; holding them lets a failure cancel the rest
-                    tasks = [asyncio.ensure_future(generate_one(request)) for request in requests]
+                    runs = [asyncio.ensure_future(generate_one(task)) for task in tasks]
                     try:
-                        trajectories = list(await asyncio.gather(*tasks))
+                        trajectories = list(await asyncio.gather(*runs))
                     except BaseException:
                         # One trajectory failed: stop the others and let them close their environments before the
                         # shared environment resources are closed below.
-                        for task in tasks:
-                            task.cancel()
-                        await asyncio.gather(*tasks, return_exceptions=True)
+                        for run in runs:
+                            run.cancel()
+                        await asyncio.gather(*runs, return_exceptions=True)
                         raise
                     materialized = []
                     retry_counts = []
-                    for index, (request, trajectory) in enumerate(zip(requests, trajectories)):
+                    for index, (task, trajectory) in enumerate(zip(tasks, trajectories)):
                         for retry_index in range(self.config.agent_max_trajectory_retries + 1):
                             try:
                                 materialized.append(materializer.materialize(trajectory))
@@ -673,129 +583,21 @@ class vLLMRollout(BaseRollout):
                             except AgentTrajectoryRejected as error:
                                 if not error.recoverable or retry_index >= self.config.agent_max_trajectory_retries:
                                     raise
-                                trajectory = await generate_one(
-                                    request,
-                                    retry_index + 1,
-                                )
+                                trajectory = await generate_one(task, retry_index + 1)
                                 trajectories[index] = trajectory
-                    return identities, trajectories, materialized, retry_counts
+                    return trajectories, materialized, retry_counts
                 finally:
                     await scheduler.close()
                     await environment_context.aclose()
 
-            identities, trajectories, materialized, retry_counts = asyncio.run(run_batch())
-        repeated_uids = [uid for uid, _, _ in identities]
-        output = collate_materialized_agent_trajectories(
+            trajectories, materialized, retry_counts = asyncio.run(run_batch())
+        return agent_rollout_output(
+            tasks,
+            trajectories,
             materialized,
+            retry_counts,
+            config=self.config,
+            tokenizer=self.tokenizer,
             pad_token_id=self.pad_token_id,
-            padded_prompt_width=self.config.prompt_length,
-            padded_response_width=self.config.response_length,
-            uids=repeated_uids,
             meta_info=prompts.meta_info,
         )
-
-        # where each turn's model tokens are, for the environment's step rewards and the step records
-        needs_spans = self.config.agent_step_records or any(
-            turn_env_reward(step.calls) is not None for trajectory in trajectories for step in trajectory.steps
-        )
-        turn_spans = (
-            [
-                turn_action_spans(trajectory.steps, sample.response_mask)
-                for trajectory, sample in zip(trajectories, materialized)
-            ]
-            if needs_spans
-            else None
-        )
-        reward_inputs = []
-        diagnostics = []
-        codec = NativeToolCallCodec()
-        for trajectory_id, trajectory in zip(
-            output.non_tensor_batch["agent_trajectory_id"],
-            trajectories,
-        ):
-            response = self.tokenizer.decode(
-                trajectory.response_ids,
-                skip_special_tokens=False,
-                clean_up_tokenization_spaces=False,
-            )
-            if trajectory.steps and trajectory.steps[0].reasoning_prefilled:
-                response = f"<think>{response}"
-            metrics = trajectory.metrics
-            tool_calls_inside_reasoning = sum(
-                codec.count_tool_calls_inside_reasoning(
-                    step.model_text,
-                    reasoning_open=step.reasoning_prefilled,
-                )
-                for step in trajectory.steps
-            )
-            reward_input = {
-                "trajectory_id": str(trajectory_id),
-                "response": response,
-                "final_answer": trajectory.final_answer,
-                "status": trajectory.status.value,
-                "tool_call_successes": metrics.tool_call_successes,
-                "trajectory_retries": retry_counts[len(reward_inputs)],
-            }
-            if trajectory.env_outcome is not None:  # what the environment reported at the end of the episode
-                reward_input["env_outcome"] = {
-                    "reward": trajectory.env_outcome.reward,
-                    "components": dict(trajectory.env_outcome.components),
-                    "metrics": dict(trajectory.env_outcome.metrics),
-                }
-            step_rewards = [turn_env_reward(step.calls) for step in trajectory.steps]
-            if any(reward is not None for reward in step_rewards):
-                # the rewards the environment gave for a turn's calls, on the last model token of the turn
-                spans = turn_spans[len(reward_inputs)]
-                reward_input["env_step_rewards"] = [
-                    [spans[turn][1] - 1, reward] for turn, reward in enumerate(step_rewards) if reward is not None
-                ]
-            reward_inputs.append(reward_input)
-            diagnostics.append(
-                {
-                    "trajectory_id": str(trajectory_id),
-                    "status": trajectory.status.value,
-                    "tool_call_attempts": metrics.tool_call_attempts,
-                    "tool_call_successes": metrics.tool_call_successes,
-                    "tool_call_errors": metrics.tool_call_errors,
-                    "malformed_tool_calls": metrics.malformed_tool_calls,
-                    "unrun_tool_calls": metrics.unrun_tool_calls,
-                    "tool_internal_errors": metrics.tool_internal_errors,
-                    "image_idx_errors": metrics.image_idx_errors,
-                    "invalid_final_answers": metrics.invalid_final_answers,
-                    "turn_end_errors": metrics.turn_end_errors,
-                    "tool_calls_inside_reasoning": tool_calls_inside_reasoning,
-                    "unclosed_answer": response.count("<answer>") > response.count("</answer>"),
-                    "truncated": metrics.truncated,
-                    "no_action": trajectory.status.value == "no_action",
-                    "trajectory_retries": retry_counts[len(diagnostics)],
-                }
-            )
-        output.non_tensor_batch["agent_reward_input"] = np.array(
-            reward_inputs,
-            dtype=object,
-        )
-        output.non_tensor_batch["agent_diagnostics"] = np.array(
-            diagnostics,
-            dtype=object,
-        )
-        if self.config.resolved_agent_environment != "deepeyes":
-            # what the environment reported per trajectory (training generation records keep it)
-            output.non_tensor_batch["agent_environment"] = np.array(
-                [
-                    environment_report(trajectory.steps, trajectory.env_outcome, trajectory.initial_state_key)
-                    for trajectory in trajectories
-                ],
-                dtype=object,
-            )
-        if self.config.agent_step_records:  # step-level advantages (algorithm.adv_estimator=gigpo)
-            image_cache: dict[int, bytes] = {}
-            output.non_tensor_batch["agent_step_records"] = np.array(
-                [
-                    step_records(trajectory, spans, sample.multi_modal_data["images"], rollout_index, image_cache)
-                    for (_, _, rollout_index), trajectory, sample, spans in zip(
-                        identities, trajectories, materialized, turn_spans
-                    )
-                ],
-                dtype=object,
-            )
-        return output
