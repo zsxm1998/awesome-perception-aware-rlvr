@@ -40,7 +40,7 @@ from ...models.transformers.internvl import (
 from ...models.transformers.position_ids import build_multimodal_position_ids
 from ...protocol import DataProto
 from ...utils.dataset import ProcessedImageInput, process_image
-from .protocol import AgentTrajectory
+from .protocol import AgentStep, AgentTrajectory
 
 
 class AgentTrajectoryRejected(ValueError):
@@ -98,6 +98,8 @@ class MaterializedAgentTrajectory:
     prompt_token_budget: int
     response_token_budget: int
     trajectory: AgentTrajectory
+    # The inference engine's log-probability of each response token (0 for observation tokens), when recorded.
+    rollout_log_probs: Optional[tuple[float, ...]] = None
 
     @property
     def input_ids(self) -> tuple[int, ...]:
@@ -627,7 +629,23 @@ class AgentTrajectoryMaterializer:
             prompt_token_budget=self.max_prompt_tokens,
             response_token_budget=response_token_budget,
             trajectory=trajectory,
+            rollout_log_probs=_rollout_log_probs(trajectory.steps, response_mask),
         )
+
+
+def _rollout_log_probs(steps: Sequence[AgentStep], response_mask: Sequence[int]) -> Optional[tuple[float, ...]]:
+    """The engine's log-probabilities of the model tokens, in the expanded response (observation tokens get 0): the
+    model tokens keep their order through the expansion of image placeholders, which only lengthens observations."""
+    recorded = [step.model_log_probs is not None for step in steps]
+    if not any(recorded):
+        return None
+    if not all(recorded):
+        raise RuntimeError("the rollout log-probabilities of some model turns are missing")
+    action_log_probs = [value for step in steps for value in step.model_log_probs]
+    if len(action_log_probs) != sum(mask_value == 1 for mask_value in response_mask):
+        raise RuntimeError("the rollout log-probabilities do not match the model tokens")
+    remaining = iter(action_log_probs)
+    return tuple(next(remaining) if mask_value == 1 else 0.0 for mask_value in response_mask)
 
 
 def _pad_1d(values: Sequence[int], width: int, pad_value: int, *, left: bool) -> torch.Tensor:
@@ -833,6 +851,20 @@ def collate_materialized_agent_trajectories(
         "position_ids": torch.stack(position_ids),
         "visual_token_mask": torch.stack(visual_token_masks),
     }
+    recorded = [sample.rollout_log_probs is not None for sample in samples]
+    if any(recorded):
+        if not all(recorded):
+            raise RuntimeError("the rollout log-probabilities of some trajectories are missing")
+        # right-padded like the responses
+        tensors["rollout_log_probs"] = torch.stack(
+            [
+                torch.tensor(
+                    [*sample.rollout_log_probs, *[0.0] * (padded_response_width - len(sample.rollout_log_probs))],
+                    dtype=torch.float32,
+                )
+                for sample in samples
+            ]
+        )
     non_tensors = {
         "multi_modal_data": np.array([sample.multi_modal_data for sample in samples], dtype=object),
         "multi_modal_layout": np.array([sample.multi_modal_layout for sample in samples], dtype=object),

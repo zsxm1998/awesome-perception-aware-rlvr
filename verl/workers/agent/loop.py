@@ -238,6 +238,12 @@ class AgentLoop:
                     f"{len(action_token_ids)} > {max_new_tokens}"
                 )
 
+            model_log_probs = None if output.log_probs is None else [float(value) for value in output.log_probs]
+            if model_log_probs is not None and len(model_log_probs) != len(action_token_ids):
+                raise ValueError(
+                    f"generation backend returned {len(model_log_probs)} log-probs for {len(action_token_ids)} tokens"
+                )
+
             response_ids.extend(action_token_ids)
             response_mask.extend([1] * len(action_token_ids))
             effective_response_tokens += len(action_token_ids)
@@ -248,6 +254,7 @@ class AgentLoop:
                 finish_reason=output.finish_reason,
                 stop_reason=output.stop_reason,
                 backend_text=output.backend_text,
+                model_log_probs=model_log_probs,
                 reasoning_prefilled=reasoning_prefilled,
                 is_finalization_turn=not tools_allowed,
             )

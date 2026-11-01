@@ -71,6 +71,9 @@ class RolloutConfig:
     agent_environment: Optional[str] = None
     agent_environment_kwargs: dict[str, Any] = field(default_factory=dict)
     agent_environment_config_key: str = "env_config"
+    # Record the inference engine's log-probability of each sampled token (agentic rollouts) and log how far it is
+    # from the trainer's (rollout_corr/*); diagnostics only. null: off.
+    record_rollout_log_probs: Optional[bool] = None
     val_override_config: dict[str, Any] = field(default_factory=dict)
     # below are auto keys
     prompt_length: int = field(default=-1, init=False)
@@ -109,6 +112,8 @@ class RolloutConfig:
             # path/to/file.py:ClassName, made absolute so that the rollout workers find the same file
             path, class_name = self.agent_environment.rsplit(":", 1)
             self.agent_environment = f"{os.path.abspath(path)}:{class_name}"
+        if self.record_rollout_log_probs and self.interaction_mode != "agentic":
+            raise ValueError("rollout.record_rollout_log_probs requires rollout.interaction_mode=agentic")
         if self.agent_environment_kwargs and self.interaction_mode != "agentic":
             raise ValueError("rollout.agent_environment_kwargs requires rollout.interaction_mode=agentic")
         if (
@@ -117,6 +122,10 @@ class RolloutConfig:
             and self.agent_max_tokens_per_turn > self.response_length
         ):
             raise ValueError("agent_max_tokens_per_turn cannot exceed the full response budget")
+
+    @property
+    def resolved_record_rollout_log_probs(self) -> bool:
+        return bool(self.record_rollout_log_probs)
 
     @property
     def resolved_agent_environment(self) -> str:
