@@ -770,13 +770,16 @@ def test_environment_reward_passes_the_episode_reward_on():
     compute_score = _environment_reward().compute_score
 
     outcome = {"reward": 0.75, "components": {"task": 1.0}, "metrics": {"orders": 2.0}}
-    (score,) = compute_score([{"env_outcome": outcome, "agent_status": "answered", "tool_call_attempts": 3}])
+    counts = {"tool_call_attempts": 3, "malformed_tool_calls": 1, "unrun_tool_calls": 2}
+    (score,) = compute_score([{"env_outcome": outcome, "agent_status": "answered", **counts}])
 
     assert score == {
         "overall": 0.75,
         "env/task": 1.0,
         "env/orders": 2.0,
         "tool_call_attempts": 3.0,
+        "malformed_tool_calls": 1.0,
+        "unrun_tool_calls": 2.0,
         "answered": 1.0,
         "truncated": 0.0,
     }

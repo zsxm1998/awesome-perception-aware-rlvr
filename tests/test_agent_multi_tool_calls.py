@@ -112,6 +112,7 @@ def test_the_first_calls_of_a_turn_run_in_order_and_the_others_get_an_error():
     assert [result.observation_text for result in encoder.requests[0][:2]] == ["region 1", "region 2"]
     assert len(encoder.requests[0]) == 3 and first.observation_committed
     assert trajectory.metrics.tool_call_attempts == 2 and trajectory.metrics.tool_call_errors == 1
+    assert (trajectory.metrics.malformed_tool_calls, trajectory.metrics.unrun_tool_calls) == (0, 1)
     assert trajectory.metrics.tool_call_successes == 2
     assert turn_env_reward(first.calls) == 0.5
     assert trajectory.status == AgentStatus.ANSWERED
@@ -139,6 +140,8 @@ def test_calls_beyond_the_remaining_calls_get_a_limit_error_and_the_turn_stays_v
     first, second = trajectory.steps
     assert first.calls[2].tool_result.error_code == TOOL_CALL_LIMIT_REACHED
     assert trajectory.metrics.tool_call_attempts == 2 and trajectory.metrics.tool_call_limit_reached
+    assert (trajectory.metrics.malformed_tool_calls, trajectory.metrics.unrun_tool_calls) == (0, 1)
+    assert trajectory.metrics.tool_call_errors == 1
     assert second.is_finalization_turn and trajectory.status == AgentStatus.ANSWERED
     assert turn_is_valid(trajectory, 0)
 
@@ -152,6 +155,7 @@ def test_a_malformed_call_counts_gets_its_error_and_the_other_calls_run():
     malformed, ran = trajectory.steps[0].calls
     assert malformed.tool_result.error_code == "malformed_tool_call" and ran.executed
     assert trajectory.metrics.tool_call_attempts == 2
+    assert (trajectory.metrics.malformed_tool_calls, trajectory.metrics.unrun_tool_calls) == (1, 0)
     assert not turn_is_valid(trajectory, 0)
 
 
@@ -163,6 +167,8 @@ def test_a_call_that_ends_the_episode_stops_the_turn():
     assert environment.calls == [{"region": 1}] and encoder.requests == []
     done, later = trajectory.steps[0].calls
     assert done.env_done and not later.executed and later.tool_result is None
+    # the call after the one that ended the episode did not run, and gets no result: no error
+    assert (trajectory.metrics.unrun_tool_calls, trajectory.metrics.tool_call_errors) == (1, 0)
     assert trajectory.status == AgentStatus.ENVIRONMENT_DONE and not trajectory.steps[0].observation_committed
 
 
@@ -174,7 +180,41 @@ def test_calls_beyond_the_limit_count_as_errors_also_when_an_earlier_call_ends_t
     assert environment.calls == [{"region": 1}]
     assert trajectory.steps[0].calls[1].tool_result.error_code == TOO_MANY_TOOL_CALLS_IN_TURN
     assert trajectory.metrics.tool_call_attempts == 1 and trajectory.metrics.tool_call_errors == 1
+    assert trajectory.metrics.unrun_tool_calls == 1
     assert not turn_is_valid(trajectory, 0)
+
+
+def test_a_malformed_call_beyond_the_limit_is_unrun_not_malformed():
+    trajectory, environment, _ = _run(
+        [_call(region=1) + "<tool_call>{oops}</tool_call>", "<answer>A</answer>"], per_turn=1
+    )
+
+    assert environment.calls == [{"region": 1}]
+    metrics = trajectory.metrics
+    assert (metrics.malformed_tool_calls, metrics.unrun_tool_calls, metrics.tool_call_errors) == (0, 1, 1)
+    assert metrics.tool_call_attempts == 1
+
+
+def test_calls_in_the_answer_only_turn_are_neither_unrun_nor_errors():
+    trajectory, environment, _ = _run([_call(region=1), _call(region=2)], per_turn=1, max_tool_calls=1)
+
+    assert environment.calls == [{"region": 1}] and trajectory.status == AgentStatus.TOOL_CALL_LIMIT
+    metrics = trajectory.metrics
+    assert (metrics.unrun_tool_calls, metrics.tool_call_errors, metrics.tool_call_attempts) == (0, 0, 1)
+
+
+@pytest.mark.parametrize("per_turn, unrun, errors", [(1, 2, 2), (2, 2, 1), (3, 2, 0)])
+def test_after_a_call_ends_the_episode_only_calls_beyond_the_limit_get_an_error(per_turn, unrun, errors):
+    trajectory, environment, _ = _run(
+        [_call(region=1) + _call(region=2) + _call(region=3)], per_turn=per_turn, environment=_Environment(done_on=1)
+    )
+
+    assert environment.calls == [{"region": 1}] and trajectory.status == AgentStatus.ENVIRONMENT_DONE
+    metrics = trajectory.metrics
+    assert (metrics.unrun_tool_calls, metrics.tool_call_errors, metrics.malformed_tool_calls) == (unrun, errors, 0)
+    # tool_call_errors = malformed + calls not run for the per-turn limit or the remaining calls + environment refusals
+    with_result = [call for call in trajectory.steps[0].calls if not call.executed and call.tool_result is not None]
+    assert errors == metrics.malformed_tool_calls + len(with_result)
 
 
 def test_step_records_hold_every_call_the_environment_ran():

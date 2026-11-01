@@ -32,7 +32,13 @@ REWARD_NAME = "environment"
 REWARD_TYPE = "batch"
 
 # Trajectory statistics of the agent loop, logged next to the environment's numbers.
-_LOOP_STATISTICS = ("tool_call_attempts", "tool_call_errors", "trajectory_retries")
+_LOOP_STATISTICS = (
+    "tool_call_attempts",
+    "tool_call_errors",
+    "malformed_tool_calls",
+    "unrun_tool_calls",
+    "trajectory_retries",
+)
 ENVIRONMENT_PREFIX = "env/"
 
 

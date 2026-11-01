@@ -430,6 +430,14 @@ class AgentMetrics:
     # feedback observation cannot be committed. They are diagnostic only and
     # must not be interpreted as observation state by reward code.
     tool_call_errors: int = 0
+    # tool_call_errors = malformed_tool_calls + the calls not run for the per-turn limit or the remaining calls
+    # + the calls the environment answered with success: false. malformed_tool_calls are malformed calls that
+    # count towards max_tool_calls (the environment receives tool_call_attempts - malformed_tool_calls calls).
+    # unrun_tool_calls are calls the loop did not run: beyond max_tool_calls_per_turn or the remaining calls (a
+    # malformed one among them too), each with an error result, and calls within the per-turn limit after one
+    # that ended the episode, which get no result. Calls written in the answer-only turn are in neither.
+    malformed_tool_calls: int = 0
+    unrun_tool_calls: int = 0
     tool_internal_errors: int = 0
     image_idx_errors: int = 0
     invalid_final_answers: int = 0

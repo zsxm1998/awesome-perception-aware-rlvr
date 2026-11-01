@@ -348,7 +348,40 @@ def test_gigpo_reports_step_group_statistics():
     assert metrics["gigpo/step_group_size_mean"] == pytest.approx(2.0)
     assert metrics["gigpo/singleton_step_group_fraction"] == pytest.approx(1 / 3)
     assert metrics["gigpo/turns_in_shared_groups"] == pytest.approx(5 / 6)
+    assert metrics["gigpo/turns_in_cross_rollout_groups"] == pytest.approx(5 / 6)
     assert metrics["gigpo/turns_per_trajectory"] == pytest.approx(2.0)
+
+
+def test_gigpo_tells_groups_of_one_rollout_from_groups_across_rollouts():
+    def turn(start, *keys):
+        env_calls = [{"state_key": key, "reward": None} for key in keys]
+        return {
+            "span": [start, start + 1],
+            "valid": True,
+            "env_calls": env_calls,
+            "observation": None,
+            "observation_text": None,
+        }
+
+    # rollout 0 calls twice and stays in state x (a call that leaves the state as it was); rollout 1 goes to y
+    first = {
+        "rollout_index": 0,
+        "initial": {"state_key": "k", "observation": "p"},
+        "turns": [turn(0, "x"), turn(1, "x"), turn(2)],
+    }
+    second = {"rollout_index": 1, "initial": {"state_key": "k", "observation": "p"}, "turns": [turn(0, "y"), turn(1)]}
+    metrics = {}
+    compute_gigpo_advantage(
+        torch.zeros(2, 3),
+        torch.ones(2, 3),
+        np.array(["g", "g"], dtype=object),
+        [first, second],
+        step_state_key="environment",
+        metrics=metrics,
+    )
+    # groups: {first turns in k} across rollouts, {rollout 0's turns in x}, {rollout 1's turn in y}
+    assert metrics["gigpo/turns_in_shared_groups"] == pytest.approx(4 / 5)
+    assert metrics["gigpo/turns_in_cross_rollout_groups"] == pytest.approx(2 / 5)
 
 
 # ----------------------------------------------------------------------------- step records
