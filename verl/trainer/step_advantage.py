@@ -178,6 +178,7 @@ def compute_gigpo_advantage(
     episode_advantage: dict[tuple[int, int], torch.Tensor] = {}
     step_advantage: dict[tuple[int, int], torch.Tensor] = {}
     group_sizes: list[int] = []
+    cross_rollout_turns = 0  # turns in a step group with turns of two or more rollouts
     for rows in groups.values():
         members = [(row, turn) for row in rows for turn in range(len(step_records[row]["turns"]))]
         # episode level: every turn's score (official) or one score per trajectory (the paper's Eq. 3)
@@ -196,6 +197,8 @@ def compute_gigpo_advantage(
         for group in _step_groups(ordered, anchors, step_similarity_threshold):
             group = sorted(group)  # pooled in batch order, as the official code does
             group_sizes.append(len(group))
+            if len({row for row, _ in group}) > 1:
+                cross_rollout_turns += len(group)
             if len(group) == 1:
                 step_advantage[group[0]] = torch.tensor(0.0)
                 continue
@@ -214,6 +217,7 @@ def compute_gigpo_advantage(
                 "gigpo/step_group_size_mean": float(sizes.mean()),
                 "gigpo/singleton_step_group_fraction": float((sizes == 1).mean()),
                 "gigpo/turns_in_shared_groups": float(sizes[sizes > 1].sum() / members_in_groups),
+                "gigpo/turns_in_cross_rollout_groups": float(cross_rollout_turns / members_in_groups),
                 "gigpo/turns_per_trajectory": float(members_in_groups / batch_size),
                 "gigpo/invalid_turn_fraction": float(np.mean([not ok for ok in valid.values()])),
                 "gigpo/episode_advantage_abs": float(

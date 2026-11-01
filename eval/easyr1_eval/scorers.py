@@ -2528,6 +2528,8 @@ def generation_diagnostics(rows: PredictionRows) -> dict[str, Any]:
         "tool_execution_successes",
         "tool_call_successes",
         "tool_call_errors",
+        "malformed_tool_calls",
+        "unrun_tool_calls",
         "tool_calls_inside_reasoning",
         "tool_internal_errors",
         "image_idx_errors",

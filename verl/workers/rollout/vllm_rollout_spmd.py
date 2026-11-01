@@ -757,6 +757,8 @@ class vLLMRollout(BaseRollout):
                     "tool_call_attempts": metrics.tool_call_attempts,
                     "tool_call_successes": metrics.tool_call_successes,
                     "tool_call_errors": metrics.tool_call_errors,
+                    "malformed_tool_calls": metrics.malformed_tool_calls,
+                    "unrun_tool_calls": metrics.unrun_tool_calls,
                     "tool_internal_errors": metrics.tool_internal_errors,
                     "image_idx_errors": metrics.image_idx_errors,
                     "invalid_final_answers": metrics.invalid_final_answers,

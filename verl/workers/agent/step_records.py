@@ -43,8 +43,8 @@ def turn_is_valid(trajectory: AgentTrajectory, index: int) -> bool:
     (whatever the environment made of them; calls left unrun because the response's calls are used up count as
     well formed), or the answer that ended the episode. A malformed call, more calls than a turn may run (as
     verl-agent's search environment flags several search tags), a malformed answer, a wrong turn end, a turn cut
-    by a length limit, a turn without an action and a call after the tool-call limit are invalid, as verl-agent's
-    ``is_action_valid`` judges the format only."""
+    by a length limit, a turn without an action and a call in the answer-only turn after the tool-call limit are
+    invalid, as verl-agent's ``is_action_valid`` judges the format only."""
     step = trajectory.steps[index]
     if step.calls:
         return all(call.tool_call is not None for call in step.calls) and not any(

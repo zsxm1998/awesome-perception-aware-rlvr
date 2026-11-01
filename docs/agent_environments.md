@@ -24,7 +24,12 @@ token, with DeepEyes' reward function on the trainer).
 2. The model writes a turn. A well-formed `<tool_call>` goes to `step(call)`, whose observation (text and
    images) is appended as a tool message; a malformed call gets an error observation from the agent loop and
    never reaches the environment. A turn may hold several calls (below). `tool_call_errors` counts every error
-   result: malformed calls, calls the environment answers with `success: false`, and calls the loop did not run.
+   result: malformed calls that count towards the limit (`malformed_tool_calls`; the environment receives
+   `tool_call_attempts` − `malformed_tool_calls` calls), calls the loop did not run because of the per-turn limit
+   or the remaining calls (counted in `unrun_tool_calls`; a malformed one among them is unrun, not malformed),
+   and calls the environment answers with `success: false`. `unrun_tool_calls` also counts the calls within the
+   per-turn limit after one that ended the episode, which get no result and are not in `tool_call_errors`. Calls
+   written in the answer-only turn after the limit are in neither.
 3. The episode ends when the model answers in `<answer>...</answer>`, when it uses up the tool-call limit
    (`worker.rollout.agent_max_tool_calls`; after it, one more turn may only answer), when a length budget
    runs out, or when a step returns `done`.
@@ -39,7 +44,8 @@ answer). The turn's results come back together, as consecutive tool messages, wh
 into one turn. When a call returns `done`, the calls after it do not run. Like verl's
 `multi_turn.max_parallel_calls` (default 1), the limit keeps the first calls; verl runs them concurrently and drops
 the others without a result, while here they run in order (environments have state, and `/step` carries an index)
-and every call gets a result, as OpenAI and Anthropic require of a conversation with tool calls. The model is not
+and every call the model reads about gets a result, as OpenAI and Anthropic require of a conversation with tool
+calls (calls within the per-turn limit after one that ended the episode get none, since no turn follows). The model is not
 told the limit by the API or the chat template (Qwen's tool preamble reads "You may call one or more functions"):
 the environment receives it in `reset` (`EnvironmentContext.max_tool_calls_per_turn`, `/reset`
 `max_tool_calls_per_turn`) and writes it into its prompt. DeepEyes supports 1 only.
@@ -59,7 +65,7 @@ no common practice was found. For comparison, verl v0.9.1 (`verl/experimental/ag
 | --- | --- |
 | The limit counts tool calls (`agent_max_tool_calls`), a malformed one too; after it, one more turn may only answer, and a call in it ends the episode (`tool_call_limit`). | verl ends a trajectory at `multi_turn.max_assistant_turns` or `max_user_turns`, counted in turns, with no turn reserved for the answer. |
 | A malformed call gets an error result from the loop and never reaches the environment. | verl's Hermes parser drops a block it cannot decode, and a turn without a decodable call ends the trajectory; verl-agent gives the text to the environment's projection, which marks the step invalid. |
-| Several calls of a turn run one after another, and every call gets a result (above). | verl runs the first `max_parallel_calls` concurrently and drops the others. |
+| Several calls of a turn run one after another, and every call gets a result, except those within the per-turn limit after one that ended the episode (above). | verl runs the first `max_parallel_calls` concurrently and drops the others. |
 | `reward: null` from `finalize` means that the environment does not score the episode; the environment reward function and scorer then fail rather than count 0. | verl's reward functions return a number, or a dict with its `score`. |
 | The environment's components and metrics are logged as `env/<name>`; a name reported by some samples only is averaged over them, with a `*_count` entry. | verl's reward managers collect the extra values of each key in a list (`reward_manager/naive.py`), whose lengths differ when samples return different keys. |
 
@@ -86,8 +92,9 @@ earned, adds to the episode's return as in the usual RL definition (the return i
 trainer puts it on the last model token of its turn, and the reward function's score is the reward of the last
 turn. Every advantage estimator, the logs (`reward/overall`) and online filtering see the sum; the step rewards of
 an episode are also logged as `reward/step_rewards`. Do not count them again in the `finalize` reward. The
-environment's components and metrics are logged under `env/`, apart from the trainer's own names (`overall`,
-`tool_call_errors`, ...):
+reward function also logs the agent loop's counts per trajectory: `tool_call_attempts`, `tool_call_errors`,
+`malformed_tool_calls`, `unrun_tool_calls` and `trajectory_retries`. The environment's components and metrics are
+logged under `env/`, apart from the trainer's own names (`overall`, `tool_call_errors`, ...):
 
 | Where | Name |
 | --- | --- |
@@ -105,7 +112,8 @@ Trajectory records keep what the environment reported, as given: the generation 
 `environment` field, and evaluation outputs (`agent_diagnostics`) and SFT exports the same entries:
 `initial_state_key` (when `reset` named the initial state), `env_steps` (per tool call: `turn_index`,
 `call_index`, `tool`, `state_key`, `cost`, `reward`, `done`, `info`, for the calls where the environment gave any of
-them) and
+them; `call_index` counts the turn's tool-call blocks in the order written, malformed and unrun ones included, so it
+is not the environment's `step_index`) and
 `env_outcome` (`reward`, `components`, `metrics`, `details`, `episode_id`). Reward functions receive the reward,
 components and metrics only.
 
@@ -209,14 +217,16 @@ Which turns act in the same state (`algorithm.step_state_key`):
 A turn's action is invalid when it is malformed, as verl-agent judges the format only: a malformed tool call or
 answer, more calls than a turn runs (as verl-agent's search environment flags several search tags), a wrong turn
 end, a turn cut by a length limit, a turn without an action, a call in the answer-only turn after the tool-call
-limit. Calls left unrun because the trajectory's remaining calls ran out do not make a turn invalid. A turn's step
+limit. Well-formed calls left unrun because the trajectory's remaining calls ran out do not make a turn invalid (a
+malformed one still does). A turn's step
 reward is the sum of its calls' rewards. `algorithm.invalid_action_penalty` is taken from its episode score and its
 step return. A call that the environment rejects is a valid action. The logs report `gigpo/step_group_size_mean`,
 `gigpo/singleton_step_group_fraction` (a group of one gives no step advantage), `gigpo/turns_in_shared_groups`
 (the share of turns in groups of two or more; groups go by the state alone, so turns of one rollout in the same
-state count too, for instance after a call that left the state as it was, and the share grouped with other
-rollouts' turns is lower; it can be computed from the records' `env_steps`), `gigpo/turns_per_trajectory`, `gigpo/invalid_turn_fraction`,
-`gigpo/episode_advantage_abs` and `gigpo/step_advantage_abs`.
+state count too, for instance after a call that left the state as it was), `gigpo/turns_in_cross_rollout_groups`
+(the share of turns in groups that hold turns of two or more rollouts, the ones compared with other rollouts),
+`gigpo/turns_per_trajectory`, `gigpo/invalid_turn_fraction`, `gigpo/episode_advantage_abs` and
+`gigpo/step_advantage_abs`.
 
 verl-agent trains one row per step whose prompt holds the task, the current observation and the last few steps as
 text (two in its ALFWorld and WebShop scripts, without past reasoning or images). Here a trajectory is one row

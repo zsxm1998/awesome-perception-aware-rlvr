@@ -43,6 +43,8 @@ class RewardInput(TypedDict):
     tool_call_successes: NotRequired[int]
     tool_call_attempts: NotRequired[int]
     tool_call_errors: NotRequired[int]
+    malformed_tool_calls: NotRequired[int]
+    unrun_tool_calls: NotRequired[int]
     tool_internal_errors: NotRequired[int]
     image_idx_errors: NotRequired[int]
     invalid_final_answers: NotRequired[int]
@@ -212,6 +214,8 @@ def _attach_agent_reward_fields(
     for key in (
         "tool_call_attempts",
         "tool_call_errors",
+        "malformed_tool_calls",
+        "unrun_tool_calls",
         "tool_internal_errors",
         "image_idx_errors",
         "invalid_final_answers",

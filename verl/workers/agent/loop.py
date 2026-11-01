@@ -73,8 +73,10 @@ async def run_tool_calls(
         calls.append(call)
         name = "unknown" if parsed.call is None else parsed.call.name
         if index >= per_turn:
+            metrics.unrun_tool_calls += 1
             call.tool_result = _too_many_calls_error(name, per_turn)
         elif index >= remaining:
+            metrics.unrun_tool_calls += 1
             metrics.tool_call_limit_reached = True
             call.tool_result = tool_error(
                 name,
@@ -84,6 +86,7 @@ async def run_tool_calls(
         else:
             metrics.tool_call_attempts += 1
             if parsed.error is not None:
+                metrics.malformed_tool_calls += 1
                 call.tool_result = tool_error("unknown", "malformed_tool_call", parsed.error)
             else:
                 env_step = await environment.step(parsed.call)
@@ -99,6 +102,7 @@ async def run_tool_calls(
             # No model turn would read the observation, so it is not committed. The calls after this one do not
             # run; those beyond the per-turn limit keep that error, so the turn reads as having too many.
             for later_index, later in enumerate(parsed_calls[index + 1 :], start=index + 1):
+                metrics.unrun_tool_calls += 1
                 calls.append(AgentCall(tool_call=later.call, tool_call_error=later.error))
                 if later_index >= per_turn:
                     later_name = "unknown" if later.call is None else later.call.name
