@@ -118,7 +118,7 @@ is not the environment's `step_index`) and
 components and metrics only.
 
 `remote_http` options: `url`; `timeout_s` (60) per request; `retries` (3) after a network error, a timeout,
-HTTP 408, 429 or 5xx, with exponential backoff from `backoff_s` (0.5); `max_concurrency` (64) requests at a
+HTTP 408, 429, 500, 502, 503 or 504, with exponential backoff from `backoff_s` (0.5); `max_concurrency` (64) requests at a
 time from one rollout worker; `max_images_per_step` (1), the most images one step returns, which sizes
 `worker.rollout.limit_images` (it must hold the initial images plus `agent_max_tool_calls` steps of them);
 `trust_env` (false): proxy variables such as `HTTP_PROXY` or `ALL_PROXY` are ignored unless it is true,
@@ -158,9 +158,9 @@ and must be present; an empty list means a single turn without tools.
   retry with HTTP 409 instead of running the call again, which fails the training step.
 - A call the environment refuses (an unknown tool, invalid arguments, a budget used up) is an ordinary answer:
   HTTP 200 with `success: false` and the reason in `content`, which the model reads. An error status is for the
-  server's own failures and fails the training step (a 5xx after the client's retries): the reference server
-  answers an exception raised by `Episode.step` with 400 (`KeyError`, `TypeError`, `ValueError`) or 500, so an
-  environment should not signal a bad call by raising.
+  server's own failures and fails the training step (after the client's retries, for the statuses above): the
+  reference server answers an exception raised by `Episode.step` with 400 (`KeyError`, `TypeError`, `ValueError`)
+  or 500, so an environment should not signal a bad call by raising.
 - `done: true` ends the episode after this call; its content is not shown to the model, and `finalize` is
   still called with status `environment_done`.
 - `final_answer` is the text inside the last `<answer>...</answer>` outside the reasoning, stripped; it is
@@ -184,8 +184,9 @@ and must be present; an empty list means a single turn without tools.
   differs between episodes, such as the `episode_id` or a call counter, matches no other, and its turns get no
   step advantage. Whether a count such as the remaining calls belongs in the key is the environment's choice
   (verl-agent's anchors hold the observation only, without the step). A call the environment rejects without
-  changing its state should return the unchanged key; `null` leaves the state unnamed, and the next action is
-  then compared with no other. A malformed call does not reach the environment and leaves the state as it was.
+  changing its state should return the unchanged key; `null` from `/step` leaves the state unnamed, and the next
+  action is then compared with no other. When `/reset` names no initial state, the first actions of a prompt's
+  rollouts are still compared with each other, since they start from the same task. A malformed call does not reach the environment and leaves the state as it was.
 
 [examples/agent_env/server.py](../examples/agent_env/server.py) implements the server side of these rules on
 the Python standard library: write an `Episode` class with `reset`, `step` and `finalize`, and call `serve`. It
