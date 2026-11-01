@@ -69,6 +69,7 @@ RLVR 能提升大视觉语言模型的推理能力，但它的奖励只检查最
 
 ## 🔥 更新
 
+- **2026-11**：多轮 agent rollout 的服务模式（`worker.rollout.agent_engine_mode=server`，[文档](docs/agent_environments.md#server-mode)），参照 verl 的 agent loop：每张训练 GPU 上一个 vLLM 服务，每个模型轮一到就调度，训练仍是同步的；默认仍为批量模式。
 - **2026-10**：多轮 agent 的步级优势 GiGPO（[文档](docs/agent_environments.md#step-level-advantages-gigpo)），与 verl-agent 的实现逐值核对一致；环境对单次工具调用给出的奖励现在计入所有优势估计器的回报。
 - **2026-10**：在 agent 环境中，通过 OpenAI 兼容接口调用的模型可以和本地检查点在同样的任务、工具与评分下评测（[评测说明](eval/README.md#api-models-in-agent-environments)）；示范轨迹（脚本写好的，或由通过接口调用的模型生成的）经 rollout 回放后导出为 ms-swift 的 SFT 数据，分词与 rollout 完全一致（[文档](docs/agent_environments.md#sft-data)）。
 - **2026-10**：多轮 agent 强化学习与评测的环境接口（进程内或通过 HTTP，[文档](docs/agent_environments.md)），回合奖励可由环境给出；DeepEyes 改为进程内环境，并提供[示例](examples/agent_env/README.md)（玩具视觉搜索、通过 HTTP 提供的 DeepEyes）。
