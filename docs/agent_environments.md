@@ -87,6 +87,7 @@ no common practice was found. For comparison, verl v0.9.1 (`verl/experimental/ag
 | `agent_environment_config_key` | `env_config` | data column with each row's configuration, a JSON object (or its string) given to `reset`; not used by `deepeyes` |
 | `agent_max_tool_calls` | `6` | tool calls per trajectory; the environment receives it in `/reset` (`max_tool_calls`) |
 | `agent_max_tool_calls_per_turn` | `1` | tool calls run per model turn, in the order written; the environment receives it in `/reset` (`max_tool_calls_per_turn`) |
+| `record_rollout_log_probs` | `null` (off) | keep vLLM's log-probability of each sampled token (after temperature, `logprobs_mode=processed_logprobs`) as `rollout_log_probs` and log how far it is from the trainer's recomputed `old_log_probs` under `rollout_corr/` (`kl`, `k3_kl`, `training_ppl`, `rollout_ppl`, `log_ppl_diff`, `ppl_ratio`, `chi2_token`, `chi2_seq`, as verl defines them); diagnostics only, the loss does not use them |
 
 Data rows of an environment task need the configuration column, a prompt column (`data.prompt_key`; only
 used for the length filter and logs, as the model's prompt comes from `reset`) and an answer column

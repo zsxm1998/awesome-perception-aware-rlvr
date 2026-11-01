@@ -365,6 +365,9 @@ class VLLMGenerationBackend:
             finish_reason=completion.finish_reason,
             stop_reason=getattr(completion, "stop_reason", None),
             tokenizer=self.tokenizer,
+            log_probs=sampled_log_probs(completion.token_ids, completion.logprobs)
+            if sampling_params.logprobs is not None
+            else None,
         )
 
 
@@ -414,6 +417,14 @@ def build_agent_vllm_request(
     return prompt, sampling_params
 
 
+def sampled_log_probs(token_ids: Sequence[int], logprobs: Any) -> list[float]:
+    """The log-probability of each generated token, from vLLM's per-position logprobs (``logprobs=0`` asks for the
+    sampled token's only)."""
+    if logprobs is None or len(logprobs) != len(token_ids):
+        raise RuntimeError("vLLM returned no log-probability for some generated tokens")
+    return [float(logprobs[position][token_id].logprob) for position, token_id in enumerate(token_ids)]
+
+
 def agent_generation_output(
     token_ids: Sequence[int],
     backend_text: Optional[str],
@@ -421,6 +432,7 @@ def agent_generation_output(
     finish_reason: Optional[str],
     stop_reason: Any,
     tokenizer: Any,
+    log_probs: Optional[Sequence[float]] = None,
 ) -> GenerationOutput:
     """One generated turn as the agent loop reads it: the text is decoded here, with the special tokens, so that it
     does not depend on whether the engine decoded the output (``backend_text`` is kept only when it differs)."""
@@ -436,4 +448,5 @@ def agent_generation_output(
         finish_reason=finish_reason,
         stop_reason=stop_reason,
         backend_text=backend_text if backend_text is not None and backend_text != text else None,
+        log_probs=log_probs,
     )

@@ -166,6 +166,8 @@ class GenerationOutput:
     # human-readable error.
     stop_reason: Optional[Any] = None
     backend_text: Optional[str] = None
+    # The engine's log-probability of each token (worker.rollout.record_rollout_log_probs); None when not recorded.
+    log_probs: Optional[Sequence[float]] = None
 
 
 @dataclass(frozen=True)
@@ -408,6 +410,8 @@ class AgentStep(OneCallView):
     finish_reason: Optional[str] = None
     stop_reason: Optional[Any] = None
     backend_text: Optional[str] = None
+    # The inference engine's log-probability of each model token, when recorded.
+    model_log_probs: Optional[list[float]] = None
     reasoning_prefilled: bool = False
     is_finalization_turn: bool = False
     turn_end_error: Optional[str] = None

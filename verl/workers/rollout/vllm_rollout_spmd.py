@@ -227,6 +227,9 @@ class vLLMRollout(BaseRollout):
         self.lora_kwargs = lora_kwargs
 
         engine_kwargs = {}
+        if config.resolved_record_rollout_log_probs:
+            # the log-probabilities after temperature, as the trainer recomputes them (verl's default mode)
+            engine_kwargs["logprobs_mode"] = "processed_logprobs"
         if processor is not None:  # only VLMs have processor
             engine_kwargs["mm_processor_cache_gb"] = config.mm_processor_cache_gb
             if config.limit_images:
@@ -511,6 +514,8 @@ class vLLMRollout(BaseRollout):
             if rollout_n <= 0:
                 raise ValueError("agentic rollout requires sampling n > 0")
             base_sampling_params.n = 1
+            if self.config.resolved_record_rollout_log_probs:
+                base_sampling_params.logprobs = 0  # the sampled token's only
             if not isinstance(base_sampling_params.seed, int):
                 raise ValueError("agentic rollout requires an integer sampling seed")
             base_seed = int(base_sampling_params.seed)

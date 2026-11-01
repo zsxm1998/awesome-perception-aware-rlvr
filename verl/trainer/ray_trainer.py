@@ -111,6 +111,7 @@ from .perception_reasoning_loss import (
     compute_vgpo_advantage_factors,
     has_perception_reasoning,
 )
+from .rollout_corr import compute_offpolicy_metrics
 from .rollout_image_transform import (
     ROLLOUT_IMAGE_TRANSFORMED_KEY,
     build_rollout_image_views,
@@ -1684,6 +1685,15 @@ class RayPPOTrainer:
                         batch.meta_info.pop("old_entropy_top_p", None)
                         batch.meta_info.pop("old_hidden_visual_scores", None)
                         batch = batch.union(old_log_probs)
+
+                if "rollout_log_probs" in batch.batch:  # how far the inference engine is from the trainer
+                    metrics.update(
+                        compute_offpolicy_metrics(
+                            batch.batch["old_log_probs"],
+                            batch.batch["rollout_log_probs"],
+                            batch.batch["response_mask"],
+                        )
+                    )
 
                 if needs_auxiliary_log_probs(self.config.algorithm):
                     if needs_full_vocab_visual_sensitivity(self.config.algorithm):

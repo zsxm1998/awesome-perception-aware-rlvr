@@ -857,6 +857,44 @@ def test_vllm_rollout_gives_other_environments_their_row_configuration(monkeypat
         rollout.generate_sequences(missing)
 
 
+def test_rollout_log_probs_follow_the_model_tokens_through_image_expansion(monkeypatch):
+    from verl.workers.agent.backends.vllm import sampled_log_probs
+
+    inference_calls = []
+    rollout, prompts = _make_agentic_materialization_test_case(monkeypatch, inference_calls)
+    sampling_seen = []
+
+    async def recorded_run_agent_inference(**kwargs):
+        sampling_seen.append(kwargs["sampling_params"].logprobs)
+        trajectory = _make_trajectory(kwargs["rollout_index"] + 1)
+        for turn, step in enumerate(trajectory.steps):
+            step.model_log_probs = [-(turn + 1) / 10]
+        return trajectory
+
+    monkeypatch.setattr("verl.workers.agent.inference.run_agent_inference", recorded_run_agent_inference)
+    rollout.config.record_rollout_log_probs = True
+
+    output = rollout.generate_sequences(prompts)
+
+    assert sampling_seen == [0, 0]  # the sampled token's log-probability only
+    log_probs, mask = output.batch["rollout_log_probs"], output.batch["response_mask"]
+    assert log_probs.shape == mask.shape and log_probs.dtype == torch.float32
+    for row, turns in ((0, 2), (1, 3)):  # each crop observation expands to its visual tokens
+        assert log_probs[row][mask[row] == 1].tolist() == pytest.approx([-(turn + 1) / 10 for turn in range(turns)])
+        assert not log_probs[row][mask[row] == 0].any()
+
+    # trajectories of one batch either all have them or none
+    mixed = _make_trajectory(1)
+    mixed.steps[0].model_log_probs = [-0.1]
+    with pytest.raises(RuntimeError, match="some model turns"):
+        AgentTrajectoryMaterializer(_FakeQwen3VLProcessor(), max_prompt_tokens=64).materialize(mixed)
+
+    position = {3: SimpleNamespace(logprob=-0.25)}
+    assert sampled_log_probs([3, 3], [position, position]) == [-0.25, -0.25]
+    with pytest.raises(RuntimeError, match="no log-probability"):
+        sampled_log_probs([3, 3], [position])
+
+
 def test_vllm_rollout_places_step_rewards_and_writes_step_records(monkeypatch):
     from verl.workers.agent.protocol import AgentCall, EnvOutcome, ToolCall
 
