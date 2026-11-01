@@ -149,6 +149,56 @@ def _set_sampling_param(sampling_params: SamplingParams, key: str, value: Any) -
         sampling_params.__dict__.pop("sampling_type", None)
 
 
+def rollout_engine_kwargs(
+    config: RolloutConfig,
+    model_path: str,
+    tokenizer_path: Optional[str],
+    processor: Optional[ProcessorMixin],
+    *,
+    lora_kwargs: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """The vLLM engine arguments of a rollout, those of the batched rollout's in-process LLM; the server mode starts
+    its engines with the same arguments, apart from the executor."""
+    lora_kwargs = lora_kwargs or {}
+    engine_kwargs = {}
+    if config.resolved_record_rollout_log_probs:
+        # the log-probabilities after temperature, as the trainer recomputes them (verl's default mode)
+        engine_kwargs["logprobs_mode"] = "processed_logprobs"
+    if config.max_num_seqs is not None:
+        engine_kwargs["max_num_seqs"] = config.max_num_seqs
+    if processor is not None:  # only VLMs have processor
+        engine_kwargs["mm_processor_cache_gb"] = config.mm_processor_cache_gb
+        if config.limit_images:
+            engine_kwargs["limit_mm_per_prompt"] = {"image": config.limit_images}
+        if config.max_dynamic_patch is not None:
+            # InternVL: the same tiles as the trainer's processor. Set through the model config, which vLLM's
+            # image processor reads; mm_processor_kwargs would also reach its video processor, which rejects it.
+            engine_kwargs["hf_overrides"] = {"max_dynamic_patch": config.max_dynamic_patch}
+
+    return dict(
+        model=model_path,
+        # the tokenizer the trainer uses (e.g. with <think>/</think> as plain text, see verl/utils/plain_think.py)
+        tokenizer=tokenizer_path or model_path,
+        skip_tokenizer_init=False,
+        trust_remote_code=config.trust_remote_code,
+        load_format="dummy" if not lora_kwargs else "safetensors",
+        dtype=PrecisionType.to_str(PrecisionType.to_dtype(config.dtype)),
+        seed=config.seed,
+        max_model_len=config.max_model_len or config.prompt_length + config.response_length,
+        distributed_executor_backend="external_launcher",
+        tensor_parallel_size=config.tensor_parallel_size,
+        gpu_memory_utilization=config.gpu_memory_utilization,
+        max_num_batched_tokens=config.max_num_batched_tokens,
+        disable_log_stats=config.disable_log_stats,
+        enforce_eager=config.enforce_eager,
+        disable_custom_all_reduce=True,
+        enable_chunked_prefill=config.enable_chunked_prefill,
+        enable_sleep_mode=True,
+        **lora_kwargs,
+        **engine_kwargs,
+    )
+
+
 def rollout_sampling_params(
     config: RolloutConfig, processor: Optional[ProcessorMixin], tokenizer: PreTrainedTokenizer, model_path: str
 ) -> SamplingParams:
@@ -226,42 +276,10 @@ class vLLMRollout(BaseRollout):
         lora_kwargs = kwargs.pop("lora_kwargs", {})
         self.lora_kwargs = lora_kwargs
 
-        engine_kwargs = {}
-        if config.resolved_record_rollout_log_probs:
-            # the log-probabilities after temperature, as the trainer recomputes them (verl's default mode)
-            engine_kwargs["logprobs_mode"] = "processed_logprobs"
-        if processor is not None:  # only VLMs have processor
-            engine_kwargs["mm_processor_cache_gb"] = config.mm_processor_cache_gb
-            if config.limit_images:
-                engine_kwargs["limit_mm_per_prompt"] = {"image": config.limit_images}
-            if config.max_dynamic_patch is not None:
-                # InternVL: the same tiles as the trainer's processor. Set through the model config, which vLLM's
-                # image processor reads; mm_processor_kwargs would also reach its video processor, which rejects it.
-                engine_kwargs["hf_overrides"] = {"max_dynamic_patch": config.max_dynamic_patch}
-
         VLLMHijack.hijack()
 
         self.inference_engine = LLM(
-            model=model_path,
-            # the tokenizer the trainer uses (e.g. with <think>/</think> as plain text, see verl/utils/plain_think.py)
-            tokenizer=tokenizer_path or model_path,
-            skip_tokenizer_init=False,
-            trust_remote_code=config.trust_remote_code,
-            load_format="dummy" if not self.lora_kwargs else "safetensors",
-            dtype=PrecisionType.to_str(PrecisionType.to_dtype(config.dtype)),
-            seed=config.seed,
-            max_model_len=config.max_model_len or config.prompt_length + config.response_length,
-            distributed_executor_backend="external_launcher",
-            tensor_parallel_size=config.tensor_parallel_size,
-            gpu_memory_utilization=config.gpu_memory_utilization,
-            max_num_batched_tokens=config.max_num_batched_tokens,
-            disable_log_stats=config.disable_log_stats,
-            enforce_eager=config.enforce_eager,
-            disable_custom_all_reduce=True,
-            enable_chunked_prefill=config.enable_chunked_prefill,
-            enable_sleep_mode=True,
-            **lora_kwargs,
-            **engine_kwargs,
+            **rollout_engine_kwargs(config, model_path, tokenizer_path, processor, lora_kwargs=self.lora_kwargs)
         )
 
         # Offload vllm model to reduce peak memory usage

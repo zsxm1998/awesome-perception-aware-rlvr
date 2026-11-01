@@ -21,6 +21,7 @@ pre-commit==4.6.2
 pyarrow==23.0.1
 pylatexenc==2.10
 pytest==9.0.3
+pyzmq==27.2.0
 qwen-vl-utils==0.0.14
 ray==2.55.0
 ruff==0.16.9

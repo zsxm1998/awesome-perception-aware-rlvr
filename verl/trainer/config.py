@@ -1086,6 +1086,15 @@ class PPOConfig:
             if self.algorithm.adv_estimator == "remax":
                 raise ValueError("algorithm.rollout_image_transform does not support adv_estimator=remax.")
         self._validate_claim_probes()
+        if self.worker.rollout.agent_engine_mode == "server":
+            # the server mode syncs full weights to one server per GPU and generates once per batch
+            if self.worker.actor.model.lora.rank > 0:
+                raise ValueError("worker.rollout.agent_engine_mode=server does not support LoRA; use the batch mode")
+            if self.algorithm.adv_estimator == "remax":
+                raise ValueError(
+                    "worker.rollout.agent_engine_mode=server does not support adv_estimator=remax (its greedy "
+                    "baseline rollout); use the batch mode"
+                )
         if (
             self.worker.rollout.interaction_mode != "agentic"
             and self.worker.rollout.agent_max_tool_calls_per_turn != 1

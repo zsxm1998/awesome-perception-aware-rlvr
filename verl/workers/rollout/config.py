@@ -40,6 +40,8 @@ class RolloutConfig:
     max_num_batched_tokens: int = 8192
     disable_log_stats: bool = True
     disable_tqdm: bool = False
+    # vLLM's limit of sequences scheduled at once; null: vLLM's default (1024 on GPUs of 70 GiB or more in 0.19)
+    max_num_seqs: Optional[int] = None
     # vLLM's multimodal processor cache (GB, per engine). Zero disables it, which
     # is right for one-shot rollout where every image is submitted exactly once.
     # Agentic rollout resubmits the whole image set on every turn under stable
@@ -71,8 +73,24 @@ class RolloutConfig:
     agent_environment: Optional[str] = None
     agent_environment_kwargs: dict[str, Any] = field(default_factory=dict)
     agent_environment_config_key: str = "env_config"
+    # How agentic rollouts reach vLLM: "batch", an engine inside each training process that runs the turns of
+    # concurrent trajectories in batches; "server", a vLLM server per GPU (its own processes, sharing the GPU with
+    # training) that schedules every turn as it comes, with the agent loops in CPU workers (docs/agent_environments.md).
+    agent_engine_mode: str = "batch"
+    # server mode: vLLM's sleep level between rollouts (2 discards the weights, which every step syncs anyway)
+    server_sleep_level: int = 2
+    # server mode: size of the buckets in which the weights go from the training process to the server
+    server_weight_bucket_mb: int = 2048
+    # server mode: concurrent calls a server actor takes; null: max(1024, trajectories of a batch + 64)
+    server_actor_max_concurrency: Optional[int] = None
+    # server mode: CPU workers that run the agent loops; null: one per GPU (environment limits such as remote_http's
+    # max_concurrency hold per worker, as they hold per GPU in the batch mode)
+    agent_num_workers: Optional[int] = None
+    # server mode: send a group's new trajectories to the server its first one went to (unless that server has more
+    # requests in flight than the least busy one plus max_num_seqs // 4), so that they share its prefix cache
+    agent_group_affinity: bool = False
     # Record the inference engine's log-probability of each sampled token (agentic rollouts) and log how far it is
-    # from the trainer's (rollout_corr/*); diagnostics only. null: off.
+    # from the trainer's (rollout_corr/*); diagnostics only. null: on in the server mode, off in the batch mode.
     record_rollout_log_probs: Optional[bool] = None
     val_override_config: dict[str, Any] = field(default_factory=dict)
     # below are auto keys
@@ -112,6 +130,32 @@ class RolloutConfig:
             # path/to/file.py:ClassName, made absolute so that the rollout workers find the same file
             path, class_name = self.agent_environment.rsplit(":", 1)
             self.agent_environment = f"{os.path.abspath(path)}:{class_name}"
+        if self.agent_engine_mode not in {"batch", "server"}:
+            raise ValueError("rollout.agent_engine_mode must be 'batch' or 'server'")
+        if self.agent_engine_mode == "server":
+            if self.interaction_mode != "agentic":
+                raise ValueError("rollout.agent_engine_mode=server requires rollout.interaction_mode=agentic")
+            if self.name != "vllm":
+                raise ValueError("rollout.agent_engine_mode=server requires rollout.name=vllm")
+            if self.tensor_parallel_size != 1:
+                raise ValueError(
+                    "rollout.agent_engine_mode=server supports rollout.tensor_parallel_size=1 only (a server per GPU)"
+                )
+            if self.agent_max_batch_images:
+                raise ValueError(
+                    "rollout.agent_max_batch_images limits the batch mode's batches; the server mode schedules turns "
+                    "with vLLM's own limits (max_num_seqs, max_num_batched_tokens): set it to 0"
+                )
+            if self.server_sleep_level not in {1, 2}:
+                raise ValueError("rollout.server_sleep_level must be 1 or 2")
+            if self.server_weight_bucket_mb <= 0:
+                raise ValueError("rollout.server_weight_bucket_mb must be positive")
+            for name in ("server_actor_max_concurrency", "agent_num_workers"):
+                value = getattr(self, name)
+                if value is not None and value <= 0:
+                    raise ValueError(f"rollout.{name} must be positive when set")
+        if self.max_num_seqs is not None and self.max_num_seqs <= 0:
+            raise ValueError("rollout.max_num_seqs must be positive when set")
         if self.record_rollout_log_probs and self.interaction_mode != "agentic":
             raise ValueError("rollout.record_rollout_log_probs requires rollout.interaction_mode=agentic")
         if self.agent_environment_kwargs and self.interaction_mode != "agentic":
@@ -125,6 +169,8 @@ class RolloutConfig:
 
     @property
     def resolved_record_rollout_log_probs(self) -> bool:
+        if self.record_rollout_log_probs is None:
+            return self.agent_engine_mode == "server"
         return bool(self.record_rollout_log_probs)
 
     @property
