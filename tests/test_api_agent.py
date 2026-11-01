@@ -203,10 +203,11 @@ def test_malformed_and_parallel_native_calls_get_error_observations():
 
     episode, environment, _ = _run(endpoint)
 
-    assert environment.calls == [] and episode.metrics.tool_call_errors == 2
+    # one call runs per turn: the first one; the second gets an error, and so does the malformed call
+    assert len(environment.calls) == 1 and episode.metrics.tool_call_errors == 2
     replies = [message for message in endpoint.requests[1]["messages"] if message["role"] == "tool"]
     assert [reply["tool_call_id"] for reply in replies] == ["a", "b"]
-    assert "exactly one tool call" in replies[0]["content"]
+    assert replies[0]["content"] == "Zoomed:" and "at most 1 tool call run per turn" in replies[1]["content"]
     assert episode.turns[1].tool_call_error.startswith("tool call is not valid JSON")
     assert episode.status == AgentStatus.ANSWERED and episode.env_outcome.reward == 0.0
 
@@ -376,7 +377,10 @@ def test_an_api_policy_leaves_out_replies_the_rollout_could_not_take():
 
     for reply, match in (
         (({"content": "half a th"}, "length"), "cut off at 256 tokens"),
-        (({"content": "", "tool_calls": [_native_call(), _native_call(call_id="c2")]}, "tool_calls"), "exactly one"),
+        (
+            ({"content": "", "tool_calls": [_native_call(), _native_call(call_id="c2")]}, "tool_calls"),
+            "more than the 1",
+        ),
         (({"content": "", "tool_calls": [_native_call(arguments="{")]}, "tool_calls"), "not valid JSON"),
     ):
         policy, client = _policy(_Endpoint([reply]))

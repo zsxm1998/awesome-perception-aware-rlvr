@@ -55,6 +55,10 @@ class DeepEyesEnvironment(LocalToolEnvironment):
             raise ValueError(f"bbox_format must be one of {list(BBOX_FORMATS)}, got {bbox_format!r}")
         if tool_image_mode not in OUTPUT_IMAGE_MODES:
             raise ValueError(f"tool_image_mode must be one of {sorted(OUTPUT_IMAGE_MODES)}, got {tool_image_mode!r}")
+        if context.max_tool_calls_per_turn != 1:
+            raise ValueError(
+                "DeepEyes runs one tool call per turn (its prompts say so); set max_tool_calls_per_turn=1"
+            )
         self.context = context
         self.bbox_format = bbox_format
         self.prompt_style = prompt_style

@@ -45,6 +45,7 @@ from verl.workers.agent.backends import (  # noqa: E402
     VLLMAgentSchedulerError,
 )
 from verl.workers.agent.protocol import (  # noqa: E402
+    AgentCall,
     AgentLoopConfig,
     AgentMetrics,
     AgentStatus,
@@ -285,41 +286,51 @@ def test_agentic_diagnostics_persist_only_committed_successful_tool_regions():
     committed = AgentStep(
         model_text="<tool_call>committed</tool_call>",
         model_token_ids=[1],
-        tool_call=ToolCall(
-            name="image_zoom_in_tool",
-            arguments={"bbox_2d": [100, 200, 300, 400]},
-            raw_text="committed",
-        ),
-        tool_result=ToolResult(
-            tool_name="image_zoom_in_tool",
-            success=True,
-            content={"status": "success"},
-            metadata={
-                "image_idx": 0,
-                "bbox_2d": [100, 200, 300, 400],
-                "label": "cat",
-            },
-        ),
         observation_committed=True,
+        calls=[
+            AgentCall(
+                tool_call=ToolCall(
+                    name="image_zoom_in_tool",
+                    arguments={"bbox_2d": [100, 200, 300, 400]},
+                    raw_text="committed",
+                ),
+                tool_result=ToolResult(
+                    tool_name="image_zoom_in_tool",
+                    success=True,
+                    content={"status": "success"},
+                    metadata={
+                        "image_idx": 0,
+                        "bbox_2d": [100, 200, 300, 400],
+                        "label": "cat",
+                    },
+                ),
+                executed=True,
+            )
+        ],
     )
     uncommitted = AgentStep(
         model_text="<tool_call>uncommitted</tool_call>",
         model_token_ids=[2],
-        tool_call=ToolCall(
-            name="image_zoom_in_tool",
-            arguments={"bbox_2d": [500, 500, 700, 700]},
-            raw_text="uncommitted",
-        ),
-        tool_result=ToolResult(
-            tool_name="image_zoom_in_tool",
-            success=True,
-            content={"status": "success"},
-            metadata={
-                "image_idx": 0,
-                "bbox_2d": [500, 500, 700, 700],
-            },
-        ),
         observation_committed=False,
+        calls=[
+            AgentCall(
+                tool_call=ToolCall(
+                    name="image_zoom_in_tool",
+                    arguments={"bbox_2d": [500, 500, 700, 700]},
+                    raw_text="uncommitted",
+                ),
+                tool_result=ToolResult(
+                    tool_name="image_zoom_in_tool",
+                    success=True,
+                    content={"status": "success"},
+                    metadata={
+                        "image_idx": 0,
+                        "bbox_2d": [500, 500, 700, 700],
+                    },
+                ),
+                executed=True,
+            )
+        ],
     )
     trajectory.steps = [committed, uncommitted, *trajectory.steps]
 

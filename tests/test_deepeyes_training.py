@@ -858,16 +858,22 @@ def test_vllm_rollout_gives_other_environments_their_row_configuration(monkeypat
 
 
 def test_vllm_rollout_places_step_rewards_and_writes_step_records(monkeypatch):
-    from verl.workers.agent.protocol import EnvOutcome, ToolCall
+    from verl.workers.agent.protocol import AgentCall, EnvOutcome, ToolCall
 
     rollout, prompts = _make_agentic_materialization_test_case(monkeypatch, [])
 
     async def fake_run_agent_inference(**kwargs):
         trajectory = _make_trajectory(1)
         first = trajectory.steps[0]
-        first.tool_call = ToolCall("zoom", {}, "")
-        first.env_reward = 0.25 if kwargs["rollout_index"] == 0 else None
-        first.state_key = "view:1"
+        first.calls = [
+            AgentCall(
+                tool_call=ToolCall("zoom", {}, ""),
+                tool_result=first.tool_result,
+                env_reward=0.25 if kwargs["rollout_index"] == 0 else None,
+                state_key="view:1",
+                executed=True,
+            )
+        ]
         first.observation_image_count = 1
         trajectory.initial_state_key = "view:0"
         trajectory.env_outcome = EnvOutcome(reward=1.0)

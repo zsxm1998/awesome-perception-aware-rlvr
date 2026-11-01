@@ -193,7 +193,12 @@ class RemoteHTTPEnvironment:
     async def reset(self, config: Mapping[str, Any], seed: int) -> EnvReset:
         response = await self._post(
             "/reset",
-            {"config": dict(config), "seed": seed, "max_tool_calls": self.context.max_tool_calls},
+            {
+                "config": dict(config),
+                "seed": seed,
+                "max_tool_calls": self.context.max_tool_calls,
+                "max_tool_calls_per_turn": self.context.max_tool_calls_per_turn,
+            },
         )
         episode_id = response.get("episode_id")
         if not isinstance(episode_id, str) or not episode_id:

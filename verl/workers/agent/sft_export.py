@@ -153,10 +153,11 @@ def swift_sample(
         messages.append({"role": message["role"], "content": _swift_content(message.get("content"))})
     for step in trajectory.steps:
         messages.append({"role": "assistant", "content": step.model_text})
-        if step.observation_committed:
-            messages.append(
-                {"role": "tool", "content": _swift_content(adapter.tool_message_content(step.tool_result))}
-            )
+        if step.observation_committed:  # one tool message per call; ms-swift joins them into one turn
+            for call in step.calls:
+                messages.append(
+                    {"role": "tool", "content": _swift_content(adapter.tool_message_content(call.tool_result))}
+                )
     for message in messages:
         for tag in SWIFT_MEDIA_TAGS:
             if tag in message["content"] and not (tag == "<image>" and message["role"] in {"user", "tool"}):
@@ -202,7 +203,9 @@ def keep_episode(run: EpisodeRun, *, keep: str = "answered", min_reward: Optiona
         if outcome is None or outcome.reward is None:
             return "no episode reward"
         # the episode's return: its reward plus the rewards the environment gave for single tool calls
-        step_rewards = sum(step.env_reward for step in trajectory.steps if step.env_reward is not None)
+        step_rewards = sum(
+            call.env_reward for step in trajectory.steps for call in step.calls if call.env_reward is not None
+        )
         if outcome.reward + step_rewards < min_reward:
             return "reward below --min-reward"
     return None

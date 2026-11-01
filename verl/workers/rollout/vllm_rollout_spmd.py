@@ -480,7 +480,13 @@ class vLLMRollout(BaseRollout):
         )
         from ..agent.environments import EnvironmentContext, environment_factory
         from ..agent.inference import run_agent_inference
-        from ..agent.protocol import AgentImageConfig, AgentLoopConfig, derive_environment_seed, environment_report
+        from ..agent.protocol import (
+            AgentImageConfig,
+            AgentLoopConfig,
+            derive_environment_seed,
+            environment_report,
+            turn_env_reward,
+        )
         from ..agent.step_records import step_records
         from ..agent.tool_call import NativeToolCallCodec
         from ..agent.trajectory import (
@@ -529,6 +535,7 @@ class vLLMRollout(BaseRollout):
             max_tool_calls=self.config.agent_max_tool_calls,
             max_response_tokens=self.config.response_length,
             max_tokens_per_turn=self.config.agent_max_tokens_per_turn,
+            max_tool_calls_per_turn=self.config.agent_max_tool_calls_per_turn,
         )
         max_model_len = self.config.max_model_len or self.config.prompt_length + self.config.response_length
         materializer = AgentTrajectoryMaterializer(
@@ -570,6 +577,7 @@ class vLLMRollout(BaseRollout):
                 processor=self.processor,
                 image_preprocessor=image_cache.prepare,
                 max_tool_calls=self.config.agent_max_tool_calls,
+                max_tool_calls_per_turn=self.config.agent_max_tool_calls_per_turn,
             )
             environment_kwargs = dict(self.config.agent_environment_kwargs)
             if environment_name == "deepeyes":
@@ -688,7 +696,7 @@ class vLLMRollout(BaseRollout):
 
         # where each turn's model tokens are, for the environment's step rewards and the step records
         needs_spans = self.config.agent_step_records or any(
-            step.env_reward is not None for trajectory in trajectories for step in trajectory.steps
+            turn_env_reward(step.calls) is not None for trajectory in trajectories for step in trajectory.steps
         )
         turn_spans = (
             [
@@ -734,13 +742,12 @@ class vLLMRollout(BaseRollout):
                     "components": dict(trajectory.env_outcome.components),
                     "metrics": dict(trajectory.env_outcome.metrics),
                 }
-            if any(step.env_reward is not None for step in trajectory.steps):
-                # each reward the environment gave for a call, on the last model token of its turn
+            step_rewards = [turn_env_reward(step.calls) for step in trajectory.steps]
+            if any(reward is not None for reward in step_rewards):
+                # the rewards the environment gave for a turn's calls, on the last model token of the turn
                 spans = turn_spans[len(reward_inputs)]
                 reward_input["env_step_rewards"] = [
-                    [spans[turn][1] - 1, float(step.env_reward)]
-                    for turn, step in enumerate(trajectory.steps)
-                    if step.env_reward is not None
+                    [spans[turn][1] - 1, reward] for turn, reward in enumerate(step_rewards) if reward is not None
                 ]
             reward_inputs.append(reward_input)
             diagnostics.append(

@@ -33,6 +33,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from .agent_common import agent_config_record
 from .backends import build_backend
 from .json_utils import read_json, write_json, write_jsonl
 from .loaders import apply_box_format_to_prompts, load_samples, missing_data_files, shard_samples
@@ -67,7 +68,9 @@ DEFAULT_MIN_PIXELS = 200704
 DEFAULT_MAX_PIXELS = 1003520
 DEFAULT_BATCH_SIZE = 64
 DEFAULT_MAX_BATCH_IMAGES = 64
-AGENTIC_RUNNER_VERSION = 6
+# 7: a turn with several tool calls runs its first --agent-max-tool-calls-per-turn calls (before, it was one
+# malformed call that ran none), so agentic results of version 6 are generated again
+AGENTIC_RUNNER_VERSION = 7
 DEFAULT_GPU_MEMORY_UTILIZATION = 0.7
 DEFAULT_MAX_MODEL_LEN = 32768
 DEFAULT_GLOBAL_SUMMARY = DEFAULT_RESULTS_DIR / "summary.csv"
@@ -279,6 +282,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help='With --agent-profile environment: its options as JSON, e.g. \'{"url": "http://127.0.0.1:8000"}\'.',
     )
     parser.add_argument("--agent-max-tool-calls", type=int, default=6)
+    parser.add_argument(
+        "--agent-max-tool-calls-per-turn",
+        type=int,
+        default=1,
+        help="With --agent-profile environment: tool calls run per model turn, as "
+        "worker.rollout.agent_max_tool_calls_per_turn in training (DeepEyes: 1).",
+    )
     parser.add_argument("--agent-max-response-tokens", type=int, default=20480)
     parser.add_argument("--agent-max-tokens-per-turn", type=int, default=10240)
     parser.add_argument("--agent-max-images-per-prompt", type=int, default=16)
@@ -491,6 +501,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                 "--agent-max-tokens-per-turn"
             )
     environment_profile = args.interaction_mode == "agentic" and args.agent_profile == "environment"
+    if getattr(args, "agent_max_tool_calls_per_turn", 1) != 1 and not environment_profile:
+        parser.error("--agent-max-tool-calls-per-turn needs --agent-profile environment (DeepEyes runs one per turn)")
     if (args.agent_environment is not None or args.agent_environment_kwargs is not None) and not environment_profile:
         parser.error("--agent-environment and --agent-environment-kwargs need --agent-profile environment")
     if environment_profile:
@@ -1524,6 +1536,7 @@ def agent_loop_config_from_args(args: argparse.Namespace):
         max_tool_calls=int(getattr(args, "agent_max_tool_calls", 6)),
         max_response_tokens=int(getattr(args, "agent_max_response_tokens", 20480)),
         max_tokens_per_turn=int(getattr(args, "agent_max_tokens_per_turn", 10240)),
+        max_tool_calls_per_turn=int(getattr(args, "agent_max_tool_calls_per_turn", 1)),
     )
 
 
@@ -1874,12 +1887,17 @@ def _agent_fingerprint_fields(args: argparse.Namespace) -> dict[str, Any]:
             "agent_output_contract",
             AGENT_OUTPUT_CONTRACT_NATIVE,
         ),
-        "agent_config": config.__dict__,
+        "agent_config": agent_config_record(config),
         "agent_max_tool_calls": config.max_tool_calls,
         "agent_max_response_tokens": config.max_response_tokens,
         "agent_max_tokens_per_turn": config.max_tokens_per_turn,
         "agent_max_images_per_prompt": int(getattr(args, "agent_max_images_per_prompt", 16)),
         # only when set, so runs without it keep their fingerprints
+        **(
+            {"agent_max_tool_calls_per_turn": config.max_tool_calls_per_turn}
+            if config.max_tool_calls_per_turn != 1
+            else {}
+        ),
         **(
             {"agent_observation_min_pixels": args.agent_observation_min_pixels}
             if getattr(args, "agent_observation_min_pixels", None) is not None

@@ -146,6 +146,7 @@ def test_agentic_backend_runs_environment_tasks_and_records_the_outcome(monkeypa
     from easyr1_eval.schemas import EvalSample, GenerationConfig
 
     from verl.workers.agent.protocol import (
+        AgentCall,
         AgentLoopConfig,
         AgentMetrics,
         AgentStatus,
@@ -186,9 +187,14 @@ def test_agentic_backend_runs_environment_tasks_and_records_the_outcome(monkeypa
         step = AgentStep(
             model_text="<answer>x</answer>",
             model_token_ids=[1],
-            tool_call=ToolCall("order", {}, ""),
-            state_key="s",
-            cost=1.0,
+            calls=[
+                AgentCall(
+                    tool_call=ToolCall("order", {}, ""),
+                    state_key="s",
+                    cost=1.0,
+                    executed=True,
+                )
+            ],
         )
         return AgentTrajectory(
             prompt_ids=[1],
@@ -220,7 +226,16 @@ def test_agentic_backend_runs_environment_tasks_and_records_the_outcome(monkeypa
         "episode_id": "e7",
     }
     assert agent["env_steps"] == [
-        {"turn_index": 0, "tool": "order", "state_key": "s", "cost": 1.0, "reward": None, "done": False, "info": {}}
+        {
+            "turn_index": 0,
+            "call_index": 0,
+            "tool": "order",
+            "state_key": "s",
+            "cost": 1.0,
+            "reward": None,
+            "done": False,
+            "info": {},
+        }
     ]
 
 

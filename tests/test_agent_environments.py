@@ -513,7 +513,10 @@ def test_remote_environment_runs_an_episode_over_http():
 
     reset, first, second, outcome = asyncio.run(episode())
 
-    assert server.requests[0] == ("/reset", {"config": {"task": "F2"}, "seed": 11, "max_tool_calls": 20})
+    assert server.requests[0] == (
+        "/reset",
+        {"config": {"task": "F2"}, "seed": 11, "max_tool_calls": 20, "max_tool_calls_per_turn": 1},
+    )
     assert reset.messages == [
         {"role": "system", "content": "You measure tissue."},
         {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "Task F2"}]},
@@ -572,27 +575,51 @@ def test_remote_environment_errors_name_the_episode_and_details_must_be_an_objec
 
 
 def test_environment_report_keeps_steps_and_outcome_as_trajectory_records_store_them():
-    from verl.workers.agent.protocol import AgentStep, EnvOutcome, environment_report
+    from verl.workers.agent.protocol import AgentCall, AgentStep, EnvOutcome, environment_report
 
     answered = AgentStep(model_text="", model_token_ids=[])
-    called = AgentStep(model_text="", model_token_ids=[], tool_call=ToolCall("order", {}, ""), state_key="s1")
-    called.cost, called.env_info = 1.0, {"budget_left": 3}
-    quiet = AgentStep(model_text="", model_token_ids=[], tool_call=ToolCall("view", {}, ""))
+    order = AgentCall(tool_call=ToolCall("order", {}, ""), state_key="s1", executed=True)
+    order.cost, order.env_info = 1.0, {"budget_left": 3}
+    called = AgentStep(model_text="", model_token_ids=[], calls=[order])
+    quiet = AgentStep(
+        model_text="", model_token_ids=[], calls=[AgentCall(tool_call=ToolCall("view", {}, ""), executed=True)]
+    )
+    # a turn with two calls: the second one reports; a call the loop did not run reports nothing
+    several = AgentStep(
+        model_text="",
+        model_token_ids=[],
+        calls=[
+            AgentCall(tool_call=ToolCall("view", {}, ""), executed=True),
+            AgentCall(tool_call=ToolCall("measure", {}, ""), state_key="s2", env_reward=0.5, executed=True),
+            AgentCall(tool_call=ToolCall("measure", {}, ""), state_key="ignored"),
+        ],
+    )
     outcome = EnvOutcome(reward=1.0, components={"task": 1.0}, details={"why": "R1"}, episode_id="ep3")
 
-    report = environment_report([called, quiet, answered], outcome)
+    report = environment_report([called, quiet, several, answered], outcome)
 
     assert report == {
         "env_steps": [
             {
                 "turn_index": 0,
+                "call_index": 0,
                 "tool": "order",
                 "state_key": "s1",
                 "cost": 1.0,
                 "reward": None,
                 "done": False,
                 "info": {"budget_left": 3},
-            }
+            },
+            {
+                "turn_index": 2,
+                "call_index": 1,
+                "tool": "measure",
+                "state_key": "s2",
+                "cost": 0.0,
+                "reward": 0.5,
+                "done": False,
+                "info": {},
+            },
         ],
         "env_outcome": {
             "reward": 1.0,

@@ -24,8 +24,8 @@ A trajectory is one row here (the prompt and every turn, as the model sees them 
 step with a window of past steps as in verl-agent; the advantage of a turn goes to its model tokens
 (``agent_step_records``, verl/workers/agent/step_records.py), observation tokens get 0.
 
-A turn's reward is the sum of ``token_level_rewards`` over its model tokens: the environment's reward for its tool
-call and, on the last turn, the reward function's score (and with a KL penalty in the reward, the penalty of its
+A turn's reward is the sum of ``token_level_rewards`` over its model tokens: the environment's rewards for its tool
+calls and, on the last turn, the reward function's score (and with a KL penalty in the reward, the penalty of its
 tokens). The episode's return is their sum, the same score GRPO normalizes.
 """
 

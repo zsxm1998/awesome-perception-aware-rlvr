@@ -21,10 +21,11 @@ A record holds facts only; which state a turn acts in and what it earned are wor
                  "observation": hash of the prompt tokens and source image pixels},
      "turns": [{"span": [start, end),              # the turn's model tokens, in response coordinates
                 "valid": bool,                    # the turn's action was well formed (see ``turn_is_valid``)
-                "env_calls": [{"state_key": str or None, "reward": float or None}, ...],  # calls the environment ran
+                "env_calls": [{"state_key": str or None, "reward": float or None}, ...],  # calls the environment
+                                                  # ran, in order
                 "observation": hash or None,      # the observation committed after the turn (tokens, image pixels
                                                   # as the model receives them)
-                "observation_text": str or None}  # the tool result's text, when that observation has no image
+                "observation_text": str or None}  # the tool results' text, when that observation has no image
                , ...]}
 """
 
@@ -34,17 +35,22 @@ import hashlib
 import json
 from typing import Any, Optional, Sequence
 
-from .protocol import AgentStatus, AgentTrajectory
+from .protocol import TOO_MANY_TOOL_CALLS_IN_TURN, AgentStatus, AgentTrajectory
 
 
 def turn_is_valid(trajectory: AgentTrajectory, index: int) -> bool:
-    """A turn's action is valid when it is well formed: a tool call that went to the environment (whatever the
-    environment made of it) or the answer that ended the episode. Malformed calls, malformed answers, a wrong turn
-    end, a turn cut by a length limit, a turn without an action and a call after the tool-call limit are invalid,
-    as verl-agent's ``is_action_valid`` judges the format only."""
+    """A turn's action is valid when it is well formed: well-formed tool calls, no more than a turn may run
+    (whatever the environment made of them; calls left unrun because the response's calls are used up count as
+    well formed), or the answer that ended the episode. A malformed call, more calls than a turn may run (as
+    verl-agent's search environment flags several search tags), a malformed answer, a wrong turn end, a turn cut
+    by a length limit, a turn without an action and a call after the tool-call limit are invalid, as verl-agent's
+    ``is_action_valid`` judges the format only."""
     step = trajectory.steps[index]
-    if step.tool_call is not None:
-        return True
+    if step.calls:
+        return all(call.tool_call is not None for call in step.calls) and not any(
+            call.tool_result is not None and call.tool_result.error_code == TOO_MANY_TOOL_CALLS_IN_TURN
+            for call in step.calls
+        )
     return index == len(trajectory.steps) - 1 and trajectory.status == AgentStatus.ANSWERED
 
 
@@ -100,16 +106,15 @@ def step_records(
     observation_images = list(model_images[source_count:])
     cursor = 0
     for index, (step, span) in enumerate(zip(trajectory.steps, spans)):
-        env_calls = []
-        if step.tool_call is not None:  # one call per turn; a malformed call does not reach the environment
-            env_calls.append({"state_key": step.state_key, "reward": step.env_reward})
+        # a malformed call, or one the loop did not run, does not reach the environment
+        env_calls = [{"state_key": call.state_key, "reward": call.env_reward} for call in step.calls if call.executed]
         observation = observation_text = None
         if step.observation_committed:
             images = observation_images[cursor : cursor + step.observation_image_count]
             cursor += step.observation_image_count
             observation = _digest(step.observation_token_ids, images, cache)
-            if not images and step.tool_result is not None:
-                observation_text = _result_text(step.tool_result)
+            if not images:
+                observation_text = "\n".join(_result_text(call.tool_result) for call in step.calls)
         turns.append(
             {
                 "span": [int(span[0]), int(span[1])],

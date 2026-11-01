@@ -46,6 +46,9 @@ class RolloutConfig:
     # ``multi_modal_uuids``, so a non-zero budget turns those repeats into hits.
     mm_processor_cache_gb: float = 0.0
     agent_max_tool_calls: int = 6
+    # Tool calls run per model turn, in the order written; the environment writes the limit into its prompt (it
+    # receives it in reset, as max_tool_calls). The others get an error result. DeepEyes supports 1 only.
+    agent_max_tool_calls_per_turn: int = 1
     agent_max_tokens_per_turn: int = 10240
     agent_max_batch_images: int = 0
     agent_max_trajectory_retries: int = 2
@@ -90,6 +93,8 @@ class RolloutConfig:
             raise ValueError("mm_processor_cache_gb must be non-negative")
         if self.agent_max_tool_calls < 0:
             raise ValueError("agent_max_tool_calls must be non-negative")
+        if self.agent_max_tool_calls_per_turn < 1:
+            raise ValueError("agent_max_tool_calls_per_turn must be at least 1")
         if self.agent_max_tokens_per_turn <= 0:
             raise ValueError("agent_max_tokens_per_turn must be positive")
         if self.agent_max_batch_images < 0:

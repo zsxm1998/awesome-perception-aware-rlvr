@@ -140,30 +140,38 @@ class NativeToolChatAdapter:
             )
 
     async def encode(self, request: ObservationEncodingRequest) -> EncodedObservation:
-        if request.result.observation_text is not None:
-            content_json = request.result.observation_text
+        return self._encode_tool_messages(
+            [self._tool_content(result) for result in request.results],
+            [image for result in request.results for image in result.images],
+        )
+
+    def _tool_content(self, result: Any) -> Any:
+        if result.observation_text is not None:
+            content_json = result.observation_text
         else:
             content_json = json.dumps(
-                request.result.content,
+                result.content,
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
             # Tool arguments are model-generated. Keep strings from prematurely
             # closing the native XML wrapper when they are echoed in an error.
             content_json = content_json.replace("<", "\\u003c").replace(">", "\\u003e")
-        if request.result.images:
-            tool_content: Any = [{"type": "image"}, {"type": "text", "text": content_json}]
-        else:
-            tool_content = content_json
-        return self._encode_tool_message(tool_content, request.result.images)
+        if result.images:
+            return [{"type": "image"}, {"type": "text", "text": content_json}]
+        return content_json
 
     def _encode_tool_message(self, tool_content: Any, images: Sequence[Any]) -> EncodedObservation:
-        """Tokens of one tool message after the model's action: the template suffix after an assistant
-        sentinel, without the assistant terminator that the action itself already ends with."""
+        return self._encode_tool_messages([tool_content], images)
+
+    def _encode_tool_messages(self, tool_contents: Sequence[Any], images: Sequence[Any]) -> EncodedObservation:
+        """Tokens of a turn's tool messages after the model's action (one per tool call, in order, which the
+        chat template joins into one turn): the template suffix after an assistant sentinel, without the
+        assistant terminator that the action itself already ends with."""
 
         synthetic_messages = [
             {"role": "assistant", "content": self._ASSISTANT_SENTINEL},
-            {"role": "tool", "content": tool_content},
+            *({"role": "tool", "content": tool_content} for tool_content in tool_contents),
         ]
         rendered = self._render_with_generation_prompt(synthetic_messages)
         if rendered.count(self._ASSISTANT_SENTINEL) != 1:
@@ -417,26 +425,16 @@ class OfficialDeepEyesChatAdapter(NativeToolChatAdapter):
         return EncodedPrompt(token_ids=self._encode_raw_text(rendered), rendered_text=rendered)
 
     async def encode(self, request: ObservationEncodingRequest) -> EncodedObservation:
-        result = request.result
-        if result.images:
-            content: Any = [
-                {"type": "text", "text": "<tool_response>"},
-                *({"type": "image"} for _ in result.images),
-                {"type": "text", "text": OFFICIAL_DEEPEYES_FORMAT_INSTRUCTION + "</tool_response>"},
-            ]
-        elif (
-            result.success
-        ):  # a crop returned as text only (tool_image_mode=text_skipped): its text replaces the image
-            content = (
-                "<tool_response>"
-                + (result.observation_text or "")
-                + OFFICIAL_DEEPEYES_FORMAT_INSTRUCTION
-                + "</tool_response>"
-            )
-        else:
-            error = result.content.get("error") if isinstance(result.content, Mapping) else None
-            message = error.get("message") if isinstance(error, Mapping) else None
-            content = f"Error: {message or result.error_code or 'tool call failed'}"
+        contents = [self._official_content(result) for result in request.results]
+        if len(contents) == 1:
+            content = contents[0]
+        else:  # a turn with several calls: each result in order, a line apart, in the one user turn
+            content = []
+            for index, item in enumerate(contents):
+                if index:
+                    content.append({"type": "text", "text": "\n"})
+                content.extend(item if isinstance(item, list) else [{"type": "text", "text": item}])
+        images = [image for result in request.results for image in result.images]
         rendered = self._render_with_generation_prompt(
             [{"role": "assistant", "content": self._ASSISTANT_SENTINEL}, {"role": "user", "content": content}]
         )
@@ -448,22 +446,42 @@ class OfficialDeepEyesChatAdapter(NativeToolChatAdapter):
             raise RuntimeError("observation suffix does not begin with the derived assistant termination tokens")
         suffix_token_ids = suffix_token_ids[len(termination_token_ids) :]
         effective_token_count = None
-        visual_token_count = None if result.images else 0
-        if result.images and hasattr(self.processor, "image_processor"):
+        visual_token_count = None if images else 0
+        if images and hasattr(self.processor, "image_processor"):
             effective_token_count, visual_token_count = measure_expanded_observation(
                 self.processor,
                 suffix_token_ids,
-                result.images,
+                images,
                 min_pixels=self.image_config.min_pixels,
                 max_pixels=self.image_config.max_pixels,
                 image_preprocessor=self.image_preprocessor,
             )
         return EncodedObservation(
             token_ids=suffix_token_ids,
-            images=result.images,
+            images=images,
             effective_token_count=effective_token_count,
             visual_token_count=visual_token_count,
         )
+
+    @staticmethod
+    def _official_content(result: Any) -> Any:
+        """One result as DeepEyes words it: the crop in a tool response, or ``Error: ...``."""
+        if result.images:
+            return [
+                {"type": "text", "text": "<tool_response>"},
+                *({"type": "image"} for _ in result.images),
+                {"type": "text", "text": OFFICIAL_DEEPEYES_FORMAT_INSTRUCTION + "</tool_response>"},
+            ]
+        if result.success:  # a crop returned as text only (tool_image_mode=text_skipped): its text replaces the image
+            return (
+                "<tool_response>"
+                + (result.observation_text or "")
+                + OFFICIAL_DEEPEYES_FORMAT_INSTRUCTION
+                + "</tool_response>"
+            )
+        error = result.content.get("error") if isinstance(result.content, Mapping) else None
+        message = error.get("message") if isinstance(error, Mapping) else None
+        return f"Error: {message or result.error_code or 'tool call failed'}"
 
 
 class EnvironmentChatAdapter(NativeToolChatAdapter):
@@ -531,7 +549,10 @@ class EnvironmentChatAdapter(NativeToolChatAdapter):
         return EncodedPrompt(token_ids=self._encode_raw_text(rendered), rendered_text=rendered)
 
     async def encode(self, request: ObservationEncodingRequest) -> EncodedObservation:
-        return self._encode_tool_message(self.tool_message_content(request.result), request.result.images)
+        return self._encode_tool_messages(
+            [self.tool_message_content(result) for result in request.results],
+            [image for result in request.results for image in result.images],
+        )
 
     def tool_message_content(self, result: Any) -> Any:
         """The content of the tool message an observation is rendered as: its text, or its parts in order."""

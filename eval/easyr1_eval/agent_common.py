@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import hashlib
+from typing import Any
 
 from .schemas import EvalSample, GenerationOutput
 
@@ -38,6 +39,15 @@ def failed_trajectory_output(exc: BaseException) -> GenerationOutput:
             }
         },
     )
+
+
+def agent_config_record(config: Any) -> dict[str, Any]:
+    """An AgentLoopConfig as fingerprints and records keep it: ``max_tool_calls_per_turn`` only when it is not 1, so
+    that runs from before the option keep their fingerprints."""
+    record = dict(config.__dict__)
+    if record.get("max_tool_calls_per_turn") == 1:
+        del record["max_tool_calls_per_turn"]
+    return record
 
 
 def stable_sample_index(sample: EvalSample) -> int:
