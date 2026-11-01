@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 from uuid import uuid4
 
 from vllm import SamplingParams
@@ -344,42 +344,12 @@ class VLLMGenerationBackend:
             raise TypeError("forbidden token IDs must be integers")
 
     async def generate(self, request: GenerationRequest) -> GenerationOutput:
-        sampling_params = self.sampling_params.clone()
-        sampling_params.max_tokens = request.max_new_tokens
-        if request.seed is not None:
-            sampling_params.seed = request.seed
-        sampling_params.detokenize = True
-        # Match the original DeepEyes rollout: do not add XML closing tags as
-        # static stops. Let the model's native EOS/end-of-turn token delimit a
-        # complete assistant action so tags quoted inside reasoning cannot
-        # terminate generation prematurely.
-        # Keeping stop terminators in the output preserves the native EOS in
-        # model action IDs, where it receives the same policy mask as one-shot
-        # EasyR1 responses.
-        sampling_params.include_stop_str_in_output = True
-        if self.forbidden_token_ids:
-            logit_bias = dict(sampling_params.logit_bias or {})
-            logit_bias.update(dict.fromkeys(self.forbidden_token_ids, -100.0))
-            sampling_params.logit_bias = logit_bias
-
-        prompt: dict[str, Any] = {"prompt_token_ids": list(request.prompt_token_ids)}
-        if request.images:
-            processed_images = [self.image_cache.prepare(image) for image in request.images]
-            image_occurrences: dict[int, int] = {}
-            image_uuids = []
-            for image in request.images:
-                key = id(image)
-                occurrence = image_occurrences.get(key, 0)
-                image_occurrences[key] = occurrence + 1
-                image_uuids.append(
-                    self.image_cache.uuid_for(
-                        image,
-                        occurrence=occurrence,
-                    )
-                )
-            prompt["multi_modal_data"] = {"image": processed_images}
-            prompt["multi_modal_uuids"] = {"image": image_uuids}
-
+        prompt, sampling_params = build_agent_vllm_request(
+            request,
+            self.sampling_params,
+            image_cache=self.image_cache,
+            forbidden_token_ids=self.forbidden_token_ids,
+        )
         request_output = await self.scheduler.generate(
             prompt=prompt,
             sampling_params=sampling_params,
@@ -389,17 +359,81 @@ class VLLMGenerationBackend:
             raise RuntimeError("vLLM returned an unexpected number of agent trajectory outputs")
 
         completion = request_output.outputs[0]
-        token_ids = list(completion.token_ids)
-        backend_text = completion.text
-        text = self.tokenizer.decode(
-            token_ids,
-            skip_special_tokens=False,
-            clean_up_tokenization_spaces=False,
-        )
-        return GenerationOutput(
-            token_ids=token_ids,
-            text=text,
+        return agent_generation_output(
+            completion.token_ids,
+            completion.text,
             finish_reason=completion.finish_reason,
             stop_reason=getattr(completion, "stop_reason", None),
-            backend_text=backend_text if backend_text != text else None,
+            tokenizer=self.tokenizer,
         )
+
+
+def build_agent_vllm_request(
+    request: GenerationRequest,
+    sampling_params: SamplingParams,
+    *,
+    image_cache: VLLMAgentImageCache,
+    forbidden_token_ids: tuple[int, ...] = (),
+) -> tuple[dict[str, Any], SamplingParams]:
+    """The vLLM prompt and sampling parameters of one agent turn; every rollout path builds its requests here."""
+    sampling_params = sampling_params.clone()
+    sampling_params.max_tokens = request.max_new_tokens
+    if request.seed is not None:
+        sampling_params.seed = request.seed
+    sampling_params.detokenize = True
+    # Match the original DeepEyes rollout: do not add XML closing tags as
+    # static stops. Let the model's native EOS/end-of-turn token delimit a
+    # complete assistant action so tags quoted inside reasoning cannot
+    # terminate generation prematurely.
+    # Keeping stop terminators in the output preserves the native EOS in
+    # model action IDs, where it receives the same policy mask as one-shot
+    # EasyR1 responses.
+    sampling_params.include_stop_str_in_output = True
+    if forbidden_token_ids:
+        logit_bias = dict(sampling_params.logit_bias or {})
+        logit_bias.update(dict.fromkeys(forbidden_token_ids, -100.0))
+        sampling_params.logit_bias = logit_bias
+
+    prompt: dict[str, Any] = {"prompt_token_ids": list(request.prompt_token_ids)}
+    if request.images:
+        processed_images = [image_cache.prepare(image) for image in request.images]
+        image_occurrences: dict[int, int] = {}
+        image_uuids = []
+        for image in request.images:
+            key = id(image)
+            occurrence = image_occurrences.get(key, 0)
+            image_occurrences[key] = occurrence + 1
+            image_uuids.append(
+                image_cache.uuid_for(
+                    image,
+                    occurrence=occurrence,
+                )
+            )
+        prompt["multi_modal_data"] = {"image": processed_images}
+        prompt["multi_modal_uuids"] = {"image": image_uuids}
+    return prompt, sampling_params
+
+
+def agent_generation_output(
+    token_ids: Sequence[int],
+    backend_text: Optional[str],
+    *,
+    finish_reason: Optional[str],
+    stop_reason: Any,
+    tokenizer: Any,
+) -> GenerationOutput:
+    """One generated turn as the agent loop reads it: the text is decoded here, with the special tokens, so that it
+    does not depend on whether the engine decoded the output (``backend_text`` is kept only when it differs)."""
+    token_ids = list(token_ids)
+    text = tokenizer.decode(
+        token_ids,
+        skip_special_tokens=False,
+        clean_up_tokenization_spaces=False,
+    )
+    return GenerationOutput(
+        token_ids=token_ids,
+        text=text,
+        finish_reason=finish_reason,
+        stop_reason=stop_reason,
+        backend_text=backend_text if backend_text is not None and backend_text != text else None,
+    )

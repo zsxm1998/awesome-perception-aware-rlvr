@@ -18,6 +18,8 @@ from .vllm import (
     VLLMAgentRequestError,
     VLLMAgentSchedulerError,
     VLLMGenerationBackend,
+    agent_generation_output,
+    build_agent_vllm_request,
 )
 
 
@@ -27,4 +29,6 @@ __all__ = [
     "VLLMAgentRequestError",
     "VLLMAgentSchedulerError",
     "VLLMGenerationBackend",
+    "agent_generation_output",
+    "build_agent_vllm_request",
 ]
