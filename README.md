@@ -100,6 +100,9 @@ before drawing conclusions.
 
 ## 🔥 News
 
+- **2026-11**: A server mode for multi-turn agent rollouts (`worker.rollout.agent_engine_mode=server`,
+  [docs](docs/agent_environments.md#server-mode)), after verl's agent loop: a vLLM server on each training GPU
+  schedules every model turn as it arrives, while the training stays synchronous; the batch mode stays the default.
 - **2026-10**: GiGPO's step-level advantages for multi-turn agents ([docs](docs/agent_environments.md#step-level-advantages-gigpo)),
   checked value for value against verl-agent's implementation; rewards an environment gives for single tool
   calls now count in the return of every estimator.

@@ -138,9 +138,59 @@ request fails the training step, which can resume from the last checkpoint; the 
 the step.
 
 The batched rollout runs every trajectory on each rank of a tensor-parallel group, so `remote_http` needs
-`worker.rollout.tensor_parallel_size=1`. While a trajectory waits for the server, the other trajectories'
+`worker.rollout.tensor_parallel_size=1` (the server mode below runs every trajectory once). While a trajectory waits for the server, the other trajectories'
 turns go to vLLM in smaller batches; DeepEyes over HTTP took more generation time than the
 in-process environment (1.3 to 1.5 times) in a 2-step test.
+
+## Server mode
+
+`worker.rollout.agent_engine_mode=server` (default `batch`) serves agentic rollouts from a vLLM server on each
+training GPU, as verl's colocated agent loop (v0.9.1, `verl/experimental/agent_loop/` and
+`verl/workers/rollout/vllm_rollout/vllm_async_server.py`), instead of the batch mode's engine inside each training
+process:
+
+- **Servers.** Each training process gets a server on its GPU: a Ray actor holding vLLM's `AsyncLLM`, whose engine
+  and GPU worker run in their own processes. vLLM schedules each model turn as it arrives (continuous batching),
+  where the batch mode sends a rank's waiting turns to vLLM together and the next ones wait for that batch to finish.
+- **Agent loops.** CPU workers (`agent_num_workers`, one per GPU by default) run the trajectories as coroutines. A
+  router sends every turn of a trajectory to the server of its first turn, which holds its context in the prefix
+  cache, and a new trajectory to the server with the fewest requests in flight (ties at random), as verl's router
+  does. A worker takes whole groups, so the rollouts of a row share their environment context and images as in the
+  batch mode; options such as `remote_http`'s `max_concurrency` hold per worker as they hold per GPU there.
+- **Weights.** Training stays synchronous. Before each rollout the training process wakes its server's weights, sends
+  its full weights over CUDA IPC in buckets (`server_weight_bucket_mb`, verl's bucketed transfer), and wakes the KV
+  cache once every rank is done; after the rollout the server sleeps (`server_sleep_level`; 2, verl's level, discards
+  the weights as each step sends them anyway) and training gets the memory back. The first sync checks that every
+  parameter of the rollout model was loaded. A server that fails while receiving, or stops answering (10 minutes),
+  fails the training step with its own error.
+- **Retries and failures.** A trajectory that materialization rejects and may be retried is generated again at once
+  in its own coroutine, with the batch mode's seeds; the batch mode retries after the whole batch. When a trajectory
+  fails, the others are cancelled (their requests are aborted on the servers) and close their environments before
+  the error is raised, as in the batch mode. A failed cleanup (closing the environments, releasing a turn on the
+  router) fails the rollout too, unless another error is already being raised: that one is raised, and the cleanup's
+  is logged.
+
+The two modes build everything around the generation with the same code: the requests (sampling parameters, the
+per-turn seeds, the images and their multimodal ids), the environment calls, the reward inputs and the training
+batch. With a scripted engine that answers by the request seed they give the same batch. With vLLM they sample
+differently, as vLLM's kernels do not give bit-identical logits for different batch compositions (two batch-mode
+runs with different batch sizes differ too). The server mode records the engine's log-probability of each sampled
+token by default (`record_rollout_log_probs`) and logs how far it is from the trainer's under `rollout_corr/`.
+
+| Option (`worker.rollout.*`) | Default | Meaning |
+| --- | --- | --- |
+| `agent_engine_mode` | `batch` | `server` for this mode |
+| `server_sleep_level` | `2` | vLLM's sleep level between rollouts (1 keeps a copy of the weights in host memory) |
+| `server_weight_bucket_mb` | `2048` | size of the weight-sync buckets |
+| `server_actor_max_concurrency` | `null` | calls a server actor takes at once; null: max(1024, trajectories of a batch + 64) |
+| `max_num_seqs` | `null` | vLLM's limit of sequences scheduled at once, in both modes; null: vLLM's default |
+| `agent_num_workers` | `null` | CPU workers that run the agent loops; null: one per GPU |
+| `agent_group_affinity` | `false` | send a group's new trajectories to the server of its first one while that server has at most `max_num_seqs // 4` (256 when null) more requests in flight than the least busy one, for the prompt's prefix cache; no framework found pins a group's multi-turn trajectories to one server (ROLL pins a prompt's samples in its single-turn pipeline) |
+
+The server mode needs `interaction_mode=agentic`, `tensor_parallel_size=1` and `agent_max_batch_images=0` (a limit
+of the batch mode's batches), and does not support LoRA, `adv_estimator=remax` or Qwen3.5 yet.
+`scripts/agent/gpu_utilization.py` measures the GPU utilization of each step's generation, to compare the modes on
+a workload.
 
 ## HTTP protocol
 
