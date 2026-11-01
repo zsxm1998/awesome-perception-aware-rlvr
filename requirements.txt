@@ -19,6 +19,8 @@ peft
 pillow
 pyarrow>=15.0.0
 pylatexenc
+# imported by the server mode's weight sync (vLLM depends on it too, but is installed separately)
+pyzmq
 qwen-vl-utils
 ray[default]
 requests

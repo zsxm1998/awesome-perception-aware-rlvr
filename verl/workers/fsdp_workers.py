@@ -432,6 +432,19 @@ class FSDPWorker(Worker):
                 print_gpu_memory_usage(f"After offload {role} model during init")
 
     def _build_rollout(self) -> None:
+        if self.config.rollout.agent_engine_mode == "server":
+            # the rollout runs on servers next to this process (verl/workers/rollout/async_server); this process
+            # only syncs its weights to the server on its GPU
+            from .sharding_manager.fsdp_async_server import FSDPAsyncServerShardingManager
+
+            self.rollout = None
+            self.rollout_sharding_manager = FSDPAsyncServerShardingManager(
+                module=self.fsdp_module,
+                use_param_offload=self._use_param_offload,
+                bucket_size_mb=self.config.rollout.server_weight_bucket_mb,
+            )
+            return
+
         tp_size = self.config.rollout.tensor_parallel_size
         dp_size = self.world_size // tp_size
         if self.world_size % tp_size != 0:
@@ -821,6 +834,25 @@ class FSDPWorker(Worker):
         return output
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
+    def rollout_device_info(self) -> tuple[str, str]:
+        """The Ray node and the GPU id of this process, where its rollout server goes (server mode)."""
+        import ray
+
+        context = ray.get_runtime_context()
+        return context.get_node_id(), str(context.get_accelerator_ids()["GPU"][0])
+
+    @register(dispatch_mode=Dispatch.ONE_TO_ALL)
+    def attach_rollout_servers(self, servers: list, job_id: str) -> None:
+        """Server mode: take this rank's server; the weights go to it over a ZMQ socket named by job and rank."""
+        self.rollout_sharding_manager.attach(
+            servers[self.rank], f"ipc:///tmp/easyr1-rollout-{job_id}-{self.rank}.sock"
+        )
+
+    @register(dispatch_mode=Dispatch.ONE_TO_ALL)
+    def generation_meta_info(self) -> dict[str, Any]:
+        return self._generation_meta_info()
+
+    @register(dispatch_mode=Dispatch.ONE_TO_ALL)
     def prepare_rollout_engine(self):
         self.rollout_sharding_manager.load_vllm_and_sync_weights()
 
@@ -901,6 +933,13 @@ class FSDPWorker(Worker):
             )
         return self._grounding_dino_processor, self._grounding_dino_model, self._grounding_dino_device
 
+    def _require_batch_rollout(self) -> None:
+        if self.rollout is None:
+            raise RuntimeError(
+                "worker.rollout.agent_engine_mode=server generates on the rollout servers (AgentRolloutManager), "
+                "not in the training workers"
+            )
+
     def _generation_meta_info(self) -> dict[str, Any]:
         eos_token_id = self.tokenizer.eos_token_id
         pad_token_id = self.tokenizer.pad_token_id
@@ -918,6 +957,7 @@ class FSDPWorker(Worker):
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def generate_sequences(self, prompts: DataProto):
         assert self._has_rollout
+        self._require_batch_rollout()
 
         prompts.meta_info.update(self._generation_meta_info())
 
@@ -931,6 +971,7 @@ class FSDPWorker(Worker):
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def generate_from_raw_prompts(self, prompts: DataProto):
         assert self._has_rollout
+        self._require_batch_rollout()
 
         prompts.meta_info.update(self._generation_meta_info())
         prompts = self.rollout_sharding_manager.preprocess_data(prompts)
@@ -941,6 +982,7 @@ class FSDPWorker(Worker):
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def answer_claim_probes(self, probes: DataProto):
         assert self._has_rollout
+        self._require_batch_rollout()
 
         probes = self.rollout_sharding_manager.preprocess_data(probes)
         output = self.rollout.answer_claim_probes(probes)

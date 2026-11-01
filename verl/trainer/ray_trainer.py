@@ -985,6 +985,22 @@ class RayPPOTrainer:
         self.actor_rollout_ref_wg = all_wg["actor_rollout_ref"]
         self.actor_rollout_ref_wg.init_model()
 
+        self.agent_rollout_manager = None
+        if self.config.worker.rollout.agent_engine_mode == "server":
+            # a vLLM server on each training GPU, started asleep; the first weight sync comes before the first rollout
+            from ..workers.rollout.async_server import launch_server_rollout
+
+            self.agent_rollout_manager = launch_server_rollout(
+                self.config, self.tokenizer, self.processor, self.actor_rollout_ref_wg
+            )
+
+    def _generate_sequences(self, gen_batch: DataProto) -> DataProto:
+        """Roll out ``gen_batch``: in the training workers (batch mode) or on the rollout servers (server mode)."""
+        manager = getattr(self, "agent_rollout_manager", None)
+        if manager is not None:
+            return manager.generate_sequences(gen_batch)
+        return self.actor_rollout_ref_wg.generate_sequences(gen_batch)
+
     def _save_checkpoint(self) -> None:
         # path: {save_checkpoint_path}/global_step_{global_step}/{actor,critic}
         if self.val_reward_score is not None and self.val_reward_score > self.best_val_reward_score:
@@ -1284,7 +1300,7 @@ class RayPPOTrainer:
             test_gen_batch.meta_info["video_fps"] = self.config.data.video_fps
 
             test_gen_batch, pad_size = pad_dataproto_to_divisor(test_gen_batch, self.actor_rollout_ref_wg.world_size)
-            test_output_gen_batch = self.actor_rollout_ref_wg.generate_sequences(test_gen_batch)
+            test_output_gen_batch = self._generate_sequences(test_gen_batch)
             test_output_gen_batch = unpad_dataproto(test_output_gen_batch, pad_size=pad_size * repeat_times)
 
             # repeat to align with repeated responses in rollout
@@ -1442,7 +1458,7 @@ class RayPPOTrainer:
                 metrics.update(transform_metrics)
 
             # generate a batch
-            gen_batch_output = self.actor_rollout_ref_wg.generate_sequences(gen_batch)
+            gen_batch_output = self._generate_sequences(gen_batch)
             if rollout_image_transform is not None:
                 restore_clean_images(gen_batch_output, clean_multi_modal_data, self.config.worker.rollout.n)
 
