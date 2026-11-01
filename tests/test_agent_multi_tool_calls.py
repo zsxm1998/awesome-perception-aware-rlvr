@@ -131,6 +131,59 @@ def test_with_one_call_per_turn_the_first_call_runs():
     assert trajectory.metrics.tool_call_attempts == 1
 
 
+def test_the_codec_reads_the_calls_after_the_reasoning_when_there_are_any():
+    from verl.workers.agent.tool_call import NativeToolCallCodec
+
+    codec = NativeToolCallCodec()
+    draft, final = _call(region=1), _call(region=2)
+
+    def regions(parsed):
+        return [None if each.call is None else each.call.arguments["region"] for each in parsed.tool_calls]
+
+    # a draft inside the reasoning, then the call after it: only the call after it is the turn's call
+    assert regions(codec.parse("<think>Maybe " + draft + " first.</think>" + final)) == [2]
+    assert regions(codec.parse("Maybe " + draft + "</think>" + final, reasoning_open=True)) == [2]
+    # a malformed block after the reasoning still replaces the draft (and is the turn's malformed call)
+    assert regions(codec.parse("<think>" + draft + "</think><tool_call>not json</tool_call>")) == [None]
+    # every block inside the reasoning (closed or not): they are the turn's calls, as before
+    assert regions(codec.parse("<think>" + draft + final + "</think>")) == [1, 2]
+    assert regions(codec.parse("<think>Look: " + draft)) == [1]
+    assert codec.count_tool_calls_inside_reasoning("<think>Maybe " + draft + " first.</think>" + final) == 1
+
+
+def test_think_tags_inside_a_calls_arguments_are_not_reasoning_tags():
+    from verl.workers.agent.tool_call import NativeToolCallCodec
+
+    codec = NativeToolCallCodec()
+    opening = _call(region=1, query="what does <think> do")
+    closing = _call(region=1, query="a </think> b")
+    second = _call(region=2)
+
+    def regions(parsed):
+        return [each.call.arguments["region"] for each in parsed.tool_calls]
+
+    # an argument holding "<think>" does not open the reasoning: both calls are after it
+    assert regions(codec.parse(opening + second)) == [1, 2]
+    assert codec.count_tool_calls_inside_reasoning(opening + second) == 0
+    # one holding "</think>" does not close it: both calls stay inside the reasoning, so both are the turn's calls
+    assert regions(codec.parse("<think>" + closing + second + "</think>")) == [1, 2]
+    assert codec.count_tool_calls_inside_reasoning("<think>" + closing + second + "</think>") == 2
+    # nor does it open the reasoning for an answer after the call
+    assert codec.parse(opening + "<answer>yes</answer>").final_answer == "yes"
+    trajectory, environment, _ = _run([opening + second, "<answer>A</answer>"], per_turn=2)
+    assert [call["region"] for call in environment.calls] == [1, 2] and trajectory.metrics.tool_call_attempts == 2
+
+
+def test_a_draft_call_in_the_reasoning_does_not_take_the_place_of_the_call_after_it():
+    trajectory, environment, _ = _run(
+        ["<think>Try " + _call(region=1) + " maybe.</think>" + _call(region=2), "<answer>A</answer>"], per_turn=1
+    )
+
+    assert environment.calls == [{"region": 2}]
+    assert [call.executed for call in trajectory.steps[0].calls] == [True]
+    assert trajectory.metrics.unrun_tool_calls == 0 and turn_is_valid(trajectory, 0)
+
+
 def test_calls_beyond_the_remaining_calls_get_a_limit_error_and_the_turn_stays_valid():
     trajectory, environment, _ = _run(
         [_call(region=1) + _call(region=2) + _call(region=3), "<answer>A</answer>"], per_turn=3, max_tool_calls=2
@@ -516,9 +569,10 @@ def test_the_per_turn_limit_is_checked_where_it_is_configured():
     default = runner._agent_fingerprint_fields(args(*environment))
     two = runner._agent_fingerprint_fields(args(*environment, "--agent-max-tool-calls-per-turn", "2"))
     # the option enters the fingerprint only when it is not 1; agentic results from before several calls per turn
-    # (runner version 6, where such a turn ran none of its calls) are not reused
+    # (runner version 6, where such a turn ran none of its calls) and before calls inside the reasoning gave way to
+    # the calls after it (version 7) are not reused
     assert "agent_max_tool_calls_per_turn" not in default and "max_tool_calls_per_turn" not in default["agent_config"]
-    assert default["agent_runner_version"] == 7
+    assert default["agent_runner_version"] == 8
     assert two["agent_max_tool_calls_per_turn"] == 2 and two["agent_config"]["max_tool_calls_per_turn"] == 2
     with pytest.raises(SystemExit):
         args(

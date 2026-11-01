@@ -37,6 +37,7 @@ _LOOP_STATISTICS = (
     "tool_call_errors",
     "malformed_tool_calls",
     "unrun_tool_calls",
+    "tool_calls_inside_reasoning",
     "trajectory_retries",
 )
 ENVIRONMENT_PREFIX = "env/"

@@ -64,7 +64,18 @@ class NativeToolCallCodec:
         # executable even when the model has not closed its reasoning tag yet.
         # Reasoning-tag balance remains a format-reward concern; rejecting the
         # action here would also withhold the crop observation and tool reward.
+        # When blocks also follow the reasoning, those are the turn's calls and
+        # the blocks inside the reasoning are part of it (a draft the model
+        # wrote while thinking), as an OpenAI-compatible vLLM server with a
+        # reasoning parser reads tool calls from the content only.
         # Every block is parsed; how many of them run is the agent loop's limit.
+        after_reasoning = [
+            match
+            for match in tool_call_matches
+            if not self.is_inside_reasoning(text, match.start(), reasoning_open=reasoning_open)
+        ]
+        if after_reasoning:
+            tool_call_matches = after_reasoning
         return ParsedAction(tool_calls=tuple(self._parse_block(match.group(1)) for match in tool_call_matches))
 
     @staticmethod
@@ -128,8 +139,13 @@ class NativeToolCallCodec:
         *,
         reasoning_open: bool,
     ) -> bool:
+        # A complete tool-call block holds the call's JSON: "<think>" or "</think>" there is text of an argument,
+        # not a reasoning tag.
+        blocks = [match.span() for match in self._TOOL_CALL_PATTERN.finditer(text)]
         depth = 1 if reasoning_open else 0
         for match in self._THINK_TAG_PATTERN.finditer(text, 0, position):
+            if any(start < match.start() < end for start, end in blocks):
+                continue
             if match.group(0) == "<think>":
                 depth += 1
             elif depth:

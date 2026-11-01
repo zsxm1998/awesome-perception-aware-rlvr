@@ -49,7 +49,8 @@ from .schemas import EvalSample, GenerationConfig, GenerationOutput
 
 
 # 2: a turn with several tool calls runs its first max_tool_calls_per_turn calls (before, it was one malformed call)
-API_RUNNER_VERSION = 2
+# 3: tool calls written as text in a reply with calls after the reasoning: the ones inside it are not run
+API_RUNNER_VERSION = 3
 _TOOL_CALL_BLOCK = "<tool_call>"
 
 

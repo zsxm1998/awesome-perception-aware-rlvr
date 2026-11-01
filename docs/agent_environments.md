@@ -50,6 +50,13 @@ told the limit by the API or the chat template (Qwen's tool preamble reads "You 
 the environment receives it in `reset` (`EnvironmentContext.max_tool_calls_per_turn`, `/reset`
 `max_tool_calls_per_turn`) and writes it into its prompt. DeepEyes supports 1 only.
 
+Calls inside the reasoning. When a turn has calls after its reasoning (`<think>...</think>`), the blocks inside the
+reasoning are part of it, a draft the model wrote while thinking: only the calls after it are the turn's calls, as
+an OpenAI-compatible vLLM server with a reasoning parser reads tool calls from the content only. When every call is
+inside the reasoning, as when the model has not closed it, they are the turn's calls (DeepEyes' environment runs
+such a call too). A `<think>` or `</think>` inside a call's JSON (in an argument) is not a reasoning tag. The reward
+function logs the blocks inside the reasoning per trajectory as `tool_calls_inside_reasoning`.
+
 Rendering. Tool schemas are rendered by the model's chat template (`tools=`), as in DeepEyes' native prompt.
 The environment's messages and observation texts are rendered verbatim, so they must not contain the
 tokenizer's special tokens (such as `<|im_start|>` or `<|image_pad|>`); such text is rejected. The model's
@@ -64,6 +71,7 @@ no common practice was found. For comparison, verl v0.9.1 (`verl/experimental/ag
 | Rule here | Elsewhere |
 | --- | --- |
 | The limit counts tool calls (`agent_max_tool_calls`), a malformed one too; after it, one more turn may only answer, and a call in it ends the episode (`tool_call_limit`). | verl ends a trajectory at `multi_turn.max_assistant_turns` or `max_user_turns`, counted in turns, with no turn reserved for the answer. |
+| Tool calls inside the reasoning are not run when calls follow it; when all are inside, they run. | verl's Hermes parser reads every `<tool_call>` block of the text; vLLM's server with a reasoning parser reads the content after the reasoning only. |
 | `/step` tells the environment how many calls counted before this one (`tool_calls_used`), since malformed calls count but never reach it. | In gym-style interfaces (`step(action)`) the environment counts its own steps. |
 | A malformed call gets an error result from the loop and never reaches the environment. | verl's Hermes parser drops a block it cannot decode, and a turn without a decodable call ends the trajectory; verl-agent gives the text to the environment's projection, which marks the step invalid. |
 | Several calls of a turn run one after another, and every call gets a result, except those within the per-turn limit after one that ended the episode (above). | verl runs the first `max_parallel_calls` concurrently and drops the others. |
@@ -94,8 +102,9 @@ trainer puts it on the last model token of its turn, and the reward function's s
 turn. Every advantage estimator, the logs (`reward/overall`) and online filtering see the sum; the step rewards of
 an episode are also logged as `reward/step_rewards`. Do not count them again in the `finalize` reward. The
 reward function also logs the agent loop's counts per trajectory: `tool_call_attempts`, `tool_call_errors`,
-`malformed_tool_calls`, `unrun_tool_calls` and `trajectory_retries`. The environment's components and metrics are
-logged under `env/`, apart from the trainer's own names (`overall`, `tool_call_errors`, ...):
+`malformed_tool_calls`, `unrun_tool_calls`, `tool_calls_inside_reasoning` and `trajectory_retries`. The
+environment's components and metrics are logged under `env/`, apart from the trainer's own names (`overall`,
+`tool_call_errors`, ...):
 
 | Where | Name |
 | --- | --- |
@@ -114,8 +123,8 @@ Trajectory records keep what the environment reported, as given: the generation 
 `initial_state_key` (when `reset` named the initial state), `env_steps` (per tool call: `turn_index`,
 `call_index`, `tool`, `state_key`, `cost`, `reward`, `done`, `info`, for the calls where the environment gave any of
 them; `call_index` counts the turn's tool-call blocks in the order written, malformed and unrun ones included, so it
-is not the environment's `step_index`) and
-`env_outcome` (`reward`, `components`, `metrics`, `details`, `episode_id`). Reward functions receive the reward,
+is not the environment's `step_index`; blocks inside the reasoning that gave way to calls after it are not counted)
+and `env_outcome` (`reward`, `components`, `metrics`, `details`, `episode_id`). Reward functions receive the reward,
 components and metrics only.
 
 `remote_http` options: `url`; `timeout_s` (60) per request; `retries` (3) after a network error, a timeout,

@@ -70,7 +70,8 @@ DEFAULT_BATCH_SIZE = 64
 DEFAULT_MAX_BATCH_IMAGES = 64
 # 7: a turn with several tool calls runs its first --agent-max-tool-calls-per-turn calls (before, it was one
 # malformed call that ran none), so agentic results of version 6 are generated again
-AGENTIC_RUNNER_VERSION = 7
+# 8: when tool calls follow the reasoning, the ones inside it are not run (they were, first)
+AGENTIC_RUNNER_VERSION = 8
 DEFAULT_GPU_MEMORY_UTILIZATION = 0.7
 DEFAULT_MAX_MODEL_LEN = 32768
 DEFAULT_GLOBAL_SUMMARY = DEFAULT_RESULTS_DIR / "summary.csv"
