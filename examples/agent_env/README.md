@@ -63,7 +63,8 @@ python scripts/agent/export_sft.py --model Qwen/Qwen3-VL-4B-Instruct \
 `AGENT_ENV_URL` points a training script at another server. In a 2-step test of each script on 4 GPUs (8
 prompts, 4 rollouts each), Qwen3-VL-4B answered about 90% of the toy tasks with 1.4 zoom-ins on average, and
 DeepEyes over HTTP gave the same first-step accuracy as the in-process environment. With GiGPO, 89% and 96% of
-the turns of the two steps shared their view with turns of other rollouts of the same task (`gigpo/turns_in_shared_groups`).
+the turns of the two steps were in step groups of two or more turns (`gigpo/turns_in_shared_groups`; such a group
+may also hold turns of one rollout in the same view, e.g. after a rejected call).
 
 The scripted policy answered all 32 training tasks it was given, and ms-swift 4.6.0 (also development
 versions of 4.3 and 3.12) encoded every exported sample with the rollout's tokens.

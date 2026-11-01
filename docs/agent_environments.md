@@ -23,7 +23,8 @@ token, with DeepEyes' reward function on the trainer).
    rollouts of a prompt and for their retries, so a group starts from one task state.
 2. The model writes a turn. A well-formed `<tool_call>` goes to `step(call)`, whose observation (text and
    images) is appended as a tool message; a malformed call gets an error observation from the agent loop and
-   never reaches the environment (it is counted as `tool_call_errors`). A turn may hold several calls (below).
+   never reaches the environment. A turn may hold several calls (below). `tool_call_errors` counts every error
+   result: malformed calls, calls the environment answers with `success: false`, and calls the loop did not run.
 3. The episode ends when the model answers in `<answer>...</answer>`, when it uses up the tool-call limit
    (`worker.rollout.agent_max_tool_calls`; after it, one more turn may only answer), when a length budget
    runs out, or when a step returns `done`.
@@ -47,6 +48,20 @@ Rendering. Tool schemas are rendered by the model's chat template (`tools=`), as
 The environment's messages and observation texts are rendered verbatim, so they must not contain the
 tokenizer's special tokens (such as `<|im_start|>` or `<|image_pad|>`); such text is rejected. The model's
 own tokens are never re-encoded.
+
+## Rules of this repository
+
+Some rules of the agent loop and the environment interface are this repository's own, where frameworks differ or
+no common practice was found. For comparison, verl v0.9.1 (`verl/experimental/agent_loop/`) and verl-agent (commit
+20bd331):
+
+| Rule here | Elsewhere |
+| --- | --- |
+| The limit counts tool calls (`agent_max_tool_calls`), a malformed one too; after it, one more turn may only answer, and a call in it ends the episode (`tool_call_limit`). | verl ends a trajectory at `multi_turn.max_assistant_turns` or `max_user_turns`, counted in turns, with no turn reserved for the answer. |
+| A malformed call gets an error result from the loop and never reaches the environment. | verl's Hermes parser drops a block it cannot decode, and a turn without a decodable call ends the trajectory; verl-agent gives the text to the environment's projection, which marks the step invalid. |
+| Several calls of a turn run one after another, and every call gets a result (above). | verl runs the first `max_parallel_calls` concurrently and drops the others. |
+| `reward: null` from `finalize` means that the environment does not score the episode; the environment reward function and scorer then fail rather than count 0. | verl's reward functions return a number, or a dict with its `score`. |
+| The environment's components and metrics are logged as `env/<name>`; a name reported by some samples only is averaged over them, with a `*_count` entry. | verl's reward managers collect the extra values of each key in a list (`reward_manager/naive.py`), whose lengths differ when samples return different keys. |
 
 ## Training configuration
 
@@ -115,7 +130,7 @@ JSON bodies, `POST`, HTTP 200 on success. Images are PNG, base64-encoded.
 | Endpoint | Request | Response |
 | --- | --- | --- |
 | `/reset` | `{"config": {...}, "seed": int, "max_tool_calls": int, "max_tool_calls_per_turn": int}` | `{"episode_id": str, "system_prompt": str or null, "user_content": [part, ...], "tool_schemas": [schema, ...], "state_key": str or null}` (`state_key` optional) |
-| `/step` | `{"episode_id": str, "step_index": int, "tool_call": {"name": str, "arguments": {...}}}` | `{"content": [part, ...], "success": bool, "error_code": str (when not success), "done": bool, "reward": float or null, "state_key": str or null, "cost": float, "info": {...}}` |
+| `/step` | `{"episode_id": str, "step_index": int, "tool_call": {"name": str, "arguments": {...}}}` | `{"content": [part, ...], "success": bool, "error_code": str (when not success), "done": bool, "reward": finite float or null, "state_key": str or null, "cost": float, "info": {...}}` |
 | `/finalize` | `{"episode_id": str, "final_answer": str or null, "status": str}` | `{"reward": float or null, "components": {name: float}, "metrics": {name: float}, "details": {...}}` (`details` optional) |
 | `/close` | `{"episode_id": str}` | `{}` |
 
@@ -133,6 +148,11 @@ and must be present; an empty list means a single turn without tools.
   was lost); an index that skips ahead or goes back is an error. When a call fails inside the server after
   it may have changed the episode, the episode should take no more calls: the reference server answers the
   retry with HTTP 409 instead of running the call again, which fails the training step.
+- A call the environment refuses (an unknown tool, invalid arguments, a budget used up) is an ordinary answer:
+  HTTP 200 with `success: false` and the reason in `content`, which the model reads. An error status is for the
+  server's own failures and fails the training step (a 5xx after the client's retries): the reference server
+  answers an exception raised by `Episode.step` with 400 (`KeyError`, `TypeError`, `ValueError`) or 500, so an
+  environment should not signal a bad call by raising.
 - `done: true` ends the episode after this call; its content is not shown to the model, and `finalize` is
   still called with status `environment_done`.
 - `final_answer` is the text inside the last `<answer>...</answer>` outside the reasoning, stripped; it is
@@ -146,13 +166,18 @@ and must be present; an empty list means a single turn without tools.
 - `/finalize` called again returns the same result; `/close` of an unknown or closed episode returns `{}`.
   A server should drop episodes that stay idle for long: a crashed trainer never closes them, and a retried
   `/reset` leaves one behind.
-- A step's `reward` is what the call earned; it counts in the episode's return (see Rewards above), so the
-  `finalize` reward should not include it again. `cost` and `info` are recorded for diagnostics.
+- A step's `reward` is what the call earned, a finite number or null (anything else fails the training step);
+  it counts in the episode's return (see Rewards above), so the `finalize` reward should not include it again.
+  `cost` and `info` are recorded for diagnostics.
 - `state_key` names the state after the call, the one the next action is taken in (after a turn with several
-  calls, the state after its last call that ran), and `/reset` may name the initial state: GiGPO with `algorithm.step_state_key=environment` groups the actions of a prompt's rollouts
-  taken in the same state (below). A call the environment rejects without changing its state should return
-  the unchanged key; `null` leaves the state unnamed, and the next action is then compared with no other. A
-  malformed call does not reach the environment and leaves the state as it was.
+  calls, the state after its last call that ran), and `/reset` may name the initial state: GiGPO with
+  `algorithm.step_state_key=environment` groups the actions of a prompt's rollouts taken in the same state
+  (below). The same state must get the same key in every rollout of the prompt: a key holding something that
+  differs between episodes, such as the `episode_id` or a call counter, matches no other, and its turns get no
+  step advantage. Whether a count such as the remaining calls belongs in the key is the environment's choice
+  (verl-agent's anchors hold the observation only, without the step). A call the environment rejects without
+  changing its state should return the unchanged key; `null` leaves the state unnamed, and the next action is
+  then compared with no other. A malformed call does not reach the environment and leaves the state as it was.
 
 [examples/agent_env/server.py](../examples/agent_env/server.py) implements the server side of these rules on
 the Python standard library: write an `Episode` class with `reset`, `step` and `finalize`, and call `serve`. It
@@ -183,12 +208,15 @@ Which turns act in the same state (`algorithm.step_state_key`):
 
 A turn's action is invalid when it is malformed, as verl-agent judges the format only: a malformed tool call or
 answer, more calls than a turn runs (as verl-agent's search environment flags several search tags), a wrong turn
-end, a turn cut by a length limit, a turn without an action, a call after the tool-call limit. A turn's step
-reward is the sum of its calls' rewards. `algorithm.invalid_action_penalty` is taken from its episode score and its step return. A call that the
-environment rejects is a valid action. The logs report `gigpo/step_group_size_mean`,
-`gigpo/singleton_step_group_fraction` (a group of one gives no step advantage), `gigpo/turns_in_shared_groups`,
-`gigpo/turns_per_trajectory`, `gigpo/invalid_turn_fraction`, `gigpo/episode_advantage_abs` and
-`gigpo/step_advantage_abs`.
+end, a turn cut by a length limit, a turn without an action, a call in the answer-only turn after the tool-call
+limit. Calls left unrun because the trajectory's remaining calls ran out do not make a turn invalid. A turn's step
+reward is the sum of its calls' rewards. `algorithm.invalid_action_penalty` is taken from its episode score and its
+step return. A call that the environment rejects is a valid action. The logs report `gigpo/step_group_size_mean`,
+`gigpo/singleton_step_group_fraction` (a group of one gives no step advantage), `gigpo/turns_in_shared_groups`
+(the share of turns in groups of two or more; groups go by the state alone, so turns of one rollout in the same
+state count too, for instance after a call that left the state as it was, and the share grouped with other
+rollouts' turns is lower; it can be computed from the records' `env_steps`), `gigpo/turns_per_trajectory`, `gigpo/invalid_turn_fraction`,
+`gigpo/episode_advantage_abs` and `gigpo/step_advantage_abs`.
 
 verl-agent trains one row per step whose prompt holds the task, the current observation and the last few steps as
 text (two in its ALFWorld and WebShop scripts, without past reasoning or images). Here a trajectory is one row
