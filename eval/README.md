@@ -639,7 +639,7 @@ each conversation without its images (`turns`) and the API's token counts (`api_
 | `--api-base-url` | `$OPENAI_BASE_URL` | the endpoint (`.../v1`); proxy variables are not used for a local one |
 | `--api-key-env` | `OPENAI_API_KEY` | environment variable with the key (none sent when unset) |
 | `--api-concurrency` | `8` | requests at a time |
-| `--api-request-retries`, `--api-timeout` | `5`, `300` | retries of a failed request (HTTP 408, 429, 5xx, network), seconds per request |
+| `--api-request-retries`, `--api-timeout` | `5`, `300` | retries of a failed request (HTTP 408, 409, 425, 429, 500, 502, 503, 504, network), seconds per request |
 | `--api-extra-body` | none | JSON merged into each request, e.g. `{"enable_thinking": false}`; `null` removes a field |
 | `--api-max-tokens-field` | `max_tokens` | `max_completion_tokens` for OpenAI's newer models |
 | `--api-max-total-tokens` | none | no new request once the API has reported this many prompt + completion tokens in the run (all benchmarks together; requests already sent finish) |

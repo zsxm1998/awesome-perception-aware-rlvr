@@ -110,7 +110,7 @@ class _HTTPSession:
 class RemoteHTTPEnvironment:
     """An environment served over HTTP: ``POST /reset``, ``/step``, ``/finalize`` and ``/close``.
 
-    Requests that fail with a network error, a timeout, HTTP 408/429 or a 5xx response are retried with
+    Requests that fail with a network error, a timeout, HTTP 408, 429, 500, 502, 503 or 504 are retried with
     exponential backoff (``retries`` times). ``/step`` carries ``step_index``, so a server can answer a
     repeated step without executing it twice. Images arrive as base64 PNG. ``max_images_per_step`` bounds the
     images of one step (it sizes vLLM's per-prompt image limit); a step that returns more fails. Proxy settings
