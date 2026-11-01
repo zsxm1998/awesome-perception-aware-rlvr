@@ -33,6 +33,7 @@ from easyr1_eval.scorers import committed_tool_boxes, score_answer_bbox  # noqa:
 
 from verl.workers.agent.coordinates import model_input_image_size  # noqa: E402
 from verl.workers.agent.protocol import (  # noqa: E402
+    AgentCall,
     AgentLoopConfig,
     AgentMetrics,
     AgentStatus,
@@ -126,9 +127,14 @@ def _zoom_step(tool, arguments, source):
     return AgentStep(
         model_text="<tool_call>zoom</tool_call>",
         model_token_ids=[1],
-        tool_call=ToolCall(name="image_zoom_in_tool", arguments=arguments, raw_text="zoom"),
-        tool_result=result,
         observation_committed=True,
+        calls=[
+            AgentCall(
+                tool_call=ToolCall(name="image_zoom_in_tool", arguments=arguments, raw_text="zoom"),
+                tool_result=result,
+                executed=True,
+            )
+        ],
     )
 
 
@@ -358,9 +364,16 @@ def test_failed_tool_calls_keep_their_error_codes():
     step = AgentStep(
         model_text="<tool_call>zoom</tool_call>",
         model_token_ids=[1],
-        tool_call=ToolCall(name="image_zoom_in_tool", arguments={"bbox_2d": [10, 10, 12, 12]}, raw_text="zoom"),
-        tool_result=failed,
         observation_committed=True,
+        calls=[
+            AgentCall(
+                tool_call=ToolCall(
+                    name="image_zoom_in_tool", arguments={"bbox_2d": [10, 10, 12, 12]}, raw_text="zoom"
+                ),
+                tool_result=failed,
+                executed=True,
+            )
+        ],
     )
     output = trajectory_to_generation_output(_trajectory([step], source), tokenizer=_Tokenizer())
     agent = output.diagnostics["agent"]

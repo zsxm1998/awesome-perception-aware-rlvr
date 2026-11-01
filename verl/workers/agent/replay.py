@@ -17,13 +17,14 @@ The policy writes each assistant turn; the turn goes through the same agent loop
 image handling as a rollout (``run_environment_episode``), so a replayed episode is tokenized exactly as the RL
 rollout would tokenize the same actions. A policy is any object with
 
-    act(step)                       -> the next assistant turn; ``step`` is the EnvStep of the previous tool call
-                                       (None on the first turn); may be async
+    act(step)                       -> the next assistant turn; ``step`` is the EnvStep of the previous turn's tool
+                                       call, a tuple of them when it made several (None on the first turn); may be
+                                       async
     start(env_config, seed, reset)  -> optional, called once before the first turn; may be async
 
 A turn is the raw assistant text (``str`` or ``{"text": ...}``), tokenized as is, or
-``{"content": ..., "tool_call": {"name": ..., "arguments": {...}}}``, which the model's chat template renders
-into its native tool-call text (``content`` alone is a turn without a tool call).
+``{"content": ..., "tool_call": {"name": ..., "arguments": {...}}}`` (``"tool_calls": [...]`` for several), which
+the model's chat template renders into its native tool-call text (``content`` alone is a turn without a tool call).
 """
 
 from __future__ import annotations
@@ -36,6 +37,8 @@ from typing import Any, Optional
 
 from .episode import EpisodeRun, run_environment_episode
 from .protocol import (
+    TOO_MANY_TOOL_CALLS_IN_TURN,
+    TOOL_CALL_LIMIT_REACHED,
     AgentEnvironment,
     AgentImageConfig,
     AgentLoopConfig,
@@ -50,6 +53,9 @@ from .protocol import (
 from .tool_call import NativeToolCallCodec
 
 
+NOT_RUN_ERROR_CODES = (TOO_MANY_TOOL_CALLS_IN_TURN, TOOL_CALL_LIMIT_REACHED)
+
+
 class ReplayError(ValueError):
     """A scripted episode that the rollout could not have produced (e.g. a malformed call or an over-long turn)."""
 
@@ -58,20 +64,35 @@ class ReplayError(ValueError):
 class PolicyTurn:
     text: Optional[str] = None
     content: Optional[str] = None
-    tool_call: Optional[Mapping[str, Any]] = None
+    tool_calls: tuple[Mapping[str, Any], ...] = ()
+
+
+def _checked_tool_call(tool_call: Any) -> dict[str, Any]:
+    if (
+        not isinstance(tool_call, Mapping)
+        or not isinstance(tool_call.get("name"), str)
+        or not tool_call["name"]
+        or not isinstance(tool_call.get("arguments", {}), Mapping)
+        or set(tool_call) - {"name", "arguments"}
+    ):
+        raise ReplayError("tool_call must be {'name': <non-empty string>, 'arguments': <object>}")
+    return {"name": tool_call["name"], "arguments": dict(tool_call.get("arguments", {}))}
 
 
 def policy_turn(value: Any) -> PolicyTurn:
-    """A policy's turn as given: a string, ``{"text": ...}`` or ``{"content": ..., "tool_call": {...}}``."""
+    """A policy's turn as given: a string, ``{"text": ...}`` or ``{"content": ..., "tool_call": {...}}`` (or
+    ``"tool_calls": [{...}, ...]``)."""
     if isinstance(value, PolicyTurn):
         return value
     if isinstance(value, str):
         return PolicyTurn(text=value)
     if not isinstance(value, Mapping):
         raise ReplayError(f"a policy turn must be a string or an object, got {type(value).__name__}")
-    unknown = set(value) - {"text", "content", "tool_call"}
+    unknown = set(value) - {"text", "content", "tool_call", "tool_calls"}
     if unknown:
-        raise ReplayError(f"unknown policy turn fields {sorted(unknown)}; use text, or content and tool_call")
+        raise ReplayError(
+            f"unknown policy turn fields {sorted(unknown)}; use text, or content and tool_call (or tool_calls)"
+        )
     if "text" in value:
         if set(value) != {"text"} or not isinstance(value["text"], str):
             raise ReplayError("a raw turn is {'text': <string>} alone")
@@ -79,18 +100,15 @@ def policy_turn(value: Any) -> PolicyTurn:
     content = value.get("content", "")
     if not isinstance(content, str):
         raise ReplayError("turn content must be a string")
-    tool_call = value.get("tool_call")
-    if tool_call is not None:
-        if (
-            not isinstance(tool_call, Mapping)
-            or not isinstance(tool_call.get("name"), str)
-            or not tool_call["name"]
-            or not isinstance(tool_call.get("arguments", {}), Mapping)
-            or set(tool_call) - {"name", "arguments"}
-        ):
-            raise ReplayError("tool_call must be {'name': <non-empty string>, 'arguments': <object>}")
-        tool_call = {"name": tool_call["name"], "arguments": dict(tool_call.get("arguments", {}))}
-    return PolicyTurn(content=content, tool_call=tool_call)
+    if "tool_call" in value and "tool_calls" in value:
+        raise ReplayError("a turn has tool_call or tool_calls, not both")
+    if value.get("tool_call") is not None:
+        tool_calls: Any = [value["tool_call"]]
+    else:
+        tool_calls = value.get("tool_calls") or []
+        if not isinstance(tool_calls, (list, tuple)):
+            raise ReplayError("tool_calls must be a list of tool calls")
+    return PolicyTurn(content=content, tool_calls=tuple(_checked_tool_call(call) for call in tool_calls))
 
 
 class AssistantTurnRenderer:
@@ -112,8 +130,8 @@ class AssistantTurnRenderer:
         if turn.text is not None:
             return turn.text
         message: dict[str, Any] = {"role": "assistant", "content": turn.content or ""}
-        if turn.tool_call is not None:
-            message["tool_calls"] = [{"type": "function", "function": dict(turn.tool_call)}]
+        if turn.tool_calls:
+            message["tool_calls"] = [{"type": "function", "function": dict(call)} for call in turn.tool_calls]
         rendered = self._render([*self._USER, message])
         if not rendered.startswith(self._prefix) or not rendered.endswith(self._suffix):
             raise ReplayError("the chat template rendered the assistant turn outside its generation prompt")
@@ -144,14 +162,13 @@ class RecordedPolicy:
 
 class _ReplayEnvironment:
     """The episode's environment as the loop sees it: starts the policy after ``reset``, binds the backend to the
-    episode's chat template and keeps the last step for the policy."""
+    episode's chat template and keeps the steps for the policy."""
 
     def __init__(self, environment: AgentEnvironment, policy: Any, backend: "ScriptedBackend"):
         self.environment = environment
         self.policy = policy
         self.backend = backend
-        self.last_step: Optional[EnvStep] = None
-        self.steps = 0
+        self.history: list[EnvStep] = []
 
     async def reset(self, config: Mapping[str, Any], seed: int) -> EnvReset:
         reset = await self.environment.reset(config, seed)
@@ -161,9 +178,8 @@ class _ReplayEnvironment:
         return reset
 
     async def step(self, call: ToolCall) -> EnvStep:
-        self.last_step = await self.environment.step(call)
-        self.steps += 1
-        return self.last_step
+        self.history.append(await self.environment.step(call))
+        return self.history[-1]
 
     async def finalize(self, final_answer: Optional[str], status: AgentStatus) -> Optional[EnvOutcome]:
         return await self.environment.finalize(final_answer, status)
@@ -201,14 +217,18 @@ class ScriptedBackend:
     async def generate(self, request: GenerationRequest) -> GenerationOutput:
         if self.renderer is None or self.environment is None:
             raise RuntimeError("ScriptedBackend.bind() must run before the first turn")
-        step = None
+        step: Any = None
         if self.turns:
-            if self.environment.steps == self._steps_at_last_turn:
-                parsed = self.codec.parse(self._last_text)
-                raise ReplayError(
-                    f"turn {self.turns} is not a well-formed tool call: {parsed.tool_call_error or 'no tool call'}"
-                )
-            step = self.environment.last_step
+            steps = self.environment.history[self._steps_at_last_turn :]
+            calls = self.codec.parse(self._last_text).tool_calls
+            if not steps or len(steps) != len(calls):
+                error = next((call.error for call in calls if call.error is not None), None)
+                if error is None and calls:
+                    error = (
+                        f"{len(steps)} of its {len(calls)} tool calls ran (max_tool_calls_per_turn, max_tool_calls)"
+                    )
+                raise ReplayError(f"turn {self.turns} is not a well-formed tool call: {error or 'no tool call'}")
+            step = steps[0] if len(steps) == 1 else tuple(steps)
         turn = policy_turn(await _maybe_await(self.policy.act(step)))
         text = self.renderer.render(turn)
         for token in self.special_tokens:
@@ -221,7 +241,7 @@ class ScriptedBackend:
                 "rollout would allow it (max_tokens_per_turn, the response budget or the context window)"
             )
         self.turns += 1
-        self._steps_at_last_turn = self.environment.steps
+        self._steps_at_last_turn = len(self.environment.history)
         self._last_text = text
         return GenerationOutput(token_ids=token_ids, text=text, finish_reason="stop")
 
@@ -256,8 +276,11 @@ async def replay_episode(
         max_model_len=max_model_len,
     )
     for index, step in enumerate(run.trajectory.steps):
-        if step.tool_call_error is not None:  # e.g. a malformed last turn, which ended the episode
-            raise ReplayError(f"turn {index + 1} is not a well-formed tool call: {step.tool_call_error}")
+        for call in step.calls:
+            if call.tool_call_error is not None:  # e.g. a malformed last turn, which ended the episode
+                raise ReplayError(f"turn {index + 1} is not a well-formed tool call: {call.tool_call_error}")
+            if call.tool_result is not None and call.tool_result.error_code in NOT_RUN_ERROR_CODES:
+                raise ReplayError(f"turn {index + 1}: {call.tool_result.content['error']['message']}")
     return run
 
 

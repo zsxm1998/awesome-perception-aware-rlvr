@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from verl.workers.agent.backends import (
     VLLMAgentBatchScheduler,
@@ -255,6 +255,7 @@ class AgenticVLLMBackend:
             processor=self.processor,
             image_preprocessor=image_cache.prepare,
             max_tool_calls=self.agent_config.max_tool_calls,
+            max_tool_calls_per_turn=self.agent_config.max_tool_calls_per_turn,
         )
         if self.agent_profile == "environment":
             make_environment = environment_factory(
@@ -378,6 +379,42 @@ class AgenticVLLMBackend:
         )
 
 
+def _committed_zoom_region(turn_index: int, step: Any, call: Any) -> Optional[dict[str, Any]]:
+    """The source-image region of a zoom-in call whose crop the model was shown, or None for other calls."""
+    if (
+        call.tool_call is None
+        or call.tool_call.name != "image_zoom_in_tool"
+        or call.tool_result is None
+        or not call.tool_result.success
+        or not step.observation_committed
+    ):
+        return None
+    metadata = call.tool_result.metadata
+    bbox = metadata.get("bbox_2d")
+    # Source-image 0-1000 box of the crop, identical for norm1000 and pixel runs; bbox_2d is the
+    # model's own argument (absolute frame pixels in pixel mode).
+    bbox_norm1000 = metadata.get("bbox_norm1000", bbox)
+    image_idx = metadata.get("image_idx")
+    if (
+        not isinstance(bbox_norm1000, (list, tuple))
+        or len(bbox_norm1000) != 4
+        or isinstance(image_idx, bool)
+        or not isinstance(image_idx, int)
+    ):
+        raise RuntimeError("committed image_zoom_in_tool result is missing canonical region metadata")
+    region = {
+        "turn_index": turn_index,
+        "image_idx": image_idx,
+        "bbox_norm1000": list(bbox_norm1000),
+        "bbox_2d": list(bbox) if isinstance(bbox, (list, tuple)) else bbox,
+        "bbox_format": metadata.get("bbox_format", "norm1000"),
+    }
+    label = metadata.get("label")
+    if isinstance(label, str) and label:
+        region["label"] = label
+    return region
+
+
 def trajectory_to_generation_output(
     trajectory: AgentTrajectory,
     *,
@@ -432,49 +469,22 @@ def trajectory_to_generation_output(
         )
         for step in trajectory.steps
     )
-    tool_errors = [
+    tool_errors = [  # in call order
         {
             "turn_index": turn_index,
-            "error_code": step.tool_result.error_code or "unknown",
-            "message": _tool_error_message(step.tool_result)[:300],
+            "error_code": call.tool_result.error_code or "unknown",
+            "message": _tool_error_message(call.tool_result)[:300],
         }
         for turn_index, step in enumerate(trajectory.steps)
-        if step.tool_result is not None and not step.tool_result.success
+        for call in step.calls
+        if call.tool_result is not None and not call.tool_result.success
     ]
     committed_tool_regions = []
     for turn_index, step in enumerate(trajectory.steps):
-        if (
-            step.tool_call is None
-            or step.tool_call.name != "image_zoom_in_tool"
-            or step.tool_result is None
-            or not step.tool_result.success
-            or not step.observation_committed
-        ):
-            continue
-        metadata = step.tool_result.metadata
-        bbox = metadata.get("bbox_2d")
-        # Source-image 0-1000 box of the crop, identical for norm1000 and pixel runs; bbox_2d is the
-        # model's own argument (absolute frame pixels in pixel mode).
-        bbox_norm1000 = metadata.get("bbox_norm1000", bbox)
-        image_idx = metadata.get("image_idx")
-        if (
-            not isinstance(bbox_norm1000, (list, tuple))
-            or len(bbox_norm1000) != 4
-            or isinstance(image_idx, bool)
-            or not isinstance(image_idx, int)
-        ):
-            raise RuntimeError("committed image_zoom_in_tool result is missing canonical region metadata")
-        region = {
-            "turn_index": turn_index,
-            "image_idx": image_idx,
-            "bbox_norm1000": list(bbox_norm1000),
-            "bbox_2d": list(bbox) if isinstance(bbox, (list, tuple)) else bbox,
-            "bbox_format": metadata.get("bbox_format", "norm1000"),
-        }
-        label = metadata.get("label")
-        if isinstance(label, str) and label:
-            region["label"] = label
-        committed_tool_regions.append(region)
+        for call in step.calls:
+            region = _committed_zoom_region(turn_index, step, call)
+            if region is not None:
+                committed_tool_regions.append(region)
     metrics = trajectory.metrics
     agent_diagnostics = {
         "status": trajectory.status.value,

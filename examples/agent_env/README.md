@@ -6,7 +6,7 @@ Environments served over HTTP for multi-turn agentic RL; the protocol and the op
 | File | What it is |
 | --- | --- |
 | [`server.py`](server.py) | the server side of the protocol on the Python standard library: episode ids, `step_index` deduplication, idempotent `/finalize` and `/close`, dropping idle episodes. Write an `Episode` class and call `serve` |
-| [`toy_search.py`](toy_search.py) | a toy visual-search environment: find the one digit among small letters on a 1024x1024 canvas, with a `zoom_in` tool; the environment gives the reward (1 for the right digit) and names the view as `state_key` (the whole canvas, then zoom level and grid cell) |
+| [`toy_search.py`](toy_search.py) | a toy visual-search environment: find the one digit among small letters on a 1024x1024 canvas, with a `zoom_in` tool; the environment gives the reward (1 for the right digit) and names the view as `state_key` (the whole canvas, then zoom level and grid cell); with `worker.rollout.agent_max_tool_calls_per_turn` above 1 its prompt says how many zoom-ins a turn may make |
 | [`qwen3_vl_4b_toy_search.sh`](qwen3_vl_4b_toy_search.sh) | GRPO of Qwen3-VL-4B on it, with `examples/reward_function/environment.py` |
 | [`qwen3_vl_4b_gigpo_toy_search.sh`](qwen3_vl_4b_gigpo_toy_search.sh) | the same with GiGPO's step-level advantages, the turns grouped by the environment's names of the views, an invalid-action penalty of 0.01 ([docs](../../docs/agent_environments.md#step-level-advantages-gigpo)) |
 | [`toy_search_policy.py`](toy_search_policy.py) | a scripted policy for it, to make SFT demonstrations: zoom into the four quarters in order and answer once a view shows the digit |

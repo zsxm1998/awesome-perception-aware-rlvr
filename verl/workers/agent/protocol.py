@@ -64,10 +64,18 @@ class AgentLoopConfig:
     max_tool_calls: int = 6
     max_response_tokens: int = 20480
     max_tokens_per_turn: int = 10240
+    # Tool calls run per turn: the first ones of a turn, in the order written; the others get an error result.
+    max_tool_calls_per_turn: int = 1
 
     def __post_init__(self) -> None:
         if self.max_tool_calls < 0:
             raise ValueError("max_tool_calls must be non-negative")
+        if (
+            isinstance(self.max_tool_calls_per_turn, bool)
+            or not isinstance(self.max_tool_calls_per_turn, int)
+            or self.max_tool_calls_per_turn < 1
+        ):
+            raise ValueError("max_tool_calls_per_turn must be a positive integer")
         if self.max_response_tokens <= 0:
             raise ValueError("max_response_tokens must be positive")
         if self.max_tokens_per_turn <= 0:
@@ -93,15 +101,33 @@ class ToolCall:
 
 
 @dataclass(frozen=True)
+class ParsedToolCall:
+    """One ``<tool_call>`` block of a turn: the call, or why it is malformed."""
+
+    call: Optional[ToolCall] = None
+    error: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class ParsedAction:
     final_answer: Optional[str] = None
     final_answer_error: Optional[str] = None
-    tool_call: Optional[ToolCall] = None
-    tool_call_error: Optional[str] = None
+    # The turn's tool-call blocks in the order written (one malformed entry for tags without a complete block).
+    tool_calls: tuple[ParsedToolCall, ...] = ()
 
     @property
     def has_tool_attempt(self) -> bool:
-        return self.tool_call is not None or self.tool_call_error is not None
+        return bool(self.tool_calls)
+
+    @property
+    def tool_call(self) -> Optional[ToolCall]:
+        """The call of a turn with exactly one well-formed block."""
+        return self.tool_calls[0].call if len(self.tool_calls) == 1 else None
+
+    @property
+    def tool_call_error(self) -> Optional[str]:
+        """Why the only block of a turn is malformed."""
+        return self.tool_calls[0].error if len(self.tool_calls) == 1 else None
 
 
 @dataclass
@@ -144,7 +170,25 @@ class GenerationOutput:
 
 @dataclass(frozen=True)
 class ObservationEncodingRequest:
-    result: ToolResult
+    """The results of a turn's tool calls in call order, rendered as the one observation the model reads next.
+    A request gives ``result`` (a turn with one call) or ``results``; ``results`` is then always set, ``result``
+    only for one result. A turn may have several results with any per-turn limit: the calls beyond it get
+    error results, so every encoder renders ``results``."""
+
+    result: Optional[ToolResult] = None
+    results: tuple[ToolResult, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.result is not None:
+            if self.results and tuple(self.results) != (self.result,):
+                raise ValueError("give result or results, not both")
+            object.__setattr__(self, "results", (self.result,))
+        else:
+            if not self.results:
+                raise ValueError("an observation needs at least one tool result")
+            object.__setattr__(self, "results", tuple(self.results))
+            if len(self.results) == 1:
+                object.__setattr__(self, "result", self.results[0])
 
 
 @dataclass(frozen=True)
@@ -268,8 +312,94 @@ class AgentEnvironment(Protocol):
     ) -> Any: ...
 
 
+# Error codes of the results that the agent loop gives to calls it does not run.
+TOO_MANY_TOOL_CALLS_IN_TURN = "too_many_tool_calls_in_turn"
+TOOL_CALL_LIMIT_REACHED = "tool_call_limit_reached"
+
+
 @dataclass
-class AgentStep:
+class AgentCall:
+    """One tool-call block of a model turn and what followed from it.
+
+    ``tool_call`` is None for a malformed block (``tool_call_error`` says why). ``tool_result`` is what the model is
+    shown for it: the environment's result, or the loop's error for a malformed block or a call it did not run
+    (beyond ``max_tool_calls_per_turn``, ``TOO_MANY_TOOL_CALLS_IN_TURN``, or beyond the trajectory's remaining calls,
+    ``TOOL_CALL_LIMIT_REACHED``); None for a call left after the environment ended the episode. The ``env_*``,
+    ``state_key`` and ``cost`` fields are what the environment reported (EnvStep); they keep their defaults when the
+    call did not reach the environment, which leaves its state unchanged.
+    """
+
+    tool_call: Optional[ToolCall] = None
+    tool_call_error: Optional[str] = None
+    tool_result: Optional[ToolResult] = None
+    executed: bool = False
+    env_reward: Optional[float] = None
+    state_key: Optional[str] = None
+    cost: float = 0.0
+    env_done: bool = False
+    env_info: dict[str, Any] = field(default_factory=dict)
+
+
+class OneCallView:
+    """The fields of a turn's only tool call (``calls``), as turns had before several calls per turn: None or the
+    default for a turn without a call; a turn with several calls has to be read through ``calls``."""
+
+    calls: list[AgentCall]
+
+    def _only_call(self) -> Optional[AgentCall]:
+        if len(self.calls) > 1:
+            raise ValueError("the turn has several tool calls; read them from .calls")
+        return self.calls[0] if self.calls else None
+
+    @property
+    def tool_call(self) -> Optional[ToolCall]:
+        call = self._only_call()
+        return None if call is None else call.tool_call
+
+    @property
+    def tool_call_error(self) -> Optional[str]:
+        call = self._only_call()
+        return None if call is None else call.tool_call_error
+
+    @property
+    def tool_result(self) -> Optional[ToolResult]:
+        call = self._only_call()
+        return None if call is None else call.tool_result
+
+    @property
+    def env_reward(self) -> Optional[float]:
+        call = self._only_call()
+        return None if call is None else call.env_reward
+
+    @property
+    def state_key(self) -> Optional[str]:
+        call = self._only_call()
+        return None if call is None else call.state_key
+
+    @property
+    def cost(self) -> float:
+        call = self._only_call()
+        return 0.0 if call is None else call.cost
+
+    @property
+    def env_done(self) -> bool:
+        call = self._only_call()
+        return False if call is None else call.env_done
+
+    @property
+    def env_info(self) -> dict[str, Any]:
+        call = self._only_call()
+        return {} if call is None else call.env_info
+
+
+def turn_env_reward(calls: Sequence[AgentCall]) -> Optional[float]:
+    """What the environment's rewards of a turn's calls add up to (None when it gave none)."""
+    rewards = [call.env_reward for call in calls if call.env_reward is not None]
+    return float(sum(rewards)) if rewards else None
+
+
+@dataclass
+class AgentStep(OneCallView):
     model_text: str
     model_token_ids: list[int]
     finish_reason: Optional[str] = None
@@ -281,20 +411,12 @@ class AgentStep:
     expected_termination_token_ids: list[int] = field(default_factory=list)
     actual_termination_tail_ids: list[int] = field(default_factory=list)
     final_answer_error: Optional[str] = None
-    tool_call: Optional[ToolCall] = None
-    tool_call_error: Optional[str] = None
-    tool_result: Optional[ToolResult] = None
+    # The turn's tool-call blocks in the order written (AgentCall).
+    calls: list[AgentCall] = field(default_factory=list)
     observation_token_ids: list[int] = field(default_factory=list)
     observation_committed: bool = False
     # How many of the trajectory's observation images this step's committed observation added.
     observation_image_count: int = 0
-    # What the environment reported for this step's tool call (EnvStep). They keep their defaults when no call
-    # reached the environment (a malformed call), which leaves the environment's state unchanged.
-    env_reward: Optional[float] = None
-    state_key: Optional[str] = None
-    cost: float = 0.0
-    env_done: bool = False
-    env_info: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -370,22 +492,24 @@ def environment_report(
 ) -> dict[str, Any]:
     """What an environment reported during an episode, as trajectory records keep it (training generations,
     evaluation outputs, SFT exports): ``initial_state_key`` when it named the initial state, ``env_steps`` for the
-    tool calls it answered with a state, cost, reward, done or info, and ``env_outcome``. Empty for an environment
+    tool calls it answered with a state, cost, reward, done or info (by turn and call index), and ``env_outcome``. Empty for an environment
     that reports none of them (DeepEyes)."""
 
     env_steps = [
         {
             "turn_index": turn_index,
-            "tool": step.tool_call.name,
-            "state_key": step.state_key,
-            "cost": step.cost,
-            "reward": step.env_reward,
-            "done": step.env_done,
-            "info": dict(step.env_info),
+            "call_index": call_index,
+            "tool": call.tool_call.name,
+            "state_key": call.state_key,
+            "cost": call.cost,
+            "reward": call.env_reward,
+            "done": call.env_done,
+            "info": dict(call.env_info),
         }
         for turn_index, step in enumerate(steps)
-        if step.tool_call is not None
-        and (step.state_key is not None or step.cost or step.env_reward is not None or step.env_done or step.env_info)
+        for call_index, call in enumerate(step.calls)
+        if call.executed
+        and (call.state_key is not None or call.cost or call.env_reward is not None or call.env_done or call.env_info)
     ]
     report: dict[str, Any] = {}
     if initial_state_key is not None:

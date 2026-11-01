@@ -47,6 +47,10 @@ SYSTEM_PROMPT = (
     "You may call zoom_in to look at a region more closely; you can call it at most {max_tool_calls} times. "
     "Think briefly, then give the digit inside <answer></answer>, for example <answer>7</answer>."
 )
+# With several tool calls per turn (worker.rollout.agent_max_tool_calls_per_turn), the prompt says so.
+PER_TURN_NOTE = (
+    "You may make up to {max_tool_calls_per_turn} zoom_in calls in one turn; they run in the order written. "
+)
 TOOL_SCHEMA = {
     "type": "function",
     "function": {
@@ -98,13 +102,20 @@ def render_task_layout(image_seed: int) -> tuple[Image.Image, str, tuple[int, in
 
 
 class ToySearchEpisode:
-    def reset(self, config: dict[str, Any], seed: int, max_tool_calls: int) -> dict[str, Any]:
+    def reset(
+        self, config: dict[str, Any], seed: int, max_tool_calls: int, max_tool_calls_per_turn: int = 1
+    ) -> dict[str, Any]:
         # the task is fully given by the configuration; ``seed`` (shared by a group) is not needed
         self.canvas, self.digit = render_task(int(config["image_seed"]))
         self.zoom_calls = 0
         self.view = "level0:canvas"
+        system_prompt = SYSTEM_PROMPT.format(max_tool_calls=max_tool_calls)
+        if max_tool_calls_per_turn > 1:
+            head, tail = system_prompt.split("Think briefly", 1)
+            note = PER_TURN_NOTE.format(max_tool_calls_per_turn=max_tool_calls_per_turn)
+            system_prompt = f"{head}{note}Think briefly{tail}"
         return {
-            "system_prompt": SYSTEM_PROMPT.format(max_tool_calls=max_tool_calls),
+            "system_prompt": system_prompt,
             "user_content": [image_part(self.canvas), text_part("Which digit is hidden in this image?")],
             "tool_schemas": [TOOL_SCHEMA],
             "state_key": self.view,

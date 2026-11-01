@@ -25,7 +25,15 @@ from PIL import Image
 from verl.protocol import DataProto
 from verl.trainer.core_algos import AdvantageEstimator, compute_advantage_return
 from verl.trainer.step_advantage import compute_gigpo_advantage
-from verl.workers.agent.protocol import AgentMetrics, AgentStatus, AgentStep, AgentTrajectory, ToolCall, ToolResult
+from verl.workers.agent.protocol import (
+    AgentCall,
+    AgentMetrics,
+    AgentStatus,
+    AgentStep,
+    AgentTrajectory,
+    ToolCall,
+    ToolResult,
+)
 from verl.workers.agent.step_records import step_records
 from verl.workers.agent.trajectory import turn_action_spans
 
@@ -361,14 +369,19 @@ def _trajectory(observations, *, status=AgentStatus.ANSWERED, source_image=None,
         step = AgentStep(
             model_text="call",
             model_token_ids=action,
-            tool_call=None if (malformed_first and index == 0) else ToolCall("zoom", {}, ""),
-            tool_call_error="bad json" if (malformed_first and index == 0) else None,
-            tool_result=result,
             observation_token_ids=list(tokens),
             observation_committed=True,
             observation_image_count=len(images),
-            state_key=None if (malformed_first and index == 0) else f"s{index}",
-            env_reward=None if index else 0.25,
+            calls=[
+                AgentCall(
+                    tool_call=None if (malformed_first and index == 0) else ToolCall("zoom", {}, ""),
+                    tool_call_error="bad json" if (malformed_first and index == 0) else None,
+                    tool_result=result,
+                    state_key=None if (malformed_first and index == 0) else f"s{index}",
+                    env_reward=None if index else 0.25,
+                    executed=not (malformed_first and index == 0),
+                )
+            ],
         )
         response_ids += list(tokens)
         response_mask += [0] * len(tokens)

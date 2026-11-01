@@ -172,8 +172,9 @@ python scripts/check_bbox_mapping.py --model Qwen/Qwen2.5-VL-7B-Instruct
   prompt (see [Prompts](#prompts)): Qwen3-VL grounds in 0-1000 coordinates and has its own
   tool-call template, and the rewritten prompt covers several source images.
 - **Parsing of model turns.** The official environment executes the last `<tool_call>` of a turn
-  and words its error messages after the Python exception; here a turn with more than one tool
-  call, an empty answer or an answer inside unclosed reasoning is a tool or format error, and the
+  and words its error messages after the Python exception; here the first call of a turn runs and
+  the others get an error result (as with `worker.rollout.agent_max_tool_calls_per_turn=1` for any
+  environment), an empty answer or an answer inside unclosed reasoning is a format error, and the
   error messages are the tool's own.
 - **Responses without `<answer>`.** The official reward then judges the whole response (with
   balanced think tags it is no format error, and one of 1,000 characters or more is wrong); here

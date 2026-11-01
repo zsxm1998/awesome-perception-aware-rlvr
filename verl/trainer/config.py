@@ -1086,6 +1086,13 @@ class PPOConfig:
             if self.algorithm.adv_estimator == "remax":
                 raise ValueError("algorithm.rollout_image_transform does not support adv_estimator=remax.")
         self._validate_claim_probes()
+        if (
+            self.worker.rollout.interaction_mode != "agentic"
+            and self.worker.rollout.agent_max_tool_calls_per_turn != 1
+        ):
+            raise ValueError(
+                "worker.rollout.agent_max_tool_calls_per_turn needs worker.rollout.interaction_mode=agentic"
+            )
         if self.worker.rollout.interaction_mode == "agentic":
             unsupported_interventions = []
             intervention_fields = {
@@ -1135,6 +1142,11 @@ class PPOConfig:
                     self.worker.actor.model.model_path, self.data.override_chat_template
                 )
             else:
+                if rollout.agent_max_tool_calls_per_turn != 1:
+                    raise ValueError(
+                        "DeepEyes runs one tool call per turn (its prompts say so); set "
+                        "worker.rollout.agent_max_tool_calls_per_turn=1"
+                    )
                 overlapping = sorted({"bbox_format", "prompt_style"} & set(rollout.agent_environment_kwargs))
                 if overlapping:
                     raise ValueError(

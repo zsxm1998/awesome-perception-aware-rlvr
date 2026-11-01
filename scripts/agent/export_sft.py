@@ -102,6 +102,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--limit", type=int, help="replay the first N episodes only")
     parser.add_argument("--seed", type=int, default=1, help="base seed of the episodes (as data.seed)")
     parser.add_argument("--max-tool-calls", type=int, default=6, help="worker.rollout.agent_max_tool_calls")
+    parser.add_argument(
+        "--max-tool-calls-per-turn", type=int, default=1, help="worker.rollout.agent_max_tool_calls_per_turn"
+    )
     parser.add_argument("--max-response-tokens", type=int, default=8192, help="data.max_response_length")
     parser.add_argument(
         "--max-tokens-per-turn", type=int, default=10240, help="worker.rollout.agent_max_tokens_per_turn"
@@ -183,12 +186,18 @@ async def export(args: argparse.Namespace) -> dict[str, Any]:
         max_tool_calls=args.max_tool_calls,
         max_response_tokens=args.max_response_tokens,
         max_tokens_per_turn=args.max_tokens_per_turn,
+        max_tool_calls_per_turn=args.max_tool_calls_per_turn,
     )
 
     def prepare(image: Any) -> Any:  # the rollout's image preparation (the vLLM image cache's resize)
         return process_image(image, args.min_pixels, args.max_pixels)
 
-    context = EnvironmentContext(processor=processor, image_preprocessor=prepare, max_tool_calls=args.max_tool_calls)
+    context = EnvironmentContext(
+        processor=processor,
+        image_preprocessor=prepare,
+        max_tool_calls=args.max_tool_calls,
+        max_tool_calls_per_turn=args.max_tool_calls_per_turn,
+    )
     make_environment = environment_factory(args.environment, context, args.environment_kwargs)
     client = None
     if args.episodes:
@@ -242,6 +251,7 @@ async def export(args: argparse.Namespace) -> dict[str, Any]:
             pixels=pixels,
             observation_pixels=observation_pixels,
             tool_images=args.api_tool_images,
+            max_tool_calls_per_turn=args.max_tool_calls_per_turn,
         )
 
     args.out.mkdir(parents=True, exist_ok=True)

@@ -15,12 +15,15 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 from PIL import Image
 
 from ...utils.dataset import ProcessedImageInput, process_image
 from .protocol import (
+    TOO_MANY_TOOL_CALLS_IN_TURN,
+    TOOL_CALL_LIMIT_REACHED,
+    AgentCall,
     AgentEnvironment,
     AgentImageConfig,
     AgentLoopConfig,
@@ -33,11 +36,76 @@ from .protocol import (
     GenerationRequest,
     ObservationEncoder,
     ObservationEncodingRequest,
+    ParsedToolCall,
     ToolResult,
     checked_step_reward,
 )
 from .tool_call import NativeToolCallCodec, ToolCallCodec
 from .tools.base import tool_error
+
+
+def _too_many_calls_error(name: str, per_turn: int) -> ToolResult:
+    plural = "" if per_turn == 1 else "s"
+    return tool_error(name, TOO_MANY_TOOL_CALLS_IN_TURN, f"not run: at most {per_turn} tool call{plural} run per turn")
+
+
+async def run_tool_calls(
+    environment: AgentEnvironment,
+    parsed_calls: Sequence[ParsedToolCall],
+    metrics: AgentMetrics,
+    config: AgentLoopConfig,
+    *,
+    prepare_result: Callable[[ToolResult], ToolResult] = lambda result: result,
+    record_result: Callable[[AgentMetrics, ToolResult], None] = lambda metrics, result: None,
+) -> tuple[list[AgentCall], bool]:
+    """Run a turn's tool calls one after another, in the order written; return them as AgentCalls and whether the
+    environment ended the episode.
+
+    The first ``max_tool_calls_per_turn`` calls within the trajectory's remaining calls run (each counts as one
+    call, a malformed one too, which gets an error result and never reaches the environment); every other call gets
+    an error result and does not count. Calls after one that ends the episode do not run. ``prepare_result`` turns
+    an environment result into what the model is shown; ``record_result`` counts each result in ``metrics``."""
+    per_turn = config.max_tool_calls_per_turn
+    remaining = config.max_tool_calls - metrics.tool_call_attempts
+    calls: list[AgentCall] = []
+    for index, parsed in enumerate(parsed_calls):
+        call = AgentCall(tool_call=parsed.call, tool_call_error=parsed.error)
+        calls.append(call)
+        name = "unknown" if parsed.call is None else parsed.call.name
+        if index >= per_turn:
+            call.tool_result = _too_many_calls_error(name, per_turn)
+        elif index >= remaining:
+            metrics.tool_call_limit_reached = True
+            call.tool_result = tool_error(
+                name,
+                TOOL_CALL_LIMIT_REACHED,
+                f"not run: the {config.max_tool_calls} tool calls of the response are used up",
+            )
+        else:
+            metrics.tool_call_attempts += 1
+            if parsed.error is not None:
+                call.tool_result = tool_error("unknown", "malformed_tool_call", parsed.error)
+            else:
+                env_step = await environment.step(parsed.call)
+                call.executed = True
+                call.tool_result = prepare_result(env_step.result)
+                call.env_reward = checked_step_reward(env_step.reward)
+                call.state_key = env_step.state_key
+                call.cost = env_step.cost
+                call.env_info = dict(env_step.info)
+                call.env_done = bool(env_step.done)
+        record_result(metrics, call.tool_result)
+        if call.env_done:
+            # No model turn would read the observation, so it is not committed. The calls after this one do not
+            # run; those beyond the per-turn limit keep that error, so the turn reads as having too many.
+            for later_index, later in enumerate(parsed_calls[index + 1 :], start=index + 1):
+                calls.append(AgentCall(tool_call=later.call, tool_call_error=later.error))
+                if later_index >= per_turn:
+                    later_name = "unknown" if later.call is None else later.call.name
+                    calls[-1].tool_result = _too_many_calls_error(later_name, per_turn)
+                    record_result(metrics, calls[-1].tool_result)
+            return calls, True
+    return calls, False
 
 
 class AgentLoop:
@@ -232,32 +300,18 @@ class AgentLoop:
                 status = AgentStatus.TOOL_CALL_LIMIT
                 break
 
-            metrics.tool_call_attempts += 1
-            env_step = None
-            if parsed.tool_call_error is not None:
-                step.tool_call_error = parsed.tool_call_error
-                result = tool_error(
-                    "unknown",
-                    "malformed_tool_call",
-                    parsed.tool_call_error,
-                )
-            else:
-                assert parsed.tool_call is not None
-                step.tool_call = parsed.tool_call
-                env_step = await self.environment.step(parsed.tool_call)
-                result = self._resize_observation_images(env_step.result)
-            step.tool_result = result
-            self._record_tool_result(metrics, result)
-            if env_step is not None:
-                step.env_reward = checked_step_reward(env_step.reward)
-                step.state_key = env_step.state_key
-                step.cost = env_step.cost
-                step.env_info = dict(env_step.info)
-                if env_step.done:
-                    # No model turn would read this observation, so it is not committed.
-                    step.env_done = True
-                    status = AgentStatus.ENVIRONMENT_DONE
-                    break
+            step.calls, done = await run_tool_calls(
+                self.environment,
+                parsed.tool_calls,
+                metrics,
+                self.config,
+                prepare_result=self._resize_observation_images,
+                record_result=self._record_tool_result,
+            )
+            if done:
+                status = AgentStatus.ENVIRONMENT_DONE
+                break
+            results = tuple(call.tool_result for call in step.calls)
 
             remaining_tokens = self.config.max_response_tokens - effective_response_tokens
             if remaining_tokens <= 0:
@@ -266,7 +320,7 @@ class AgentLoop:
                 status = AgentStatus.LENGTH_LIMIT
                 break
 
-            encoded = await self.observation_encoder.encode(ObservationEncodingRequest(result=result))
+            encoded = await self.observation_encoder.encode(ObservationEncodingRequest(results=results))
             observation_token_ids = list(encoded.token_ids)
             observation_effective_tokens = (
                 len(observation_token_ids) if encoded.effective_token_count is None else encoded.effective_token_count
@@ -303,8 +357,7 @@ class AgentLoop:
             response_mask.extend([0] * len(observation_token_ids))
             effective_response_tokens += observation_effective_tokens
             observation_images.extend(encoded.images)
-            if result.success:
-                metrics.tool_call_successes += 1
+            metrics.tool_call_successes += sum(result.success for result in results)
             metrics.raw_observation_tokens += len(observation_token_ids)
             metrics.observation_tokens += observation_effective_tokens
             if metrics.visual_tokens is not None:

@@ -18,7 +18,7 @@ import json
 import re
 from typing import Protocol
 
-from .protocol import ParsedAction, ToolCall
+from .protocol import ParsedAction, ParsedToolCall, ToolCall
 
 
 class ToolCallCodec(Protocol):
@@ -57,41 +57,35 @@ class NativeToolCallCodec:
         tool_call_matches = list(self._TOOL_CALL_PATTERN.finditer(text))
         if not tool_call_matches:
             if "<tool_call>" in text or "</tool_call>" in text:
-                return ParsedAction(tool_call_error="tool call tags are incomplete")
+                return ParsedAction(tool_calls=(ParsedToolCall(error="tool call tags are incomplete"),))
             return ParsedAction()
 
         # Match the original DeepEyes environment: a complete tool-call block is
         # executable even when the model has not closed its reasoning tag yet.
         # Reasoning-tag balance remains a format-reward concern; rejecting the
         # action here would also withhold the crop observation and tool reward.
-        if len(tool_call_matches) != 1:
-            return ParsedAction(
-                tool_call_error="exactly one tool call is allowed per generation turn",
-            )
+        # Every block is parsed; how many of them run is the agent loop's limit.
+        return ParsedAction(tool_calls=tuple(self._parse_block(match.group(1)) for match in tool_call_matches))
 
-        raw_text = tool_call_matches[0].group(1).strip()
+    @staticmethod
+    def _parse_block(block: str) -> ParsedToolCall:
+        raw_text = block.strip()
         try:
             payload = json.loads(raw_text)
         except (TypeError, ValueError) as exc:
-            return ParsedAction(
-                tool_call_error=f"tool call is not valid JSON: {exc}",
-            )
+            return ParsedToolCall(error=f"tool call is not valid JSON: {exc}")
 
         if not isinstance(payload, dict):
-            return ParsedAction(tool_call_error="tool call must be a JSON object")
+            return ParsedToolCall(error="tool call must be a JSON object")
 
         name = payload.get("name")
         arguments = payload.get("arguments")
         if not isinstance(name, str) or not name:
-            return ParsedAction(
-                tool_call_error="tool call field 'name' must be a non-empty string",
-            )
+            return ParsedToolCall(error="tool call field 'name' must be a non-empty string")
         if not isinstance(arguments, dict):
-            return ParsedAction(
-                tool_call_error="tool call field 'arguments' must be a JSON object",
-            )
+            return ParsedToolCall(error="tool call field 'arguments' must be a JSON object")
 
-        return ParsedAction(tool_call=ToolCall(name=name, arguments=arguments, raw_text=raw_text))
+        return ParsedToolCall(call=ToolCall(name=name, arguments=arguments, raw_text=raw_text))
 
     def contains_answer_inside_reasoning(
         self,

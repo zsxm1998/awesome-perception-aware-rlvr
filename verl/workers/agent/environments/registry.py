@@ -90,7 +90,8 @@ class EnvironmentContext:
 
     ``image_preprocessor`` is the batch's model-side image resize (the vLLM image cache), so an environment
     that reasons about the model's view of an image (e.g. pixel coordinates) sees the frames the policy sees.
-    ``max_tool_calls`` is the configured tool-call limit of a trajectory. ``shared`` keeps objects that the
+    ``max_tool_calls`` is the configured tool-call limit of a trajectory and ``max_tool_calls_per_turn`` the calls
+    run per model turn; an environment writes both into its prompt. ``shared`` keeps objects that the
     environments of the batch share (an HTTP client, a concurrency limit); ``run_cleanup`` runs an episode's
     cleanup so that cancelling its trajectory (when another trajectory of the batch fails) does not cut it off.
     The batch owner calls ``aclose`` inside its event loop: it waits for the cleanups, then closes the shared
@@ -100,6 +101,7 @@ class EnvironmentContext:
     processor: Any
     image_preprocessor: Callable[[Any], Any]
     max_tool_calls: int = 0
+    max_tool_calls_per_turn: int = 1
     _shared: dict[Hashable, Any] = field(default_factory=dict, repr=False)
     _cleanups: set = field(default_factory=set, repr=False)
     _closed: bool = field(default=False, repr=False)

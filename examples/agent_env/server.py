@@ -23,6 +23,7 @@ server can use any web framework that speaks the same JSON.
 from __future__ import annotations
 
 import base64
+import inspect
 import io
 import json
 import threading
@@ -40,7 +41,10 @@ class Episode(Protocol):
     """One episode of an environment. Return values are the JSON bodies of docs/agent_environments.md."""
 
     def reset(self, config: dict[str, Any], seed: int, max_tool_calls: int) -> dict[str, Any]:
-        """{"user_content": [...], "tool_schemas": [...], "system_prompt": str | None, "state_key"?: str}"""
+        """{"user_content": [...], "tool_schemas": [...], "system_prompt": str | None, "state_key"?: str}
+
+        An episode that supports several tool calls per turn takes a keyword argument
+        ``max_tool_calls_per_turn`` (and writes it into its prompt); one that does not supports the default 1."""
 
     def step(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """{"content": [...], "success": bool, "error_code"?, "done"?, "reward"?, "state_key"?, "cost"?, "info"?}"""
@@ -98,7 +102,18 @@ class EpisodeServer:
         self._drop_idle_episodes()
         if path == "/reset":
             episode = self.make_episode()
-            response = episode.reset(dict(body["config"]), int(body["seed"]), int(body.get("max_tool_calls", 0)))
+            per_turn = int(body.get("max_tool_calls_per_turn", 1))
+            limits: dict[str, int] = {}
+            if "max_tool_calls_per_turn" in inspect.signature(episode.reset).parameters:
+                limits["max_tool_calls_per_turn"] = per_turn
+            elif per_turn != 1:
+                raise ProtocolError(
+                    HTTPStatus.BAD_REQUEST,
+                    f"this environment runs one tool call per turn, not max_tool_calls_per_turn={per_turn}",
+                )
+            response = episode.reset(
+                dict(body["config"]), int(body["seed"]), int(body.get("max_tool_calls", 0)), **limits
+            )
             episode_id = uuid.uuid4().hex
             with self._lock:
                 self._episodes[episode_id] = _Record(episode=episode, touched=self.clock())

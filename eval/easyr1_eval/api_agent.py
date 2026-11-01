@@ -44,11 +44,12 @@ from verl.workers.agent.protocol import (
     environment_report,
 )
 
-from .agent_common import AgenticSampleError, failed_trajectory_output, stable_sample_index
+from .agent_common import AgenticSampleError, agent_config_record, failed_trajectory_output, stable_sample_index
 from .schemas import EvalSample, GenerationConfig, GenerationOutput
 
 
-API_RUNNER_VERSION = 1
+# 2: a turn with several tool calls runs its first max_tool_calls_per_turn calls (before, it was one malformed call)
+API_RUNNER_VERSION = 2
 _TOOL_CALL_BLOCK = "<tool_call>"
 
 
@@ -128,7 +129,10 @@ class AgenticAPIBackend:
             transport=self._transport,
         )
         context = EnvironmentContext(
-            processor=None, image_preprocessor=lambda image: image, max_tool_calls=self.agent_config.max_tool_calls
+            processor=None,
+            image_preprocessor=lambda image: image,
+            max_tool_calls=self.agent_config.max_tool_calls,
+            max_tool_calls_per_turn=self.agent_config.max_tool_calls_per_turn,
         )
         make_environment = environment_factory(self.agent_environment, context, self.agent_environment_kwargs)
         semaphore = asyncio.Semaphore(self.concurrency)
@@ -191,7 +195,7 @@ class AgenticAPIBackend:
             "pixels": list(self.pixels),
             "observation_pixels": list(self.observation_pixels),
             "tool_images": self.tool_images,
-            "agent_config": self.agent_config.__dict__,
+            "agent_config": agent_config_record(self.agent_config),
             "environment": self.agent_environment,
             "environment_kwargs": self.agent_environment_kwargs,
             "generation": {"temperature": config.temperature, "top_p": config.top_p, "seed": config.seed},
@@ -229,6 +233,34 @@ class AgenticAPIBackend:
         self._cache.setdefault(benchmark, {})[key] = record
 
 
+def _call_record(call: Any) -> dict[str, Any]:
+    return {
+        "tool_call": (
+            None
+            if call.tool_call is None
+            else {"name": call.tool_call.name, "arguments": dict(call.tool_call.arguments)}
+        ),
+        "tool_call_error": call.tool_call_error,
+        "tool_success": None if call.tool_result is None else call.tool_result.success,
+        "tool_error_code": None if call.tool_result is None else call.tool_result.error_code,
+    }
+
+
+def _turn_record(turn: Any) -> dict[str, Any]:
+    record = {
+        "content": turn.content,
+        "reasoning": turn.reasoning,
+        "finish_reason": turn.finish_reason,
+        "native_tool_call": turn.native_tool_call,
+    }
+    if len(turn.calls) > 1:
+        record.update({"tool_call": None, "tool_call_error": None, "tool_success": None, "tool_error_code": None})
+        record["calls"] = [_call_record(call) for call in turn.calls]
+    else:  # the turn's only call (or none), through its single-call fields
+        record.update(_call_record(turn))
+    return record
+
+
 def api_episode_to_generation_output(episode: APIEpisode) -> GenerationOutput:
     """The score-facing final reply and the trajectory's diagnostics, as for local agent runs."""
     metrics = episode.metrics
@@ -259,24 +291,9 @@ def api_episode_to_generation_output(episode: APIEpisode) -> GenerationOutput:
             "prompt_tokens": sum(turn.prompt_tokens or 0 for turn in episode.turns),
             "completion_tokens": sum(turn.completion_tokens or 0 for turn in episode.turns),
         },
-        # the conversation without images: each reply and what its tool call got
-        "turns": [
-            {
-                "content": turn.content,
-                "reasoning": turn.reasoning,
-                "finish_reason": turn.finish_reason,
-                "native_tool_call": turn.native_tool_call,
-                "tool_call": (
-                    None
-                    if turn.tool_call is None
-                    else {"name": turn.tool_call.name, "arguments": dict(turn.tool_call.arguments)}
-                ),
-                "tool_call_error": turn.tool_call_error,
-                "tool_success": None if turn.tool_result is None else turn.tool_result.success,
-                "tool_error_code": None if turn.tool_result is None else turn.tool_result.error_code,
-            }
-            for turn in episode.turns
-        ],
+        # the conversation without images: each reply and what its tool call got (``calls`` for a turn with
+        # several calls, whose single-call fields are null)
+        "turns": [_turn_record(turn) for turn in episode.turns],
     }
     agent.update(environment_report(episode.turns, episode.env_outcome, episode.initial_state_key))
     return GenerationOutput(

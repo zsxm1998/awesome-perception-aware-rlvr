@@ -598,7 +598,9 @@ predictions keep each trajectory's `env_outcome` (with the environment's `detail
 `episode_id`) and per-call `env_steps` (state key, cost, reward, info) in `agent_diagnostics`
 ([docs/agent_environments.md](../docs/agent_environments.md#training-configuration)).
 `--agent-environment` defaults to `remote_http`; it can also be `path/to/file.py:ClassName`.
-The environment and its options (e.g. the server url) enter the result fingerprint.
+`--agent-max-tool-calls-per-turn` (default 1) is the number of tool calls run per model turn, as
+`worker.rollout.agent_max_tool_calls_per_turn` in training. The environment and its options (e.g. the
+server url), and the per-turn limit when it is not 1, enter the result fingerprint.
 
 ### API models in agent environments
 
@@ -618,7 +620,8 @@ python eval/run_all_benchmarks.py --model qwen3-vl-plus --backend api \
 ```
 
 The loop follows the local one (verl/workers/agent/api_loop.py): an `<answer>` ends the
-episode, one tool call per turn, after `--agent-max-tool-calls` calls one more turn may only
+episode, the first `--agent-max-tool-calls-per-turn` (default 1) calls of a turn run and the others
+get an error result, after `--agent-max-tool-calls` calls one more turn may only
 answer, `--agent-max-tokens-per-turn` is each request's token limit and
 `--agent-max-response-tokens` caps the completion tokens of a trajectory (the API's count;
 observations are not counted, unlike local runs), so the endpoint must report token usage in its

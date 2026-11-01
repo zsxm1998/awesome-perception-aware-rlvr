@@ -235,12 +235,16 @@ def test_native_tool_codec_prioritizes_final_answer_and_reports_malformed_calls(
 
     answered = codec.parse(_tool_call({"bbox_2d": [0, 0, 1000, 1000]}) + "<answer> final response </answer>")
     malformed = codec.parse('<tool_call>{"name":"image_zoom_in_tool"</tool_call>')
-    multiple = codec.parse(_tool_call({"bbox_2d": [0, 0, 1000, 1000]}) + _tool_call({"bbox_2d": [0, 0, 1000, 1000]}))
+    multiple = codec.parse(_tool_call({"bbox_2d": [0, 0, 1000, 1000]}) + '<tool_call>{"name": 1}</tool_call>')
 
     assert answered.final_answer == "final response"
     assert answered.tool_call is None
     assert malformed.tool_call_error is not None
-    assert multiple.tool_call_error == "exactly one tool call is allowed per generation turn"
+    # every block is parsed on its own; how many run is the loop's per-turn limit
+    assert len(multiple.tool_calls) == 2
+    assert multiple.tool_calls[0].call.arguments == {"bbox_2d": [0, 0, 1000, 1000]}
+    assert multiple.tool_calls[1].error == "tool call field 'name' must be a non-empty string"
+    assert multiple.tool_call is None and multiple.tool_call_error is None
 
 
 def test_native_tool_codec_rejects_empty_or_unclosed_think_final_answer():
