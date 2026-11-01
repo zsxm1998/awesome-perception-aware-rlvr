@@ -47,7 +47,11 @@ class Episode(Protocol):
         ``max_tool_calls_per_turn`` (and writes it into its prompt); one that does not supports the default 1."""
 
     def step(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        """{"content": [...], "success": bool, "error_code"?, "done"?, "reward"?, "state_key"?, "cost"?, "info"?}"""
+        """{"content": [...], "success": bool, "error_code"?, "done"?, "reward"?, "state_key"?, "cost"?, "info"?}
+
+        An episode that tells the model how many calls remain takes a keyword argument ``tool_calls_used``: the
+        trajectory's calls before this one that counted towards ``max_tool_calls``, malformed ones (which never
+        reach the server) included."""
 
     def finalize(self, final_answer: Optional[str], status: str) -> dict[str, Any]:
         """{"reward": float | None, "components": {...}, "metrics": {...}, "details"?: {...}}"""
@@ -151,8 +155,11 @@ class EpisodeServer:
                     HTTPStatus.CONFLICT, f"step_index {index} out of order (next is {len(record.steps)})"
                 )
             call = body["tool_call"]
+            used: dict[str, int] = {}
+            if "tool_calls_used" in body and "tool_calls_used" in inspect.signature(record.episode.step).parameters:
+                used["tool_calls_used"] = int(body["tool_calls_used"])
             try:
-                result = record.episode.step(call["name"], call["arguments"])
+                result = record.episode.step(call["name"], call["arguments"], **used)
             except Exception as exc:
                 record.failure = f"step {index} raised {type(exc).__name__}: {exc}"
                 raise

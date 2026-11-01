@@ -112,7 +112,8 @@ class RemoteHTTPEnvironment:
 
     Requests that fail with a network error, a timeout, HTTP 408, 429, 500, 502, 503 or 504 are retried with
     exponential backoff (``retries`` times). ``/step`` carries ``step_index``, so a server can answer a
-    repeated step without executing it twice. Images arrive as base64 PNG. ``max_images_per_step`` bounds the
+    repeated step without executing it twice, and ``tool_calls_used``, the trajectory's calls that counted towards
+    ``max_tool_calls`` before this one (malformed calls, which the server never sees, included). Images arrive as base64 PNG. ``max_images_per_step`` bounds the
     images of one step (it sizes vLLM's per-prompt image limit); a step that returns more fails. Proxy settings
     in the environment variables (HTTP_PROXY, ALL_PROXY, ...) are ignored unless ``trust_env`` is set, since an
     environment server usually runs on the same machine or cluster as the trainer.
@@ -231,24 +232,21 @@ class RemoteHTTPEnvironment:
             state_key=state_key,
         )
 
-    async def step(self, call: ToolCall) -> EnvStep:
+    async def step(self, call: ToolCall, *, tool_calls_used: Optional[int] = None) -> EnvStep:
         if self.episode_id is None:
             raise RemoteEnvironmentError("step() before reset()")
         step_index = self.step_index
         try:
-            return await self._step(call)
+            return await self._step(call, tool_calls_used)
         except RemoteEnvironmentError as exc:
             raise RemoteEnvironmentError(f"episode {self.episode_id}, step {step_index}: {exc}") from exc
 
-    async def _step(self, call: ToolCall) -> EnvStep:
-        response = await self._post(
-            "/step",
-            {
-                "episode_id": self.episode_id,
-                "step_index": self.step_index,
-                "tool_call": {"name": call.name, "arguments": dict(call.arguments)},
-            },
-        )
+    async def _step(self, call: ToolCall, tool_calls_used: Optional[int]) -> EnvStep:
+        payload: dict[str, Any] = {"episode_id": self.episode_id, "step_index": self.step_index}
+        if tool_calls_used is not None:
+            payload["tool_calls_used"] = tool_calls_used
+        payload["tool_call"] = {"name": call.name, "arguments": dict(call.arguments)}
+        response = await self._post("/step", payload)
         self.step_index += 1
         images: list = []
         parts = self._chat_parts(response.get("content"), images)

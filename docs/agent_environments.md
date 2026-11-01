@@ -64,6 +64,7 @@ no common practice was found. For comparison, verl v0.9.1 (`verl/experimental/ag
 | Rule here | Elsewhere |
 | --- | --- |
 | The limit counts tool calls (`agent_max_tool_calls`), a malformed one too; after it, one more turn may only answer, and a call in it ends the episode (`tool_call_limit`). | verl ends a trajectory at `multi_turn.max_assistant_turns` or `max_user_turns`, counted in turns, with no turn reserved for the answer. |
+| `/step` tells the environment how many calls counted before this one (`tool_calls_used`), since malformed calls count but never reach it. | In gym-style interfaces (`step(action)`) the environment counts its own steps. |
 | A malformed call gets an error result from the loop and never reaches the environment. | verl's Hermes parser drops a block it cannot decode, and a turn without a decodable call ends the trajectory; verl-agent gives the text to the environment's projection, which marks the step invalid. |
 | Several calls of a turn run one after another, and every call gets a result, except those within the per-turn limit after one that ended the episode (above). | verl runs the first `max_parallel_calls` concurrently and drops the others. |
 | `reward: null` from `finalize` means that the environment does not score the episode; the environment reward function and scorer then fail rather than count 0. | verl's reward functions return a number, or a dict with its `score`. |
@@ -138,7 +139,7 @@ JSON bodies, `POST`, HTTP 200 on success. Images are PNG, base64-encoded.
 | Endpoint | Request | Response |
 | --- | --- | --- |
 | `/reset` | `{"config": {...}, "seed": int, "max_tool_calls": int, "max_tool_calls_per_turn": int}` | `{"episode_id": str, "system_prompt": str or null, "user_content": [part, ...], "tool_schemas": [schema, ...], "state_key": str or null}` (`state_key` optional) |
-| `/step` | `{"episode_id": str, "step_index": int, "tool_call": {"name": str, "arguments": {...}}}` | `{"content": [part, ...], "success": bool, "error_code": str (when not success), "done": bool, "reward": finite float or null, "state_key": str or null, "cost": float, "info": {...}}` |
+| `/step` | `{"episode_id": str, "step_index": int, "tool_calls_used": int, "tool_call": {"name": str, "arguments": {...}}}` | `{"content": [part, ...], "success": bool, "error_code": str (when not success), "done": bool, "reward": finite float or null, "state_key": str or null, "cost": float, "info": {...}}` |
 | `/finalize` | `{"episode_id": str, "final_answer": str or null, "status": str}` | `{"reward": float or null, "components": {name: float}, "metrics": {name: float}, "details": {...}}` (`details` optional) |
 | `/close` | `{"episode_id": str}` | `{}` |
 
@@ -149,13 +150,17 @@ and must be present; an empty list means a single turn without tools.
 - `seed` is shared by the rollouts of a prompt and by their retries; the same `(config, seed)` must give the
   same initial messages, images, tools and task state, including anything sampled per episode.
 - `max_tool_calls` is the trainer's limit; write it into the prompt and the remaining-calls notes instead of
-  keeping a second limit. `max_tool_calls_per_turn` is the number of calls run per turn; write it into the prompt
-  too. A server should ignore request fields it does not know, so that later fields do not break it.
+  keeping a second limit (the calls left come from `tool_calls_used` below). `max_tool_calls_per_turn` is the
+  number of calls run per turn; write it into the prompt too. A server should ignore request fields it does not
+  know, so that later fields do not break it.
 - `step_index` counts the calls the episode received, from 0. A repeated `(episode_id, step_index)` must
   return the first response without executing the call again (the client retries requests whose response
   was lost); an index that skips ahead or goes back is an error. When a call fails inside the server after
   it may have changed the episode, the episode should take no more calls: the reference server answers the
   retry with HTTP 409 instead of running the call again, which fails the training step.
+- `tool_calls_used` counts the trajectory's calls before this one that counted towards `max_tool_calls`,
+  malformed ones included, which never reach the server; so it can be above `step_index`. After this call,
+  `max_tool_calls − tool_calls_used − 1` calls are left: use this, not `step_index`, for a remaining-calls note.
 - A call the environment refuses (an unknown tool, invalid arguments, a budget used up) is an ordinary answer:
   HTTP 200 with `success: false` and the reason in `content`, which the model reads. An error status is for the
   server's own failures and fails the training step (after the client's retries, for the statuses above): the
@@ -192,7 +197,7 @@ and must be present; an empty list means a single turn without tools.
 the Python standard library: write an `Episode` class with `reset`, `step` and `finalize`, and call `serve`. It
 drops idle episodes when a later request arrives, never one with a request in progress. An `Episode.reset` that
 takes a `max_tool_calls_per_turn` keyword gets the limit; for one that does not, the server refuses a limit other
-than 1.
+than 1. An `Episode.step` that takes a `tool_calls_used` keyword gets it.
 
 ## Step-level advantages (GiGPO)
 
@@ -339,8 +344,9 @@ differently, and the check reports it.
 A class with `async reset / step / finalize / close` and `chat_adapter` (see `AgentEnvironment` in
 `verl/workers/agent/protocol.py`), built as `cls(context, **agent_environment_kwargs)` once per trajectory.
 `context` holds the processor, the batch's model-side image resize, the tool-call limits (`max_tool_calls`,
-`max_tool_calls_per_turn`) and objects shared by the batch's environments. Constructors must not acquire resources (one instance is built when the rollout
-starts, to check the options). `LocalToolEnvironment` runs stateless `AgentTool`s; `DeepEyesEnvironment`
+`max_tool_calls_per_turn`) and objects shared by the batch's environments. A `step` that takes a keyword argument
+`tool_calls_used` gets the calls counted before this one, as in `/step`. Constructors must not acquire resources
+(one instance is built when the rollout starts, to check the options). `LocalToolEnvironment` runs stateless `AgentTool`s; `DeepEyesEnvironment`
 builds on it. Methods that never suspend (no awaiting I/O, threads or sleeps) leave the batched rollout's vLLM
 batches as they were without environments; DeepEyes relies on this to give the same results as before the
 environment interface. `EnvironmentChatAdapter` renders an environment's own prompt and observations;

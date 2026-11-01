@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import replace
 from typing import Callable, Optional, Sequence
 
@@ -32,11 +33,13 @@ from .protocol import (
     AgentStatus,
     AgentStep,
     AgentTrajectory,
+    EnvStep,
     GenerationBackend,
     GenerationRequest,
     ObservationEncoder,
     ObservationEncodingRequest,
     ParsedToolCall,
+    ToolCall,
     ToolResult,
     checked_step_reward,
 )
@@ -47,6 +50,17 @@ from .tools.base import tool_error
 def _too_many_calls_error(name: str, per_turn: int) -> ToolResult:
     plural = "" if per_turn == 1 else "s"
     return tool_error(name, TOO_MANY_TOOL_CALLS_IN_TURN, f"not run: at most {per_turn} tool call{plural} run per turn")
+
+
+async def step_environment(environment: AgentEnvironment, call: ToolCall, tool_calls_used: Optional[int]) -> EnvStep:
+    """Run ``call`` in ``environment``, telling it ``tool_calls_used`` when its ``step`` takes that keyword.
+
+    ``tool_calls_used`` is the number of the trajectory's calls that counted towards ``max_tool_calls`` before this
+    one, malformed calls included, which never reach the environment (so it can be above the environment's own
+    count of calls). An environment that does not take the keyword is called as before."""
+    if tool_calls_used is not None and "tool_calls_used" in inspect.signature(environment.step).parameters:
+        return await environment.step(call, tool_calls_used=tool_calls_used)
+    return await environment.step(call)
 
 
 async def run_tool_calls(
@@ -64,7 +78,8 @@ async def run_tool_calls(
     The first ``max_tool_calls_per_turn`` calls within the trajectory's remaining calls run (each counts as one
     call, a malformed one too, which gets an error result and never reaches the environment); every other call gets
     an error result and does not count. Calls after one that ends the episode do not run. ``prepare_result`` turns
-    an environment result into what the model is shown; ``record_result`` counts each result in ``metrics``."""
+    an environment result into what the model is shown; ``record_result`` counts each result in ``metrics``. An
+    environment whose ``step`` takes ``tool_calls_used`` gets the calls counted before each call (``step_environment``)."""
     per_turn = config.max_tool_calls_per_turn
     remaining = config.max_tool_calls - metrics.tool_call_attempts
     calls: list[AgentCall] = []
@@ -89,7 +104,7 @@ async def run_tool_calls(
                 metrics.malformed_tool_calls += 1
                 call.tool_result = tool_error("unknown", "malformed_tool_call", parsed.error)
             else:
-                env_step = await environment.step(parsed.call)
+                env_step = await step_environment(environment, parsed.call, metrics.tool_call_attempts - 1)
                 call.executed = True
                 call.tool_result = prepare_result(env_step.result)
                 call.env_reward = checked_step_reward(env_step.reward)

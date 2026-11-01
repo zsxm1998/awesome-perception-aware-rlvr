@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from .episode import EpisodeRun, run_environment_episode
+from .loop import step_environment
 from .protocol import (
     TOO_MANY_TOOL_CALLS_IN_TURN,
     TOOL_CALL_LIMIT_REACHED,
@@ -177,8 +178,8 @@ class _ReplayEnvironment:
             await _maybe_await(start(dict(config), seed, reset))
         return reset
 
-    async def step(self, call: ToolCall) -> EnvStep:
-        self.history.append(await self.environment.step(call))
+    async def step(self, call: ToolCall, *, tool_calls_used: Optional[int] = None) -> EnvStep:
+        self.history.append(await step_environment(self.environment, call, tool_calls_used))
         return self.history[-1]
 
     async def finalize(self, final_answer: Optional[str], status: AgentStatus) -> Optional[EnvOutcome]:

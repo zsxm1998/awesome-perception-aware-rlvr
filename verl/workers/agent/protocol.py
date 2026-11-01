@@ -291,6 +291,9 @@ class AgentEnvironment(Protocol):
     In-process environments therefore must not suspend (no awaiting futures, threads, I/O or sleeps): an
     ``await`` on them completes at once and leaves the scheduler's batches as they were.
     ``chat_adapter`` returns the encoder that renders this environment's prompt and observations.
+    ``step`` may take a keyword argument ``tool_calls_used``: the agent loop then passes the number of the
+    trajectory's calls that counted towards ``max_tool_calls`` before this one, malformed calls included (they never
+    reach the environment), so that the environment can tell the model how many calls remain.
     """
 
     async def reset(self, config: Mapping[str, Any], seed: int) -> EnvReset: ...
