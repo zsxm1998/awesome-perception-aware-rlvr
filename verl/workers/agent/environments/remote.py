@@ -119,6 +119,9 @@ class RemoteHTTPEnvironment:
     environment server usually runs on the same machine or cluster as the trainer.
     """
 
+    # its episodes live on a server, so every rank of a tensor-parallel group would open them again
+    remote = True
+
     def __init__(
         self,
         context: EnvironmentContext,

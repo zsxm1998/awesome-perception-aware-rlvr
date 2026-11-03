@@ -14,9 +14,11 @@
 
 from .deepeyes import DeepEyesEnvironment
 from .local import LocalToolEnvironment
+from .openreward import OpenRewardEnvironment, OpenRewardEnvironmentError
 from .registry import (
     EnvironmentContext,
     class_from_file,
+    environment_class,
     environment_factory,
     register_environment,
     registered_environments,
@@ -29,9 +31,12 @@ __all__ = [
     "DeepEyesEnvironment",
     "EnvironmentContext",
     "LocalToolEnvironment",
+    "OpenRewardEnvironment",
+    "OpenRewardEnvironmentError",
     "RemoteEnvironmentError",
     "RemoteHTTPEnvironment",
     "class_from_file",
+    "environment_class",
     "environment_factory",
     "register_environment",
     "registered_environments",

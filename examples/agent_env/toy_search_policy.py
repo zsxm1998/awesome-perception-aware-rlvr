@@ -28,7 +28,7 @@ from typing import Any, Optional
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from toy_search import CANVAS, render_task_layout  # noqa: E402
+from toy_search import CANVAS, image_seed_of, render_task_layout  # noqa: E402
 
 
 QUARTERS = (
@@ -42,7 +42,7 @@ GLYPH = (7, 11)  # the digit's size in canvas pixels (the environment's font, si
 
 class ToySearchPolicy:
     def start(self, env_config: dict[str, Any], seed: int, reset: Any) -> None:
-        _, self.digit, (x, y) = render_task_layout(int(env_config["image_seed"]))
+        _, self.digit, (x, y) = render_task_layout(image_seed_of(env_config))
         scale = 1000.0 / CANVAS
         self.glyph = (x * scale, y * scale, (x + GLYPH[0]) * scale, (y + GLYPH[1]) * scale)
         self.quarter = 0
@@ -62,3 +62,4 @@ class ToySearchPolicy:
     def _shows_digit(self, box: list[int]) -> bool:
         x1, y1, x2, y2 = self.glyph
         return box[0] <= x1 and box[1] <= y1 and x2 <= box[2] and y2 <= box[3]
+

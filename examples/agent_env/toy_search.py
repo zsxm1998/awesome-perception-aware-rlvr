@@ -73,6 +73,18 @@ TOOL_SCHEMA = {
 }
 
 
+# the first image seed of each split: a task of the OpenReward and OpenEnv versions is (split, index), whose seed is
+# the split's first seed plus the index
+SPLIT_SEEDS = {"train": 0, "val": 10**6}
+
+
+def image_seed_of(config: dict[str, Any]) -> int:
+    """The task's image seed: ``image_seed`` (this server's rows), else ``split`` and ``index``."""
+    if "image_seed" in config:
+        return int(config["image_seed"])
+    return SPLIT_SEEDS[config["split"]] + int(config["index"])
+
+
 def render_task(image_seed: int) -> tuple[Image.Image, str]:
     """The canvas and its digit; the same seed always gives the same task."""
     canvas, digit, _ = render_task_layout(image_seed)
@@ -175,7 +187,8 @@ def write_tasks(out: Path, num_train: int, num_val: int) -> None:
     import pandas as pd
 
     out.mkdir(parents=True, exist_ok=True)
-    for split, first, count in (("train", 0, num_train), ("val", 10**6, num_val)):
+    for split, count in (("train", num_train), ("val", num_val)):
+        first = SPLIT_SEEDS[split]
         rows = []
         for image_seed in range(first, first + count):
             _, digit = render_task(image_seed)
