@@ -9,11 +9,12 @@ episode ended. The same environments serve training and evaluation
 | --- | --- |
 | `deepeyes` (also when `agent_environment` is null) | DeepEyes' zoom-in task, in process: the data row is the task (its prompt and images), `image_zoom_in_tool` crops a source image ([DeepEyes](../examples/reproduction/deepeyes/README.md)) |
 | `remote_http` | any environment served over HTTP with the protocol below, e.g. one written in another project |
+| `openreward` | an environment of the Open Reward Standard, on openreward.ai or self-hosted ([below](#openreward-environments)) |
 | `path/to/file.py:ClassName` | your own in-process class |
 
 Examples in [examples/agent_env/](../examples/agent_env/README.md): a toy visual-search environment
-(find the one digit among small letters with zoom-ins; its reward comes from the environment) and
-DeepEyes served over HTTP (the same prompts and observations as the in-process environment, token for
+(find the one digit among small letters with zoom-ins; its reward comes from the environment), the same task as
+an OpenReward environment, and DeepEyes served over HTTP (the same prompts and observations as the in-process environment, token for
 token, with DeepEyes' reward function on the trainer).
 
 ## How a trajectory runs
@@ -77,6 +78,9 @@ no common practice was found. For comparison, verl v0.9.1 (`verl/experimental/ag
 | Several calls of a turn run one after another, and every call gets a result, except those within the per-turn limit after one that ended the episode (above). | verl runs the first `max_parallel_calls` concurrently and drops the others. |
 | `reward: null` from `finalize` means that the environment does not score the episode; the environment reward function and scorer then fail rather than count 0. | verl's reward functions return a number, or a dict with its `score`. |
 | The environment's components and metrics are logged as `env/<name>`; a name reported by some samples only is averaged over them, with a `*_count` entry. | verl's reward managers collect the extra values of each key in a list (`reward_manager/naive.py`), whose lengths differ when samples return different keys. |
+| The `openreward` environment adds a system message with the loop's rules (the tool-call limits, the answer inside `<answer></answer>`), since the environment writes only the task. | ROLL's OpenReward environment adds no system message (the chat template's tool preamble only); SkyRL writes the tool descriptions into one; TRL adds none and does not tell the model the limit. |
+| An OpenReward session that ends with an error (a tool that raised, the network after the SDK's retries) fails the training step; a call the environment refuses (unknown tool, invalid input) is a result the model reads. | TRL, ROLL and SkyRL give the model the error text as the tool's result and go on (TRL then leaves a rollout without any reward out of the group's baseline; ROLL and SkyRL count 0). |
+| The rewards of an OpenReward episode add up (each tool's, then the terminal tool's); an episode that ends unfinished gets 0. | ROLL sums them by default (mean, max or min optional), SkyRL returns each step's; TRL takes the last non-null one and gives `None` (no score) when there is none. |
 
 ## Training configuration
 
@@ -137,7 +141,8 @@ since an environment server usually runs on the same machine or cluster. After t
 request fails the training step, which can resume from the last checkpoint; the error names the episode and
 the step.
 
-The batched rollout runs every trajectory on each rank of a tensor-parallel group, so `remote_http` needs
+The batched rollout runs every trajectory on each rank of a tensor-parallel group, so the environments whose
+episodes live on a server (`remote_http`, `openreward`; a class of your own sets `remote = True`) need
 `worker.rollout.tensor_parallel_size=1` (the server mode below runs every trajectory once). While a trajectory waits for the server, the other trajectories'
 turns go to vLLM in smaller batches; DeepEyes over HTTP took more generation time than the
 in-process environment (1.3 to 1.5 times) in a 2-step test.
@@ -258,6 +263,61 @@ the Python standard library: write an `Episode` class with `reset`, `step` and `
 drops idle episodes when a later request arrives, never one with a request in progress. An `Episode.reset` that
 takes a `max_tool_calls_per_turn` keyword gets the limit; for one that does not, the server refuses a limit other
 than 1. An `Episode.step` that takes a `tool_calls_used` keyword gets it.
+
+## OpenReward environments
+
+[OpenReward](https://openreward.ai) environments follow the [Open Reward Standard](https://openrewardstandard.io) (ORS),
+an HTTP and server-sent-events protocol: an environment has splits of tasks, and a session of one task gives the task's
+prompt (text and images), its tools (names, descriptions and JSON schemas) and, for each call, a result with an
+optional reward and whether the task is finished. `agent_environment=openreward` runs every trajectory in its own
+session through the official SDK, as TRL (`trl.experimental.openreward`), ROLL and SkyRL do; the SDK takes care of
+creating sessions, keep-alive pings, resumed event streams and secrets. It is an optional dependency, imported when
+an episode starts: `pip install openreward` in the training environment (tested with 0.1.167; it pins `sse-starlette==2.3.6`, a
+downgrade of a package that only `mcp` uses in this repository's environment).
+
+| Option (`agent_environment_kwargs.*`) | Default | Meaning |
+| --- | --- | --- |
+| `environment` | `null` | the environment: `owner/Name` on openreward.ai, or its name on a self-hosted server (a row may name another) |
+| `split` | `train` | the split of the rows that give only an `index` |
+| `url` | `null` | a self-hosted ORS server (the SDK's `Server`); otherwise openreward.ai, with `OPENREWARD_API_KEY` from the environment variables |
+| `max_sessions` | `64` | sessions open at a time per rollout worker, each from `reset` to `close` (in server mode, per agent worker) |
+| `max_images_per_step` | `1` | as for `remote_http`: the most images one call returns, which sizes `worker.rollout.limit_images` |
+| `system_prompt` | `null` | the system message with the loop's rules (below); a template with `{max_tool_calls}` and `{max_tool_calls_per_turn}`, or `""` for none |
+| `secrets_from_env` | `[]` | names of environment variables whose values the session gets as secrets (an environment that calls a judge model, say); the values never enter the configuration or the logs |
+
+Each data row's configuration names the task: `{"index": 17}`, with `environment`, `split` or `variant` (one
+environment of a server that serves several) when they differ from the options, or `{"task_spec": {...}}` for a task
+that the environment's lists do not hold. `scripts/agent/prepare_openreward_tasks.py` writes such rows for the tasks
+of a split (asking the server only for their number). An episode:
+
+- The session's prompt is the user message, in order (images included); the tools go to the chat template as OpenAI
+  function schemas. The environment writes only the task, so a system message adds the loop's rules: the tool-call
+  limit and the per-turn limit, then "When you are done, give your final answer inside `<answer></answer>`, for
+  example `<answer>42</answer>`" for an environment with a terminal tool (without the example, Qwen3-VL-4B left the tags
+  out on 16 of the toy search's 64 validation tasks, with it on 1), else "The task ends when a tool says that it is
+  finished". The reset `seed` is
+  not used: an ORS task is fixed by its index, and the rollouts of a group open sessions of the same task.
+- A call's result is shown in order (text and images); its reward is the step's reward, which adds to the return
+  (Rewards above); `finished` ends the episode (`environment_done`); its metadata is the step's `info` in the
+  trajectory records. A call the environment refuses (`ToolCallError`: unknown tool, invalid input) is a result with
+  `success: false` that the model reads, written as escaped JSON like the loop's own errors since it may echo the
+  model's input. Anything else that goes wrong (a tool that raised, which ends the session, a network error after the
+  SDK's retries, a result outside the standard) fails the training step, which can resume from the last checkpoint;
+  the error names the task and the call. A call is never sent twice: the SDK resumes a call whose task the server
+  has named, and a connection lost before that could only be retried by sending the call again, which may run the
+  action twice, so it fails the step too (the adapter turns on the SDK's `resumable_only` for `/call`, which
+  `call_tool` leaves off in 0.1.167).
+- An environment's terminal tool (`@terminal`) is hidden from the model: the text the model answers inside
+  `<answer></answer>` is passed to it, and its reward is the episode reward that `finalize` reports. Otherwise that
+  reward is 0, since the tools' rewards are in the return already: an episode that ends unfinished (the call limit,
+  the length budget, no action, or an answer to an environment without a terminal tool) gets 0. `finalize` reports
+  the metric `finished` (logged as `env/finished`) and keeps the task, the session id and the terminal tool's text
+  and metadata in `details`.
+
+A self-hosted server: run the environment with the SDK's `Server` and give its address as `url`. The SDK follows the
+proxy variables (`HTTP_PROXY`, ...), so a server on the same machine needs `NO_PROXY=127.0.0.1,localhost` when they
+are set. Not supported yet: group scoring (`score_group`), uploading rollouts to OpenReward, conversation-shaped
+prompts (`get_messages`) and built-in toolsets.
 
 ## Step-level advantages (GiGPO)
 

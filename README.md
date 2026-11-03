@@ -100,6 +100,9 @@ before drawing conclusions.
 
 ## 🔥 News
 
+- **2026-11**: OpenReward environments (the Open Reward Standard, on openreward.ai or self-hosted) for agent
+  training and evaluation (`worker.rollout.agent_environment=openreward`, [docs](docs/agent_environments.md#openreward-environments)),
+  through the official SDK as TRL, ROLL and SkyRL use it, with the toy visual search as an example.
 - **2026-11**: A server mode for multi-turn agent rollouts (`worker.rollout.agent_engine_mode=server`,
   [docs](docs/agent_environments.md#server-mode)), after verl's agent loop: a vLLM server on each training GPU
   schedules every model turn as it arrives, while the training stays synchronous; the batch mode stays the default.
@@ -302,7 +305,7 @@ finalized runs.
 │   │   ├── rlvr_qwen3_vl_4b/    #   RLVR: one script per method, shared common.sh
 │   │   └── opd_qwen3_vl_2b/     #   OPD: one script per method, shared common.sh
 │   ├── config.yaml              # base training config
-│   ├── agent_env/               # agent environments served over HTTP (examples)
+│   ├── agent_env/               # agent environment examples (over HTTP, OpenReward)
 │   ├── reward_function/         # reward functions
 │   └── format_prompt/, system_prompt/, chat_template/
 ├── eval/                    # one-click evaluation (registry, loaders, scorers, prepare/)
@@ -321,7 +324,7 @@ distillation losses (`distillation.py`). See
 [docs/implementation_notes.md](docs/implementation_notes.md) for behaviors several methods share
 (e.g. the gradient of the k3 KL estimator, loss averaging) and
 [docs/add_method.md](docs/add_method.md) for adding a new method. Multi-turn agentic training runs in agent
-environments, in process or over HTTP ([docs/agent_environments.md](docs/agent_environments.md)).
+environments, in process, over HTTP or of the OpenReward standard ([docs/agent_environments.md](docs/agent_environments.md)).
 
 ## 📊 Controlled comparison
 

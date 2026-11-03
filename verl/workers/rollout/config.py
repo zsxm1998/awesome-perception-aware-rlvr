@@ -66,8 +66,8 @@ class RolloutConfig:
     # format. Either way, rows whose env_name column is empty are rolled out once without tools.
     agent_prompt_style: str = "native"
     # The environment of agentic rollouts (docs/agent_environments.md): a registered name ("deepeyes",
-    # "remote_http"), path/to/file.py:ClassName for your own class, or null for "deepeyes"; the options of
-    # its constructor (remote_http: url, timeout_s, retries, ...); and the data column holding each row's
+    # "remote_http", "openreward"), path/to/file.py:ClassName for your own class, or null for "deepeyes"; the options
+    # of its constructor (remote_http: url, timeout_s, retries, ...); and the data column holding each row's
     # environment configuration, a JSON object given to reset (not used by "deepeyes", whose task is the
     # row's prompt and images).
     agent_environment: Optional[str] = None

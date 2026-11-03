@@ -1132,7 +1132,7 @@ class PPOConfig:
                 check_prompt_matches_bbox_format,
                 resolve_bbox_format,
             )
-            from ..workers.agent.environments import validate_environment_options
+            from ..workers.agent.environments import environment_class, validate_environment_options
 
             rollout = self.worker.rollout
             environment = rollout.resolved_agent_environment
@@ -1141,7 +1141,7 @@ class PPOConfig:
                 # The environment writes the prompt and its tool schemas are rendered by the chat template.
                 if rollout.agent_prompt_style != "native":
                     raise ValueError("worker.rollout.agent_prompt_style is a DeepEyes option; leave it at native")
-                if environment == "remote_http" and rollout.tensor_parallel_size != 1:
+                if getattr(environment_class(environment), "remote", False) and rollout.tensor_parallel_size != 1:
                     raise ValueError(
                         "the batched rollout runs every trajectory on each rank of a tensor-parallel group, so a "
                         "remote environment would get every episode tensor_parallel_size times; set "
