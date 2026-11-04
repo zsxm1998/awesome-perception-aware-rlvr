@@ -69,7 +69,7 @@ RLVR 能提升大视觉语言模型的推理能力，但它的奖励只检查最
 
 ## 🔥 更新
 
-- **2026-11**：支持 OpenReward 环境（Open Reward Standard，openreward.ai 上的或自己部署的）用于 agent 训练与评测（`worker.rollout.agent_environment=openreward`，[文档](docs/agent_environments.md#openreward-environments)），与 TRL、ROLL、SkyRL 一样经官方 SDK 接入，以玩具视觉搜索为示例。
+- **2026-11**：支持 OpenReward 与 OpenEnv 环境用于 agent 训练与评测：`worker.rollout.agent_environment=openreward`（Open Reward Standard，openreward.ai 上的或自己部署的，与 TRL、ROLL、SkyRL 一样经官方 SDK 接入，[文档](docs/agent_environments.md#openreward-environments)）和 `openenv`（经 OpenEnv 的 WebSocket 会话调用 MCP 工具，[文档](docs/agent_environments.md#openenv-environments)），各以玩具视觉搜索为示例。
 - **2026-11**：多轮 agent rollout 的服务模式（`worker.rollout.agent_engine_mode=server`，[文档](docs/agent_environments.md#server-mode)），参照 verl 的 agent loop：每张训练 GPU 上一个 vLLM 服务，每个模型轮一到就调度，训练仍是同步的；默认仍为批量模式。
 - **2026-10**：多轮 agent 的步级优势 GiGPO（[文档](docs/agent_environments.md#step-level-advantages-gigpo)），与 verl-agent 的实现逐值核对一致；环境对单次工具调用给出的奖励现在计入所有优势估计器的回报。
 - **2026-10**：在 agent 环境中，通过 OpenAI 兼容接口调用的模型可以和本地检查点在同样的任务、工具与评分下评测（[评测说明](eval/README.md#api-models-in-agent-environments)）；示范轨迹（脚本写好的，或由通过接口调用的模型生成的）经 rollout 回放后导出为 ms-swift 的 SFT 数据，分词与 rollout 完全一致（[文档](docs/agent_environments.md#sft-data)）。
@@ -218,7 +218,7 @@ python3 scripts/finalize_run.py checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_pa
 │   │   ├── rlvr_qwen3_vl_4b/    #   RLVR：每个方法一个脚本，共用 common.sh
 │   │   └── opd_qwen3_vl_2b/     #   OPD：每个方法一个脚本，共用 common.sh
 │   ├── config.yaml              # 基础训练配置
-│   ├── agent_env/               # agent 环境示例（HTTP、OpenReward）
+│   ├── agent_env/               # agent 环境示例（HTTP、OpenReward、OpenEnv）
 │   ├── reward_function/         # 奖励函数
 │   └── format_prompt/、system_prompt/、chat_template/
 ├── eval/                    # 一键评测（注册表、loader、scorer、prepare/）
@@ -229,7 +229,7 @@ python3 scripts/finalize_run.py checkpoints/PAPO-Reproduce/qwen2_5_vl_7b_grpo_pa
 └── tests/                   # 单元测试
 ```
 
-各方法在 `verl/trainer/` 中被实现为可组合的模块：辅助（反事实）图像视图、token 级视觉敏感度信号、token 选择、优势缩放、辅助损失和额外奖励；OPD 另有教师和蒸馏损失（`distillation.py`）。所有开关见 [docs/algorithm_parameters.md](docs/algorithm_parameters.md)，多个方法共有的实现细节（如 k3 KL 估计的梯度方向、损失平均方式）见 [docs/implementation_notes.md](docs/implementation_notes.md)，新增方法见 [docs/add_method.md](docs/add_method.md)。多轮 agent 训练在 agent 环境中进行，环境可以在进程内，也可以通过 HTTP 提供，或是 OpenReward 标准的环境（[docs/agent_environments.md](docs/agent_environments.md)）。
+各方法在 `verl/trainer/` 中被实现为可组合的模块：辅助（反事实）图像视图、token 级视觉敏感度信号、token 选择、优势缩放、辅助损失和额外奖励；OPD 另有教师和蒸馏损失（`distillation.py`）。所有开关见 [docs/algorithm_parameters.md](docs/algorithm_parameters.md)，多个方法共有的实现细节（如 k3 KL 估计的梯度方向、损失平均方式）见 [docs/implementation_notes.md](docs/implementation_notes.md)，新增方法见 [docs/add_method.md](docs/add_method.md)。多轮 agent 训练在 agent 环境中进行，环境可以在进程内，也可以通过 HTTP 提供，或是 OpenReward、OpenEnv 的环境（[docs/agent_environments.md](docs/agent_environments.md)）。
 
 ## 📊 统一设定对比
 

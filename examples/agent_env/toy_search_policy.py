@@ -63,3 +63,17 @@ class ToySearchPolicy:
         x1, y1, x2, y2 = self.glyph
         return box[0] <= x1 and box[1] <= y1 and x2 <= box[2] and y2 <= box[3]
 
+
+class ToySearchAnswerToolPolicy(ToySearchPolicy):
+    """The same policy for the OpenEnv version (toy_search_openenv.py), whose task ends with its ``answer`` tool
+    instead of an answer inside <answer></answer>; its rows give the task as ``{"reset": {"split", "index"}}``."""
+
+    def start(self, env_config: dict[str, Any], seed: int, reset: Any) -> None:
+        super().start(env_config.get("reset", env_config), seed, reset)
+
+    def act(self, step: Optional[Any]) -> dict[str, Any]:
+        turn = super().act(step)
+        if "tool_call" in turn:
+            return turn
+        content = turn["content"].split("\n<answer>")[0]
+        return {"content": content, "tool_call": {"name": "answer", "arguments": {"answer": self.digit}}}

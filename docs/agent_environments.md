@@ -10,11 +10,12 @@ episode ended. The same environments serve training and evaluation
 | `deepeyes` (also when `agent_environment` is null) | DeepEyes' zoom-in task, in process: the data row is the task (its prompt and images), `image_zoom_in_tool` crops a source image ([DeepEyes](../examples/reproduction/deepeyes/README.md)) |
 | `remote_http` | any environment served over HTTP with the protocol below, e.g. one written in another project |
 | `openreward` | an environment of the Open Reward Standard, on openreward.ai or self-hosted ([below](#openreward-environments)) |
+| `openenv` | an OpenEnv environment with MCP tools, e.g. a Hugging Face Space or a local container; one with its own action types through a small subclass ([below](#openenv-environments)) |
 | `path/to/file.py:ClassName` | your own in-process class |
 
 Examples in [examples/agent_env/](../examples/agent_env/README.md): a toy visual-search environment
 (find the one digit among small letters with zoom-ins; its reward comes from the environment), the same task as
-an OpenReward environment, and DeepEyes served over HTTP (the same prompts and observations as the in-process environment, token for
+an OpenReward environment and as an OpenEnv environment, and DeepEyes served over HTTP (the same prompts and observations as the in-process environment, token for
 token, with DeepEyes' reward function on the trainer).
 
 ## How a trajectory runs
@@ -78,9 +79,10 @@ no common practice was found. For comparison, verl v0.9.1 (`verl/experimental/ag
 | Several calls of a turn run one after another, and every call gets a result, except those within the per-turn limit after one that ended the episode (above). | verl runs the first `max_parallel_calls` concurrently and drops the others. |
 | `reward: null` from `finalize` means that the environment does not score the episode; the environment reward function and scorer then fail rather than count 0. | verl's reward functions return a number, or a dict with its `score`. |
 | The environment's components and metrics are logged as `env/<name>`; a name reported by some samples only is averaged over them, with a `*_count` entry. | verl's reward managers collect the extra values of each key in a list (`reward_manager/naive.py`), whose lengths differ when samples return different keys. |
-| The `openreward` environment adds a system message with the loop's rules (the tool-call limits, the answer inside `<answer></answer>`), since the environment writes only the task. | ROLL's OpenReward environment adds no system message (the chat template's tool preamble only); SkyRL writes the tool descriptions into one; TRL adds none and does not tell the model the limit. |
-| An OpenReward session that ends with an error (a tool that raised, the network after the SDK's retries) fails the training step; a call the environment refuses (unknown tool, invalid input) is a result the model reads. | TRL, ROLL and SkyRL give the model the error text as the tool's result and go on (TRL then leaves a rollout without any reward out of the group's baseline; ROLL and SkyRL count 0). |
-| The rewards of an OpenReward episode add up (each tool's, then the terminal tool's); an episode that ends unfinished gets 0. | ROLL sums them by default (mean, max or min optional), SkyRL returns each step's; TRL takes the last non-null one and gives `None` (no score) when there is none. |
+| The `openreward` and `openenv` environments add a system message with the loop's rules (the tool-call limits; the answer inside `<answer></answer>`, or the tools that end the task), since the environment writes only the task. | ROLL's OpenReward environment adds no system message (the chat template's tool preamble only); SkyRL writes the tool descriptions into one; TRL adds none and does not tell the model the limit. |
+| An OpenReward or OpenEnv session that fails (a tool that raised and ended an OpenReward session, an error response, an MCP transport error or timeout, the network after the retries) fails the training step; a call the environment refuses (unknown tool, invalid arguments, an action of the wrong type, an OpenEnv tool's own error) is a result the model reads. | TRL, ROLL and SkyRL give the model the error text of an OpenReward session as the tool's result and go on (TRL then leaves a rollout without any reward out of the group's baseline; ROLL and SkyRL count 0). |
+| The rewards of an OpenReward or OpenEnv episode add up (each step's, then the terminal tool's); an episode that ends unfinished gets 0. | ROLL sums them by default (mean, max or min optional), SkyRL returns each step's, ms-swift sums OpenEnv's; TRL takes the last non-null one and gives `None` (no score) when there is none. |
+| An OpenEnv environment with its own action types needs a subclass that maps tool calls to its actions; there is no generic mapping. | TRL wraps each environment in a class of tools (and advises against a generic `step(action)` tool); SkyRL parses `<action>...</action>` per environment; ms-swift sends the whole reply as a JSON action. |
 
 ## Training configuration
 
@@ -142,7 +144,7 @@ request fails the training step, which can resume from the last checkpoint; the 
 the step.
 
 The batched rollout runs every trajectory on each rank of a tensor-parallel group, so the environments whose
-episodes live on a server (`remote_http`, `openreward`; a class of your own sets `remote = True`) need
+episodes live on a server (`remote_http`, `openreward`, `openenv`; a class of your own sets `remote = True`) need
 `worker.rollout.tensor_parallel_size=1` (the server mode below runs every trajectory once). While a trajectory waits for the server, the other trajectories'
 turns go to vLLM in smaller batches; DeepEyes over HTTP took more generation time than the
 in-process environment (1.3 to 1.5 times) in a 2-step test.
@@ -318,6 +320,74 @@ A self-hosted server: run the environment with the SDK's `Server` and give its a
 proxy variables (`HTTP_PROXY`, ...), so a server on the same machine needs `NO_PROXY=127.0.0.1,localhost` when they
 are set. Not supported yet: group scoring (`score_group`), uploading rollouts to OpenReward, conversation-shaped
 prompts (`get_messages`) and built-in toolsets.
+
+## OpenEnv environments
+
+[OpenEnv](https://github.com/openenv/OpenEnv) environments run as servers (a Docker image, a Hugging Face Space or a
+local process) with a Gym-like `reset` / `step` / `state` interface. A multi-turn episode needs the WebSocket endpoint
+`/ws`, where a connection keeps one environment (the HTTP `/reset` and `/step` build a new one for every request).
+`agent_environment=openenv` speaks that endpoint's messages (`reset`, `step`, `state`, `close`, as in
+`openenv.core.env_server.types`; tested against openenv 0.11.0 servers) with aiohttp, which this repository already
+installs: the `openenv` package itself needs a huggingface_hub that transformers 4.x does not allow, so it cannot share
+the training environment (run servers built on it in their own Python environment).
+
+Environments with MCP tools, the interface OpenEnv's RFC 003 proposes for every agent action, work as they are: the
+tools come from the server's `list_tools`, and every tool call is a `call_tool` action. Its result (text and images of
+the MCP content) is what the model reads, and the step's `reward` and `done` are the call's. An MCP error that the
+call caused (`tool_not_found`, `invalid_args`, or `execution_error`, the tool's own error) or a result marked
+`is_error` is a `success: false` result; the errors are shown as escaped JSON, since they may echo the model's
+arguments. OpenEnv 0.11 reports a tool that raises with `execution_error`, which is also how a tool tells the caller
+that a call failed (FastMCP's `ToolError`), so a tool that crashed cannot be told from one that refused the call and
+is shown to the model the same way. A `transport_error`, a `timeout` or another kind fails the training step. An observation that is not a tool
+result, such as the one an environment returns when a submit tool ends the task, is rendered as text (below).
+
+| Option (`agent_environment_kwargs.*`) | Default | Meaning |
+| --- | --- | --- |
+| `url` | (required) | the server, `http(s)://` or `ws(s)://`; the session endpoint is `<url>/ws` |
+| `image_fields` | `[]` | observation fields that hold an image: a base64 string (or a `data:` URL) or an H x W (x C) array of 0-255 values (e.g. a screenshot) |
+| `reset_observation` | `true` | whether the reset observation follows the row's `prompt` in the user message |
+| `max_sessions` | `8` | sessions open at a time per rollout worker, each from `reset` to `close`; a server holds `max_concurrent_envs` sessions (1 unless it says more; OpenEnv's examples use 8), so keep the total of all workers within it |
+| `timeout_s` | `60` | per message, sending and answer together, as OpenEnv's client; closing a session is bounded by it too |
+| `retries`, `backoff_s` | `3`, `1.0` | opening a session again after a connection error or a server with no room (`CAPACITY_REACHED`), with exponential backoff; a step is never sent twice, since OpenEnv has no step index to recognize a repeat |
+| `max_images_per_step` | `1` | as for `remote_http` |
+| `system_prompt` | `null` | as for `openreward`; the default says that the task ends when a tool says so |
+| `token_env` | `null` | an environment variable whose value is sent as a bearer token (a private Space) |
+| `trust_env` | `false` | whether the proxy variables apply, as for `remote_http` |
+
+Each data row's configuration may hold `reset`, the arguments of the environment's `reset` (the group's `seed` is
+added unless the row gives one), and `prompt`, a text before the reset observation. An observation is shown as its
+`image_fields` (as images), then its other fields as text: a single text field as it is, otherwise JSON (`done`,
+`reward` and empty metadata left out). `finalize` reports reward 0, since OpenEnv's rewards come with the steps, and
+the metric `done`; it keeps the reset arguments and the environment's `state` (its episode id and step count) in
+`details`. An episode that ends without `done` gets no more than its steps' rewards. Where a tool ends the task,
+that call counts towards `agent_max_tool_calls` like the others, and the episode's status is `environment_done`: to
+export such demonstrations for SFT, keep them by their return (`export_sft.py --keep all --min-reward ...`).
+
+An environment with its own action types (TextArena's `message`, OpenSpiel's `action_id`, BrowserGym's `action_str`)
+needs a subclass, given as `path/to/file.py:ClassName`, which overrides `list_tools` (the tools the model calls) and
+`action` (a call's `step` action), and if needed `observation_parts` (what the model reads of an observation) and
+`tool_result`:
+
+```python
+from verl.workers.agent.environments import OpenEnvEnvironment
+
+
+class Wordle(OpenEnvEnvironment):
+    async def list_tools(self):
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "guess",
+                    "description": "Guess a five-letter word.",
+                    "parameters": {"type": "object", "properties": {"word": {"type": "string"}}, "required": ["word"]},
+                },
+            }
+        ]
+
+    def action(self, call):
+        return {"message": f"[{call.arguments['word']}]"}
+```
 
 ## Step-level advantages (GiGPO)
 

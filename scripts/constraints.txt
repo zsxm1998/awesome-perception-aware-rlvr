@@ -3,6 +3,7 @@
 # scripts/install_env.sh). Used as a pip/uv constraints file, so packages that are not
 # requested are not installed.
 accelerate==1.13.0
+aiohttp==3.14.3
 codetiming==1.4.0
 datasets==4.8.4
 einops==0.8.2

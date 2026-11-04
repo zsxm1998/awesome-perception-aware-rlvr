@@ -1,4 +1,6 @@
 accelerate
+# the WebSocket client of the openenv agent environment (ray[default] depends on it too)
+aiohttp
 codetiming
 datasets
 einops

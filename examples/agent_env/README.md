@@ -1,7 +1,7 @@
 # Agent environment examples
 
-Environments for multi-turn agentic RL, served over HTTP or as an OpenReward environment; the protocol, the
-adapters and the options are in [docs/agent_environments.md](../../docs/agent_environments.md).
+Environments for multi-turn agentic RL, served over HTTP or as OpenReward and OpenEnv environments; the protocol,
+the adapters and the options are in [docs/agent_environments.md](../../docs/agent_environments.md).
 
 | File | What it is |
 | --- | --- |
@@ -11,7 +11,9 @@ adapters and the options are in [docs/agent_environments.md](../../docs/agent_en
 | [`qwen3_vl_4b_gigpo_toy_search.sh`](qwen3_vl_4b_gigpo_toy_search.sh) | the same with GiGPO's step-level advantages, the turns grouped by the environment's names of the views, an invalid-action penalty of 0.01 ([docs](../../docs/agent_environments.md#step-level-advantages-gigpo)) |
 | [`toy_search_openreward.py`](toy_search_openreward.py) | the same task as an OpenReward (ORS) environment, served by the `openreward` SDK: the canvas and the question as its prompt, `zoom_in` as its tool (the same views as above), `answer` as its terminal tool, which scores what the model writes inside `<answer></answer>`; tasks are (split, index) |
 | [`qwen3_vl_4b_toy_search_openreward.sh`](qwen3_vl_4b_toy_search_openreward.sh) | GRPO of Qwen3-VL-4B on it with `agent_environment=openreward` |
-| [`toy_search_policy.py`](toy_search_policy.py) | a scripted policy for it, to make SFT demonstrations: zoom into the four quarters in order and answer once a view shows the digit |
+| [`toy_search_openenv.py`](toy_search_openenv.py) | the same task as an OpenEnv MCP environment: `reset` (split and index) returns the canvas in its `image` field and the question, the MCP tool `zoom_in` returns the region's text and image, the tool `answer` ends the task with its reward; the server needs `openenv`, in a Python environment of its own |
+| [`qwen3_vl_4b_toy_search_openenv.sh`](qwen3_vl_4b_toy_search_openenv.sh) | GRPO of Qwen3-VL-4B on it with `agent_environment=openenv` (`image_fields=[image]`) |
+| [`toy_search_policy.py`](toy_search_policy.py) | a scripted policy for it, to make SFT demonstrations: zoom into the four quarters in order and answer once a view shows the digit (`ToySearchAnswerToolPolicy`: the same for the OpenEnv version, answering with its tool) |
 | [`deepeyes_http.py`](deepeyes_http.py) | DeepEyes' zoom-in task over HTTP: the same prompts, tool and observations as the in-process `deepeyes` environment, token for token (native prompt, 0-1000 boxes); the reward stays with DeepEyes' reward function |
 | [`qwen3_vl_8b_deepeyes_http.sh`](qwen3_vl_8b_deepeyes_http.sh) | DeepEyes on Qwen3-VL-8B with the task served over HTTP |
 
@@ -26,6 +28,11 @@ bash examples/agent_env/qwen3_vl_4b_gigpo_toy_search.sh  # GiGPO
 python examples/agent_env/toy_search_openreward.py tasks --out data/agent_env/toy_search_openreward
 python examples/agent_env/toy_search_openreward.py serve --port 8010 &
 bash examples/agent_env/qwen3_vl_4b_toy_search_openreward.sh
+
+# the same task as an OpenEnv environment (the server in a Python environment with openenv)
+python examples/agent_env/toy_search_openenv.py tasks --out data/agent_env/toy_search_openenv
+python examples/agent_env/toy_search_openenv.py serve --port 8020 &
+bash examples/agent_env/qwen3_vl_4b_toy_search_openenv.sh
 
 # DeepEyes over HTTP (after bash scripts/prepare_data.sh deepeyes)
 python examples/agent_env/deepeyes_http.py tasks --data-dir data/deepeyes --out data/agent_env/deepeyes_http

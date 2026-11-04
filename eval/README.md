@@ -599,7 +599,7 @@ predictions keep each trajectory's `env_outcome` (with the environment's `detail
 ([docs/agent_environments.md](../docs/agent_environments.md#training-configuration)).
 `--agent-environment` defaults to `remote_http`; it can also be another registered environment such as
 `openreward` (its options in `--agent-environment-kwargs`, e.g. `'{"environment": "owner/Name"}'`, and the
-task rows of `scripts/agent/prepare_openreward_tasks.py`) or `path/to/file.py:ClassName`.
+task rows of `scripts/agent/prepare_openreward_tasks.py`) or `openenv`, or `path/to/file.py:ClassName`.
 `--agent-max-tool-calls-per-turn` (default 1) is the number of tool calls run per model turn, as
 `worker.rollout.agent_max_tool_calls_per_turn` in training. The environment and its options (e.g. the
 server url), and the per-turn limit when it is not 1, enter the result fingerprint.
